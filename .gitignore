@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.Spotlight-V100
+.Trashes
+BrushUserPrefs.plist
+*.icloud
+
+# Swift / Package Manager
+.build/
+Packages/
+Package.pins
+Package.resolved
+.concurrency-test-results
+.swift-version
+
+# Xcode
+build/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+!*.xcodeproj/project.pbxproj
+!*.xcworkspace/contents.xcworkspacedata
+*.xcuserstate
+xcuserdata/
+
+# Log files
+*.log
+
+# Crash logs
+*.crash

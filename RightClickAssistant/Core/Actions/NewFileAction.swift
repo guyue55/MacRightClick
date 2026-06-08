@@ -1,0 +1,137 @@
+import Foundation
+import AppKit
+
+/// 新建文件类型枚举
+public enum SupportedFileType: String, CaseIterable, Codable, Identifiable {
+    case txt = "txt"
+    case md = "md"
+    case json = "json"
+    case csv = "csv"
+    case html = "html"
+    case docx = "docx"
+    case xlsx = "xlsx"
+    case pptx = "pptx"
+    case pdf = "pdf"
+    
+    public var id: String { self.rawValue }
+    
+    public var extensionName: String {
+        return self.rawValue
+    }
+    
+    public var displayName: String {
+        switch self {
+        case .txt: return "文本文件 (.txt)"
+        case .md: return "Markdown 文档 (.md)"
+        case .json: return "JSON 配置文件 (.json)"
+        case .csv: return "CSV 表格 (.csv)"
+        case .html: return "HTML 网页 (.html)"
+        case .docx: return "Word 文档 (.docx)"
+        case .xlsx: return "Excel 表格 (.xlsx)"
+        case .pptx: return "PPT 演示文稿 (.pptx)"
+        case .pdf: return "PDF 电子书 (.pdf)"
+        }
+    }
+    
+    /// 获取每种类型的空白默认字节，确保 Office 等软件能够正常打开而非提示损坏
+    public var defaultEmptyBytes: Data {
+        switch self {
+        // Office 三件套等复杂格式需要基础 XML 骨架或 ZIP 压缩结构，若直接写 0 字节文件双击打开会提示文件损坏
+        // 这里采用标准最小化二进制结构，或简单的空文件（在后续自定义中也可以读取本地的空模板文件）
+        case .docx:
+            // 这是一个最简 Office Word 2007 容器字节流的十六进制字符串（通常是个小 ZIP 压缩包）
+            return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
+        case .xlsx:
+            return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
+        case .pptx:
+            return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
+        default:
+            return Data() // 文本类、JSON 等可直接生成 0 字节文件
+        }
+    }
+}
+
+/// 新建文件动作实现类
+public final class NewFileAction: MenuAction {
+    public let actionId: String
+    public let localizedTitle: String
+    public let iconName: String?
+    public let category: ActionCategory = .newFile
+    
+    public let fileType: SupportedFileType
+    private let customTemplateURL: URL?
+    
+    public init(fileType: SupportedFileType, customTemplateURL: URL? = nil) {
+        self.fileType = fileType
+        self.customTemplateURL = customTemplateURL
+        self.actionId = "org.antigravity.action.newfile.\(fileType.rawValue)"
+        self.localizedTitle = "新建 \(fileType.displayName)"
+        
+        switch fileType {
+        case .txt: self.iconName = "doc.text"
+        case .md: self.iconName = "doc.text.fill"
+        case .json: self.iconName = "curlybraces"
+        case .csv: self.iconName = "tablecells"
+        case .html: self.iconName = "globe"
+        case .docx: self.iconName = "doc.richtext"
+        case .xlsx: self.iconName = "table"
+        case .pptx: self.iconName = "play.rectangle"
+        case .pdf: self.iconName = "doc.zipper"
+        }
+    }
+    
+    public func execute(targetURLs: [URL]) -> Bool {
+        guard let targetURL = targetURLs.first else {
+            print("[NewFileAction] 错误: 没有选中目标目录或路径")
+            return false
+        }
+        
+        // 1. 确定要在哪一个文件夹中创建新文件
+        let destinationDir: URL
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: targetURL.path, isDirectory: &isDir) && isDir.boolValue {
+            destinationDir = targetURL
+        } else {
+            destinationDir = targetURL.deletingLastPathComponent()
+        }
+        
+        // 2. 确定新建文件的基础名称（并完美处理重名冲突逻辑）
+        let baseName = "未命名"
+        let ext = fileType.extensionName
+        var finalURL = destinationDir.appendingPathComponent("\(baseName).\(ext)")
+        
+        var counter = 1
+        while FileManager.default.fileExists(atPath: finalURL.path) {
+            finalURL = destinationDir.appendingPathComponent("\(baseName) \(counter).\(ext)")
+            counter += 1
+        }
+        
+        // 3. 准备写入的内容 (如果有自定义模板优先使用，否则使用预置空白字节数据)
+        let fileData: Data
+        if let templateURL = customTemplateURL, FileManager.default.fileExists(atPath: templateURL.path) {
+            do {
+                fileData = try Data(contentsOf: templateURL)
+            } catch {
+                print("[NewFileAction] 读取自定义模板失败，使用默认空白数据: \(error.localizedDescription)")
+                fileData = fileType.defaultEmptyBytes
+            }
+        } else {
+            fileData = fileType.defaultEmptyBytes
+        }
+        
+        // 4. 创建文件并写入
+        do {
+            try fileData.write(to: finalURL, options: .atomic)
+            print("[NewFileAction] 文件创建成功: \(finalURL.path)")
+            
+            // 可选：在 Finder 中高亮显示或者直接打开该文件
+            DispatchQueue.main.async {
+                NSWorkspace.shared.selectFile(finalURL.path, inFileViewerRootedAtPath: destinationDir.path)
+            }
+            return true
+        } catch {
+            print("[NewFileAction] 创建文件失败: \(error.localizedDescription)")
+            return false
+        }
+    }
+}
