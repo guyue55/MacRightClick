@@ -1,0 +1,16 @@
+{
+  'version': 0,
+  'roots': [
+    {
+      'type': 'directory',
+      'name': '/Library/Developer/CommandLineTools/usr/include/swift',
+      'contents': [
+        {
+          'type': 'file',
+          'name': 'bridging.modulemap',
+          'external-contents': '/Users/guyue/GitProject/mac右键/empty.modulemap'
+        }
+      ]
+    }
+  ]
+}

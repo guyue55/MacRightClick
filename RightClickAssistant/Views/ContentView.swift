@@ -34,13 +34,6 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 public struct ContentView: View {
     @State private var selectedTab: SidebarItem = .general
     
-    // 我们使用标准的 App Group UserDefaults 保存开关状态，以便让 Extension 跨进程实时读取
-    @AppStorage("shouldStartOnLaunch", store: UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant"))
-    private var shouldStartOnLaunch = true
-    
-    @AppStorage("shouldEnableiCloudMenu", store: UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant"))
-    private var shouldEnableiCloudMenu = false
-    
     public init() {}
     
     public var body: some View {
@@ -82,15 +75,15 @@ public struct ContentView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         switch selectedTab {
                         case .general:
-                            generalSettingsView
+                            GeneralSettingsView()
                         case .newFile:
-                            actionsManagerView(category: .newFile)
+                            ActionsManagerView(category: .newFile)
                         case .fileManage:
-                            actionsManagerView(category: .fileManage)
+                            ActionsManagerView(category: .fileManage)
                         case .terminal:
-                            actionsManagerView(category: .terminal)
+                            ActionsManagerView(category: .terminal)
                         case .utility:
-                            actionsManagerView(category: .utility)
+                            ActionsManagerView(category: .utility)
                         }
                     }
                     .padding()
@@ -100,9 +93,18 @@ public struct ContentView: View {
         }
         .frame(minWidth: 850, minHeight: 600)
     }
+}
+
+// MARK: - A. 通用设置面板
+struct GeneralSettingsView: View {
+    // 我们使用标准的 App Group UserDefaults 保存开关状态，以便让 Extension 跨进程实时读取
+    @AppStorage("shouldStartOnLaunch", store: UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant"))
+    private var shouldStartOnLaunch = true
     
-    // MARK: - A. 通用设置面板
-    private var generalSettingsView: some View {
+    @AppStorage("shouldEnableiCloudMenu", store: UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant"))
+    private var shouldEnableiCloudMenu = false
+    
+    var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             GroupBox(label: Label("系统集成", systemImage: "cpu")) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -153,26 +155,33 @@ public struct ContentView: View {
             }
         }
     }
+}
+
+// MARK: - B. 动作管理统一面板（根据不同分类渲染）
+struct ActionsManagerView: View {
+    let category: ActionCategory
     
-    // MARK: - B. 动作管理统一面板（根据不同分类渲染）
-    private func actionsManagerView(category: ActionCategory) -> some View {
+    private var items: [ActionItem] {
         let actions = ActionDispatcher.shared.actions(in: category)
-        
-        return VStack(alignment: .leading, spacing: 16) {
+        return actions.map { ActionItem(id: $0.actionId, action: $0) }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
             Text("您可以在下方自由勾选启用或禁用具体的右键菜单项。禁用的条目将不会出现在您的访达右键中。")
                 .font(.body)
                 .foregroundColor(.secondary)
             
             GroupBox(label: Label("\(category.localizedName)列表", systemImage: "list.bullet.indent")) {
                 VStack(alignment: .leading, spacing: 4) {
-                    if actions.isEmpty {
+                    if items.isEmpty {
                         Text("暂无可用动作")
                             .foregroundColor(.secondary)
                             .padding()
                     } else {
-                        ForEach(actions, id: \.actionId) { action in
-                            ActionRowView(action: action)
-                            if action.actionId != actions.last?.actionId {
+                        ForEach(items) { item in
+                            ActionRowView(action: item.action)
+                            if item.id != items.last?.id {
                                 Divider()
                             }
                         }
@@ -249,4 +258,10 @@ struct ActionRowView: View {
             }
         }
     }
+}
+
+/// 专为规避 Swift 6 协议 existential 动态类型推导编译挂起设计的具体实体结构
+struct ActionItem: Identifiable {
+    let id: String
+    let action: MenuAction
 }
