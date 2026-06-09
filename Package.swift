@@ -15,12 +15,12 @@ let package = Package(
     targets: [
         .target(
             name: "RightClickAssistantCore",
-            path: "RightClickAssistant/Core"
+            path: "Sources/RightClickAssistant/Core"
         ),
         .testTarget(
             name: "RightClickAssistantTests",
             dependencies: ["RightClickAssistantCore"],
-            path: "RightClickAssistantTests"
+            path: "Tests"
         )
     ]
 )
