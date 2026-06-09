@@ -36,5 +36,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: MacRightClick-Universal2
-        path: build/RightClickAssistant.zip
+        path: |
+          build/RightClickAssistant.zip
+          build/RightClickAssistant.dmg
         retention-days: 14

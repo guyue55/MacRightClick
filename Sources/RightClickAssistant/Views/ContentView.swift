@@ -1,4 +1,6 @@
 import SwiftUI
+import FinderSync
+
 
 /// 侧边栏导航条目
 enum SidebarItem: String, CaseIterable, Identifiable {
@@ -69,6 +71,9 @@ public struct ContentView: View {
                 .background(.thinMaterial)
                 
                 Divider()
+                
+                // 系统集成状态 Banner
+                ExtensionStatusBanner()
                 
                 // 根据当前选项卡，动态渲染内容
                 ScrollView {
@@ -265,3 +270,138 @@ struct ActionItem: Identifiable {
     let id: String
     let action: MenuAction
 }
+
+// MARK: - C. 访达右键扩展集成状态自检 Banner
+struct ExtensionStatusBanner: View {
+    @State private var isEnabled = false
+    @State private var isPulsing = false
+    
+    // 1.5 秒定时器进行保底状态查询 (以防部分平铺多窗口操作时未触发 willBecomeActive)
+    let timer = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        Group {
+            if isEnabled {
+                // 🟢 翡翠绿高阶已激活 Banner
+                HStack(spacing: 14) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.green)
+                        .frame(width: 32, height: 32)
+                        .background(Color.green.opacity(0.15))
+                        .cornerRadius(8)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("右键助手扩展服务已启用")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(.primary)
+                        Text("系统右键引擎安全运行中。您可以在下方自由管理各项右键动作。")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Pulsing Dot 动态呼吸灯
+                    HStack(spacing: 6) {
+                        Text("运行中")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(.green)
+                        
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+                            .scaleEffect(isPulsing ? 1.3 : 0.8)
+                            .opacity(isPulsing ? 1.0 : 0.4)
+                            .onAppear {
+                                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                                    isPulsing = true
+                                }
+                            }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.green.opacity(0.12)))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(LinearGradient(
+                            colors: [Color.green.opacity(0.08), Color.teal.opacity(0.03)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                )
+                .padding(.horizontal)
+                .padding(.top, 16)
+            } else {
+                // 🟠 HSL 优雅橘黄未激活 Banner
+                HStack(spacing: 14) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.orange)
+                        .frame(width: 32, height: 32)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(8)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("访达右键扩展尚未启用")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(.primary)
+                        Text("右键助手需要系统扩展授权。请一键打开系统设置，并勾选启用 [右键助手扩展]。")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        FIFinderSyncController.showExtensionManagementInterface()
+                    }) {
+                        HStack(spacing: 5) {
+                            Text("一键启用扩展")
+                            Image(systemName: "arrow.up.forward.app.fill")
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(LinearGradient(
+                            colors: [Color.orange.opacity(0.08), Color.red.opacity(0.03)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                )
+                .padding(.horizontal)
+                .padding(.top, 16)
+            }
+        }
+        .onAppear {
+            checkStatus()
+        }
+        .onReceive(timer) { _ in
+            checkStatus()
+        }
+        // 监听系统 willBecomeActive 通知：用户在设置勾选后，切回 App 时瞬间秒刷新，无感切换！
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            checkStatus()
+        }
+    }
+    
+    private func checkStatus() {
+        isEnabled = FIFinderSyncController.isExtensionEnabled
+    }
+}
+
