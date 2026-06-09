@@ -1,5 +1,7 @@
 # 🍏 MacRightClick — 开源 macOS 右键助手
 
+[English Version](README_EN.md) | [中文版](README.md)
+
 <p align="center">
   <img src="Resources/AppIcon.png" width="128" height="128" alt="MacRightClick Logo" />
 </p>
