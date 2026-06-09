@@ -64,8 +64,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         SharedStorageManager.shared.writeLog("[App] 系统级保活机制启动，App Nap 豁免激活成功")
         
-        // 5. 【电脑自检验证】：延时 3 秒后自动仿真 Extension 点击事件物理链路，在 Downloads 目录下真实触发新建 TXT 文件，实现电脑端闭环自动化验证！
-        runLaunchSelfTest()
+        // 【生产分发屏蔽】：仿真自检仅作为本地开发自检使用。为了避免用户在正常安装运行时，其 Downloads 目录下莫名凭空产生 txt 测试文件，生产包中默认关闭此仿真调用。
+        // self.runLaunchSelfTest()
     }
     
     @objc private func handleExtensionActionSignal(_ notification: Notification) {
