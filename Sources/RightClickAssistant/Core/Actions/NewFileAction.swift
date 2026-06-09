@@ -64,7 +64,7 @@ public final class NewFileAction: MenuAction {
     public init(fileType: SupportedFileType, customTemplateURL: URL? = nil) {
         self.fileType = fileType
         self.customTemplateURL = customTemplateURL
-        self.actionId = "org.antigravity.action.newfile.\(fileType.rawValue)"
+        self.actionId = "guyue.action.newfile.\(fileType.rawValue)"
         self.localizedTitle = "新建 \(fileType.displayName)"
         
         switch fileType {

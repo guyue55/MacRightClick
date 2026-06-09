@@ -6,16 +6,36 @@ public final class FileCutClipboard {
     public static let shared = FileCutClipboard()
     private init() {}
     
-    private let queue = DispatchQueue(label: "org.antigravity.cutboard")
-    private var _cutURLs: [URL] = []
+    private let queue = DispatchQueue(label: "guyue.cutboard")
+    
+    private var clipboardURL: URL {
+        return SharedStorageManager.shared.sharedContainerURL.appendingPathComponent("clipboard.json")
+    }
     
     public var cutURLs: [URL] {
-        get { queue.sync { _cutURLs } }
-        set { queue.sync { _cutURLs = newValue } }
+        get {
+            queue.sync {
+                guard let data = try? Data(contentsOf: clipboardURL),
+                      let paths = try? JSONDecoder().decode([String].self, from: data) else {
+                    return []
+                }
+                return paths.map { URL(fileURLWithPath: $0) }
+            }
+        }
+        set {
+            queue.sync {
+                let paths = newValue.map { $0.path }
+                if let data = try? JSONEncoder().encode(paths) {
+                    try? data.write(to: clipboardURL, options: .atomic)
+                }
+            }
+        }
     }
     
     public func clear() {
-        queue.sync { _cutURLs.removeAll() }
+        queue.sync {
+            try? FileManager.default.removeItem(at: clipboardURL)
+        }
     }
 }
 
@@ -42,7 +62,7 @@ public final class FileManageAction: MenuAction {
     public init(type: FileManageType, customTargetPath: URL? = nil, customTitle: String? = nil) {
         self.manageType = type
         self.customTargetPath = customTargetPath
-        self.actionId = "org.antigravity.action.filemanage.\(type.rawValue)"
+        self.actionId = "guyue.action.filemanage.\(type.rawValue)"
         
         if let title = customTitle {
             self.localizedTitle = title
@@ -136,6 +156,8 @@ public final class FileManageAction: MenuAction {
             
             // 让对话框置顶弹出
             NSApp.activate(ignoringOtherApps: true)
+            alert.window.level = .modalPanel
+            alert.window.orderFrontRegardless()
             let response = alert.runModal()
             
             if response == .alertFirstButtonReturn {
@@ -179,6 +201,8 @@ public final class FileManageAction: MenuAction {
                 openPanel.prompt = "选择目标文件夹"
                 
                 NSApp.activate(ignoringOtherApps: true)
+                openPanel.level = .modalPanel
+                openPanel.orderFrontRegardless()
                 guard openPanel.runModal() == .OK, let selectedURL = openPanel.url else {
                     return false
                 }

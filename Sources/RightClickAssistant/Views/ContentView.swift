@@ -98,10 +98,10 @@ public struct ContentView: View {
 // MARK: - A. 通用设置面板
 struct GeneralSettingsView: View {
     // 我们使用标准的 App Group UserDefaults 保存开关状态，以便让 Extension 跨进程实时读取
-    @AppStorage("shouldStartOnLaunch", store: UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant"))
+    @AppStorage("shouldStartOnLaunch", store: UserDefaults(suiteName: "group.guyue.RightClickAssistant"))
     private var shouldStartOnLaunch = true
     
-    @AppStorage("shouldEnableiCloudMenu", store: UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant"))
+    @AppStorage("shouldEnableiCloudMenu", store: UserDefaults(suiteName: "group.guyue.RightClickAssistant"))
     private var shouldEnableiCloudMenu = false
     
     var body: some View {
@@ -225,7 +225,7 @@ struct ActionRowView: View {
             Toggle("", isOn: $isEnabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .onChange(of: isEnabled) { newValue in
+                .onChange(of: isEnabled) { _, newValue in
                     saveStateToSharedDefaults(newValue)
                 }
         }
@@ -236,11 +236,11 @@ struct ActionRowView: View {
     }
     
     private func saveStateToSharedDefaults(_ enabled: Bool) {
-        if let defaults = UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant") {
+        if let defaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant") {
             defaults.set(enabled, forKey: "enable_action_\(action.actionId)")
             // 发送分布式通知让 FinderSync 插件知道配置已经发生变动，即时刷新菜单内容
             DistributedNotificationCenter.default().postNotificationName(
-                Notification.Name("org.antigravity.RightClickAssistant.configChanged"),
+                Notification.Name("guyue.RightClickAssistant.configChanged"),
                 object: nil,
                 userInfo: nil,
                 deliverImmediately: true
@@ -249,7 +249,7 @@ struct ActionRowView: View {
     }
     
     private func loadStateFromSharedDefaults() {
-        if let defaults = UserDefaults(suiteName: "group.org.antigravity.RightClickAssistant") {
+        if let defaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant") {
             // 默认情况下，全部右键功能都是开启的
             if defaults.object(forKey: "enable_action_\(action.actionId)") == nil {
                 isEnabled = true

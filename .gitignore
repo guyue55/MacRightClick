@@ -32,3 +32,6 @@ xcuserdata/
 
 # Crash logs
 *.crash
+
+# Compiled test binaries
+ActionVerifier_bin

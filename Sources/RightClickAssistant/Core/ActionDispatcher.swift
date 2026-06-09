@@ -5,7 +5,7 @@ import Foundation
 public final class ActionDispatcher {
     public static let shared = ActionDispatcher()
     
-    private let queue = DispatchQueue(label: "org.antigravity.RightClickAssistant.dispatcher", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "guyue.RightClickAssistant.dispatcher", qos: .userInitiated)
     private var registeredActions: [String: MenuAction] = [:]
     
     private init() {}

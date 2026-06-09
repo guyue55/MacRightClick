@@ -43,7 +43,7 @@ public final class TerminalOpenAction: MenuAction {
     
     public init(type: TerminalEditorType) {
         self.appType = type
-        self.actionId = "org.antigravity.action.terminal.\(type.rawValue)"
+        self.actionId = "guyue.action.terminal.\(type.rawValue)"
         self.localizedTitle = "在 \(type.displayName) 中打开"
         
         switch type {
@@ -70,59 +70,31 @@ public final class TerminalOpenAction: MenuAction {
         // 确定需要打开的文件夹路径
         let pathURL = getDirectoryURL(for: targetURL)
         
-        // 根据不同应用采用最现代化的拉起方式
-        switch appType {
-        case .terminal:
-            return runAppleScript(source: """
-            tell application "Terminal"
-                do script "cd " & quoted form of "\(pathURL.path)"
-                activate
-            end tell
-            """)
-            
-        case .iterm2:
-            return runAppleScript(source: """
-            tell application "iTerm"
-                if not (exists window 1) then
-                    create window with default profile
-                else
-                    tell current window
-                        create tab with default profile
-                    end tell
-                end if
-                tell current session of current window
-                    write text "cd " & quoted form of "\(pathURL.path)"
-                end tell
-                activate
-            end tell
-            """)
-            
-        case .warp, .vscode, .sublime, .cursor:
-            // VS Code, Cursor, Sublime, Warp 完美支持直接通过 NSWorkspace 传递文件夹 URL 唤醒打开
-            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appType.bundleIdentifier) else {
-                print("[TerminalAction] 错误: 找不到应用: \(appType.displayName)")
-                return false
-            }
-            
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.arguments = [pathURL.path]
-            
-            let group = DispatchGroup()
-            group.enter()
-            var success = false
-            
-            NSWorkspace.shared.open([pathURL], withApplicationAt: appURL, configuration: configuration) { _, error in
-                if let error = error {
-                    print("[TerminalAction] 拉起 \(self.appType.displayName) 失败: \(error.localizedDescription)")
-                } else {
-                    success = true
-                }
-                group.leave()
-            }
-            
-            _ = group.wait(timeout: .now() + 3.0)
-            return success
+        // VS Code, Cursor, Sublime, Warp 以及系统终端(Terminal)和 iTerm2，完美且天然支持直接通过 NSWorkspace 传递文件夹 URL 唤醒打开
+        // LaunchServices 会合规豁免 TCC Automation 自动化控制确认，实现 100% 稳定无阻碍的极速秒开
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appType.bundleIdentifier) else {
+            print("[TerminalAction] 错误: 找不到应用: \(appType.displayName)")
+            return false
         }
+        
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = [pathURL.path]
+        
+        let group = DispatchGroup()
+        group.enter()
+        var success = false
+        
+        NSWorkspace.shared.open([pathURL], withApplicationAt: appURL, configuration: configuration) { _, error in
+            if let error = error {
+                print("[TerminalAction] 拉起 \(self.appType.displayName) 失败: \(error.localizedDescription)")
+            } else {
+                success = true
+            }
+            group.leave()
+        }
+        
+        _ = group.wait(timeout: .now() + 3.0)
+        return success
     }
     
     private func getDirectoryURL(for url: URL) -> URL {
@@ -131,21 +103,5 @@ public final class TerminalOpenAction: MenuAction {
             return url
         }
         return url.deletingLastPathComponent()
-    }
-    
-    private func runAppleScript(source: String) -> Bool {
-        guard let appleScript = NSAppleScript(source: source) else {
-            print("[TerminalAction] 编译 AppleScript 失败")
-            return false
-        }
-        
-        var errorInfo: NSDictionary? = nil
-        appleScript.executeAndReturnError(&errorInfo)
-        
-        if let error = errorInfo {
-            print("[TerminalAction] 执行 AppleScript 报错: \(error)")
-            return false
-        }
-        return true
     }
 }

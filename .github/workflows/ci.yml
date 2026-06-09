@@ -1,0 +1,37 @@
+name: MacRightClick CI/CD Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    name: Build Universal 2 App Bundle
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set executable permissions for scripts
+      run: |
+        chmod +x Scripts/build.sh
+        chmod +x Scripts/uninstall.sh
+
+    - name: Setup macOS SDK and Toolchain
+      run: |
+        xcrun --show-sdk-path
+        swift --version
+
+    - name: Compile and Pack using Build Script
+      run: |
+        ./Scripts/build.sh
+
+    - name: Upload Universal 2 App Bundle
+      uses: actions/upload-artifact@v4
+      with:
+        name: MacRightClick-Universal2
+        path: build/RightClickAssistant.zip
+        retention-days: 14
