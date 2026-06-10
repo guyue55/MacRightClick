@@ -500,50 +500,59 @@ struct ExtensionStatusBanner: View {
                 .padding(.horizontal)
                 .padding(.top, 16)
             } else {
-                // 🟠 HSL 优雅橘黄未激活 Banner
-                HStack(spacing: 14) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.orange)
-                        .frame(width: 32, height: 32)
-                        .background(Color.orange.opacity(0.15))
-                        .cornerRadius(8)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("访达右键扩展尚未启用")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            .foregroundColor(.primary)
-                        Text("右键助手需要系统扩展授权。请一键打开系统设置，并勾选启用 [右键助手扩展]。")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        FIFinderSyncController.showExtensionManagementInterface()
-                    }) {
-                        HStack(spacing: 5) {
-                            Text("一键启用扩展")
-                            Image(systemName: "arrow.up.forward.app.fill")
+                // 🟠 HSL 优雅橘黄未激活 Banner + 智能步骤化激活路线卡片
+                VStack(alignment: .leading, spacing: 14) {
+                    // 1. 顶部的紧凑式提醒 Row
+                    HStack(spacing: 14) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.orange)
+                            .frame(width: 32, height: 32)
+                            .background(Color.orange.opacity(0.15))
+                            .cornerRadius(8)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("访达右键扩展尚未启用")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.primary)
+                            Text("右键助手需要系统扩展授权才能正常运行，请按下方指引开启服务。")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
                         }
-                        .font(.system(size: 12, weight: .semibold))
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            FIFinderSyncController.showExtensionManagementInterface()
+                        }) {
+                            HStack(spacing: 5) {
+                                Text("一键启用扩展")
+                                Image(systemName: "arrow.up.forward.app.fill")
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
+                    
+                    Divider()
+                        .background(Color.orange.opacity(0.15))
+                    
+                    // 2. 动态检测并呈现对应的系统版本引导
+                    OnboardingStepsView()
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(LinearGradient(
-                            colors: [Color.orange.opacity(0.08), Color.red.opacity(0.03)],
+                            colors: [Color.orange.opacity(0.06), Color.orange.opacity(0.01)],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         ))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                        .stroke(Color.orange.opacity(0.25), lineWidth: 1)
                 )
                 .padding(.horizontal)
                 .padding(.top, 16)
@@ -565,4 +574,143 @@ struct ExtensionStatusBanner: View {
         isEnabled = FIFinderSyncController.isExtensionEnabled
     }
 }
+
+// MARK: - Onboarding Walkthrough Views
+
+/// 智能适配 macOS 系统版本的扩展激活步骤面板
+struct OnboardingStepsView: View {
+    // 识别当前操作系统大/小版本号
+    private var systemVersion: (major: Int, minor: Int) {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        return (os.majorVersion, os.minorVersion)
+    }
+    
+    // 是否为 macOS 13 (Ventura) 及更高版本（该版本后苹果全面改版为“系统设置”单列样式）
+    private var isVenturaOrNewer: Bool {
+        systemVersion.major >= 13
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // 系统版本提示条
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
+                Text("智能指南：已自动识别当前系统为 macOS \(systemVersion.major).\(systemVersion.minor)，请按以下步骤操作：")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.orange.opacity(0.9))
+                Spacer()
+            }
+            .padding(.bottom, 4)
+            
+            if isVenturaOrNewer {
+                // macOS 13+ 新版“系统设置”引导路径
+                VStack(alignment: .leading, spacing: 10) {
+                    StepRow(
+                        step: 1,
+                        iconName: "macwindow.and.cursorarrow",
+                        title: "打开扩展管理窗口",
+                        desc: "点击上方橙色的「一键启用扩展」按钮，系统将自动弹出「系统设置」的扩展面板。"
+                    )
+                    
+                    StepRow(
+                        step: 2,
+                        iconName: "scroll.fill",
+                        title: "滚动到底部，点击「访达」右侧的 ⓘ (信息) 按钮",
+                        desc: "在弹出的窗口中向下滚动至最底部，找到「访达」一栏，点击最右侧的 ⓘ 信息图标。\n(⚠️ 请务必点击最右侧的 ⓘ 图标，而不是旁边的开关)",
+                        isCrucial: true
+                    )
+                    
+                    StepRow(
+                        step: 3,
+                        iconName: "checkmark.square.fill",
+                        title: "勾选「右键助手扩展」并完成",
+                        desc: "在弹出的浮层中，勾选「右键助手扩展」，然后点击「完成」即可瞬间激活！"
+                    )
+                }
+            } else {
+                // macOS 12 及以下旧版“系统偏好设置”引导路径
+                VStack(alignment: .leading, spacing: 10) {
+                    StepRow(
+                        step: 1,
+                        iconName: "macwindow.and.cursorarrow",
+                        title: "打开扩展管理面板",
+                        desc: "点击上方橙色的「一键启用扩展」按钮，系统将自动弹出「系统偏好设置 -> 扩展」窗口。"
+                    )
+                    
+                    StepRow(
+                        step: 2,
+                        iconName: "sidebar.left",
+                        title: "点击左侧边栏的「访达」",
+                        desc: "在弹出的窗口中，于左侧边栏的各个大分类列表中，点击选择「访达 (Finder)」分类。"
+                    )
+                    
+                    StepRow(
+                        step: 3,
+                        iconName: "checkmark.square.fill",
+                        title: "勾选启用「右键助手扩展」",
+                        desc: "在右侧展开的内容列表中，勾选「右键助手扩展」旁边的复选框，使其处于激活状态。"
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// 每一行步骤卡片，集成 SF Symbols 与醒目数字徽章
+struct StepRow: View {
+    let step: Int
+    let iconName: String
+    let title: String
+    let desc: String
+    var isCrucial: Bool = false
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            // 数字步骤圆圈徽章
+            Text("\(step)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .frame(width: 18, height: 18)
+                .background(
+                    Circle()
+                        .fill(isCrucial ? Color.red : Color.orange)
+                )
+                .shadow(color: (isCrucial ? Color.red : Color.orange).opacity(0.3), radius: 2, x: 0, y: 1)
+                .padding(.top, 2)
+            
+            // SF Symbols 辅助拟真图标
+            Image(systemName: iconName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(isCrucial ? .red : .orange)
+                .frame(width: 24, height: 24)
+                .background((isCrucial ? Color.red : Color.orange).opacity(0.1))
+                .cornerRadius(6)
+                .padding(.top, 1)
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(isCrucial ? .red : .primary)
+                Text(desc)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineSpacing(2)
+            }
+            
+            Spacer()
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isCrucial ? Color.red.opacity(0.04) : Color.primary.opacity(0.01))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isCrucial ? Color.red.opacity(0.2) : Color.clear, lineWidth: 1)
+        )
+    }
+}
+
 
