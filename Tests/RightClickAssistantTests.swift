@@ -172,4 +172,15 @@ final class RightClickAssistantTests: XCTestCase {
 
         storage.removeValue(forKey: SharedStorageManager.Keys.enableDebugLogging)
     }
+
+    /// 10. 设置页动作分组应能区分常规动作与高级动作
+    func testActionSettingsGroupSeparatesStandardAndAdvancedActions() {
+        let newTextFile = NewFileAction(fileType: .txt)
+        let permanentDelete = FileManageAction(type: .permanentDelete)
+        let toggleHiddenFiles = UtilityAction(type: .toggleHiddenFiles)
+
+        XCTAssertEqual(newTextFile.settingsGroup, .standard)
+        XCTAssertEqual(permanentDelete.settingsGroup, .advanced)
+        XCTAssertEqual(toggleHiddenFiles.settingsGroup, .advanced)
+    }
 }

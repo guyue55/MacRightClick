@@ -20,6 +20,12 @@ public enum ActionCategory: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// 设置页中的动作分组。
+public enum SettingsActionGroup: String, Codable {
+    case standard
+    case advanced
+}
+
 /// 统一的右键动作抽象接口
 public protocol MenuAction {
     /// 唯一标识符，用于分发调度
@@ -42,6 +48,9 @@ public protocol MenuAction {
 
     /// 高风险动作说明，展示给用户作为开启前的上下文。
     var riskDescription: String? { get }
+
+    /// 设置页动作分组。
+    var settingsGroup: SettingsActionGroup { get }
     
     /// 判断此动作在当前选中的文件/文件夹下是否可用
     /// - Parameter urls: 用户右键选中的资源列表
@@ -85,5 +94,9 @@ public extension MenuAction {
 
     var riskDescription: String? {
         return nil
+    }
+
+    var settingsGroup: SettingsActionGroup {
+        return isHighRisk ? .advanced : .standard
     }
 }

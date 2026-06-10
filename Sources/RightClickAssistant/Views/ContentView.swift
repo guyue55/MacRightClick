@@ -4,37 +4,37 @@ import FinderSync
 
 /// 侧边栏导航条目
 enum SidebarItem: String, CaseIterable, Identifiable {
-    case general = "general"
-    case newFile = "newFile"
-    case fileManage = "fileManage"
-    case terminal = "terminal"
-    case utility = "utility"
+    case overview = "overview"
+    case actions = "actions"
+    case permissions = "permissions"
+    case diagnostics = "diagnostics"
+    case advanced = "advanced"
     
     var id: String { self.rawValue }
     
     var title: String {
         switch self {
-        case .general: return "通用设置"
-        case .newFile: return "新建文件管理"
-        case .fileManage: return "文件操作管理"
-        case .terminal: return "终端与编辑器"
-        case .utility: return "实用工具箱"
+        case .overview: return "概览"
+        case .actions: return "动作"
+        case .permissions: return "权限"
+        case .diagnostics: return "诊断"
+        case .advanced: return "高级"
         }
     }
     
     var iconName: String {
         switch self {
-        case .general: return "gearshape"
-        case .newFile: return "doc.badge.plus"
-        case .fileManage: return "scissors"
-        case .terminal: return "terminal"
-        case .utility: return "wrench.and.screwdriver"
+        case .overview: return "square.grid.2x2"
+        case .actions: return "list.bullet.rectangle"
+        case .permissions: return "lock.shield"
+        case .diagnostics: return "waveform.path.ecg"
+        case .advanced: return "exclamationmark.triangle"
         }
     }
 }
 
 public struct ContentView: View {
-    @State private var selectedTab: SidebarItem = .general
+    @State private var selectedTab: SidebarItem = .overview
     
     public init() {}
     
@@ -72,23 +72,20 @@ public struct ContentView: View {
                 
                 Divider()
                 
-                // 系统集成状态 Banner
-                ExtensionStatusBanner()
-                
                 // 根据当前选项卡，动态渲染内容
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         switch selectedTab {
-                        case .general:
-                            GeneralSettingsView()
-                        case .newFile:
-                            ActionsManagerView(category: .newFile)
-                        case .fileManage:
-                            ActionsManagerView(category: .fileManage)
-                        case .terminal:
-                            ActionsManagerView(category: .terminal)
-                        case .utility:
-                            ActionsManagerView(category: .utility)
+                        case .overview:
+                            OverviewSettingsView()
+                        case .actions:
+                            ActionsHubView()
+                        case .permissions:
+                            PermissionsSettingsView()
+                        case .diagnostics:
+                            DiagnosticsSettingsView()
+                        case .advanced:
+                            AdvancedSettingsView()
                         }
                     }
                     .padding()
@@ -100,15 +97,10 @@ public struct ContentView: View {
     }
 }
 
-// MARK: - A. 通用设置面板
-struct GeneralSettingsView: View {
+// MARK: - A. 新信息架构页面
+struct OverviewSettingsView: View {
     @State private var isLaunchEnabled = false
-    @State private var shouldEnableiCloudMenu = false
-    
-    @State private var hasFullDiskAccess = false
-    @State private var isPulsing = false
-    let fdaTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
-    
+
     private var launchEnabledBinding: Binding<Bool> {
         Binding<Bool>(
             get: { self.isLaunchEnabled },
@@ -119,188 +111,61 @@ struct GeneralSettingsView: View {
                     SharedStorageManager.shared.setBool(newValue, forKey: "shouldStartOnLaunch")
                     SharedHUDManager.show(
                         title: newValue ? "开机自启已启用" : "开机自启已禁用",
-                        content: newValue ? "右键助手将在您登录系统时自动为您保驾护航" : "已从系统开机自启项中安全移除",
+                        content: newValue ? "右键助手会随登录启动" : "已从登录项移除",
                         iconName: newValue ? "bolt.fill" : "bolt.slash.fill",
                         isSuccess: true
                     )
                 } else {
-                    // 物理回滚 UI 状态
                     self.isLaunchEnabled = LaunchServiceManager.shared.isEnabled
                     SharedHUDManager.show(
                         title: "自启设置失败",
-                        content: "系统限制或进程授权不足，请前往系统设置重试",
+                        content: "请前往系统设置检查登录项权限",
                         isSuccess: false
                     )
                 }
             }
         )
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            GroupBox(label: Label("系统集成", systemImage: "cpu")) {
+            ExtensionStatusBanner()
+                .padding(.horizontal, -16)
+                .padding(.top, -16)
+
+            GroupBox(label: Label("常用", systemImage: "slider.horizontal.3")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("开机时自动启动右键助手", isOn: launchEnabledBinding)
+                    Toggle("登录时启动右键助手", isOn: launchEnabledBinding)
                         .toggleStyle(.checkbox)
-                        .font(.body)
-                    
-                    Text("启用后，右键助手会在登录系统时自动启动并在后台处理右键动作。")
+
+                    Text("保持后台服务可用，Finder 右键动作可以随时由宿主 App 处理。")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     Divider()
-                        .padding(.vertical, 4)
-                    
-                    Toggle("启用操作成功悬浮通知", isOn: Binding(
+
+                    Toggle("显示成功提示", isOn: Binding(
                         get: { SharedStorageManager.shared.getBool(forKey: "enable_success_hud", defaultValue: true) },
                         set: { SharedStorageManager.shared.setBool($0, forKey: "enable_success_hud") }
                     ))
                     .toggleStyle(.checkbox)
-                    .font(.body)
-                    
-                    Text("启用后，成功动作会显示简短悬浮提示。关闭后，成功动作保持静默；失败、权限不足或系统拦截仍会提示。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
 
-                    Divider()
-                        .padding(.vertical, 4)
-
-                    Toggle("启用详细调试日志", isOn: Binding(
-                        get: { SharedStorageManager.shared.isDebugLoggingEnabled },
-                        set: { SharedStorageManager.shared.setBool($0, forKey: SharedStorageManager.Keys.enableDebugLogging) }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .font(.body)
-
-                    Text("默认关闭。开启后会记录菜单渲染、路径监听和动作过滤细节，便于排查 Finder 扩展问题。")
+                    Text("关闭后，成功动作保持静默；失败和权限问题仍会提示。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            
-            GroupBox(label: Label("系统权限与诊断", systemImage: "shield.and.key.badge.shield.exclamationmark")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    if hasFullDiskAccess {
-                        HStack(spacing: 12) {
-                            Image(systemName: "checkmark.shield.fill")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.green)
-                                .frame(width: 28, height: 28)
-                                .background(Color.green.opacity(0.15))
-                                .cornerRadius(6)
-                            
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("完全磁盘访问权限 (FDA) 已授予")
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.primary)
-                                Text("右键助手可以访问更多受保护目录，部分文件操作会更稳定。")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(Color.green)
-                                    .frame(width: 6, height: 6)
-                                    .scaleEffect(isPulsing ? 1.3 : 0.8)
-                                    .opacity(isPulsing ? 1.0 : 0.4)
-                                    .onAppear {
-                                        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                                            isPulsing = true
-                                        }
-                                    }
-                                Text("已授权")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.green)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(Color.green.opacity(0.12)))
-                        }
-                        .padding(.vertical, 4)
-                    } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "exclamationmark.shield.fill")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundColor(.orange)
-                                    .frame(width: 28, height: 28)
-                                    .background(Color.orange.opacity(0.15))
-                                    .cornerRadius(6)
-                                
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("完全磁盘访问权限 (FDA) 尚未授予")
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                        .foregroundColor(.primary)
-                                    Text("这可能会限制右键助手的部分深度文件和系统级脚本操作。建议前往系统设置中授权。")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                            }
-                            
-                            HStack {
-                                Spacer()
-                                Button(action: {
-                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                                        NSWorkspace.shared.open(url)
-                                    }
-                                }) {
-                                    HStack(spacing: 4) {
-                                        Text("前往系统设置授予权限")
-                                        Image(systemName: "arrow.up.forward.app.fill")
-                                    }
-                                    .font(.system(size: 11, weight: .semibold))
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.orange)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            
-            GroupBox(label: Label("云同步盘特殊兼容", systemImage: "icloud")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("在 iCloud 与 OneDrive 文件夹中强制显示菜单", isOn: Binding(
-                        get: { shouldEnableiCloudMenu },
-                        set: { newValue in
-                            shouldEnableiCloudMenu = newValue
-                            SharedStorageManager.shared.setBool(newValue, forKey: "shouldEnableiCloudMenu")
-                            DistributedNotificationCenter.default().postNotificationName(
-                                Notification.Name("guyue.RightClickAssistant.configChanged"),
-                                object: nil,
-                                userInfo: nil,
-                                deliverImmediately: true
-                            )
-                        }
-                    ))
-                        .toggleStyle(.checkbox)
-                        .font(.body)
-                    
-                    Text("某些云同步目录由系统 File Provider 托管，Finder 扩展可能无法稳定出现。开启后会额外监听常见云盘位置。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            
-            GroupBox(label: Label("关于项目", systemImage: "info.circle")) {
+
+            GroupBox(label: Label("项目", systemImage: "info.circle")) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("开源右键助手 (RightClickAssistant) v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
                         .font(.headline)
                     Text("免费开源，采用 MIT 协议。项目不包含广告，也不会主动收集使用数据。")
                         .font(.body)
                         .foregroundColor(.secondary)
-                    
+
                     Button("访问 GitHub 源码仓库") {
                         if let url = URL(string: "https://github.com/guyue/MacRightClick") {
                             NSWorkspace.shared.open(url)
@@ -314,22 +179,83 @@ struct GeneralSettingsView: View {
             }
         }
         .onAppear {
-            checkFullDiskAccess()
             isLaunchEnabled = LaunchServiceManager.shared.isEnabled
-            shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
-        }
-        .onReceive(fdaTimer) { _ in
-            checkFullDiskAccess()
-            isLaunchEnabled = LaunchServiceManager.shared.isEnabled
-            shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
-            checkFullDiskAccess()
             isLaunchEnabled = LaunchServiceManager.shared.isEnabled
-            shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
         }
     }
-    
+}
+
+struct PermissionsSettingsView: View {
+    @State private var hasFullDiskAccess = false
+    @State private var shouldEnableiCloudMenu = false
+    let timer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            GroupBox(label: Label("完全磁盘访问权限", systemImage: "lock.shield")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: hasFullDiskAccess ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(hasFullDiskAccess ? .green : .orange)
+                            .frame(width: 30, height: 30)
+                            .background((hasFullDiskAccess ? Color.green : Color.orange).opacity(0.15))
+                            .cornerRadius(7)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(hasFullDiskAccess ? "已授权" : "尚未授权")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(hasFullDiskAccess ? "部分受保护目录的文件操作会更稳定。" : "部分深层文件和系统目录操作可能受限。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button("打开系统设置") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox(label: Label("云同步盘兼容", systemImage: "icloud")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("额外监听 iCloud、OneDrive 与 CloudStorage", isOn: Binding(
+                        get: { shouldEnableiCloudMenu },
+                        set: { newValue in
+                            shouldEnableiCloudMenu = newValue
+                            SharedStorageManager.shared.setBool(newValue, forKey: "shouldEnableiCloudMenu")
+                            postConfigChanged()
+                        }
+                    ))
+                    .toggleStyle(.checkbox)
+
+                    Text("某些云同步目录由系统 File Provider 托管，开启后会额外注册常见云盘位置。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .onAppear(perform: refresh)
+        .onReceive(timer) { _ in refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in refresh() }
+    }
+
+    private func refresh() {
+        shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
+        checkFullDiskAccess()
+    }
+
     private func checkFullDiskAccess() {
         let path = "/Library/Application Support/com.apple.TCC"
         do {
@@ -341,9 +267,161 @@ struct GeneralSettingsView: View {
     }
 }
 
+struct DiagnosticsSettingsView: View {
+    @State private var isExtensionEnabled = false
+    @State private var isDebugLoggingEnabled = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            GroupBox(label: Label("状态", systemImage: "waveform.path.ecg")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label(isExtensionEnabled ? "Finder 扩展已启用" : "Finder 扩展未启用", systemImage: isExtensionEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundColor(isExtensionEnabled ? .green : .orange)
+                        Spacer()
+                        Button("重新检测") {
+                            refresh()
+                        }
+                    }
+
+                    Button("打开扩展设置") {
+                        FIFinderSyncController.showExtensionManagementInterface()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.vertical, 8)
+            }
+
+            GroupBox(label: Label("日志", systemImage: "doc.text.magnifyingglass")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("启用详细调试日志", isOn: Binding(
+                        get: { isDebugLoggingEnabled },
+                        set: { newValue in
+                            isDebugLoggingEnabled = newValue
+                            SharedStorageManager.shared.setBool(newValue, forKey: SharedStorageManager.Keys.enableDebugLogging)
+                        }
+                    ))
+                    .toggleStyle(.checkbox)
+
+                    Text("默认关闭。开启后会记录菜单渲染、路径监听和动作过滤细节。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Button("打开日志文件夹") {
+                            NSWorkspace.shared.open(SharedStorageManager.shared.logFileURL.deletingLastPathComponent())
+                        }
+                        Button("显示共享目录") {
+                            NSWorkspace.shared.open(SharedStorageManager.shared.sharedContainerURL)
+                        }
+                        Button("运行快速诊断") {
+                            refresh()
+                            SharedHUDManager.show(
+                                title: "诊断完成",
+                                content: isExtensionEnabled ? "Finder 扩展已启用" : "Finder 扩展未启用",
+                                isSuccess: isExtensionEnabled
+                            )
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+        .onAppear(perform: refresh)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in refresh() }
+    }
+
+    private func refresh() {
+        isExtensionEnabled = FIFinderSyncController.isExtensionEnabled
+        isDebugLoggingEnabled = SharedStorageManager.shared.isDebugLoggingEnabled
+    }
+}
+
+struct AdvancedSettingsView: View {
+    private var advancedItems: [ActionItem] {
+        ActionDispatcher.shared.allActions
+            .filter { $0.settingsGroup == .advanced }
+            .sorted { $0.localizedTitle < $1.localizedTitle }
+            .map { ActionItem(id: $0.actionId, action: $0) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("高级动作默认关闭，开启后仍会在执行前确认。")
+                .font(.body)
+                .foregroundColor(.secondary)
+
+            ActionListGroupView(
+                title: "高级功能",
+                iconName: "exclamationmark.triangle",
+                items: advancedItems,
+                footer: "包含永久删除、跨目录复制/移动、重启 Finder 等动作。"
+            )
+
+            GroupBox(label: Label("恢复", systemImage: "arrow.counterclockwise")) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("恢复动作默认设置")
+                            .font(.body)
+                        Text("移除所有动作启用状态配置，重新使用内置默认值。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button("恢复默认") {
+                        resetActionDefaults()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private func resetActionDefaults() {
+        for action in ActionDispatcher.shared.allActions {
+            SharedStorageManager.shared.removeValue(forKey: "enable_action_\(action.actionId)")
+        }
+        postConfigChanged()
+        SharedHUDManager.show(title: "已恢复默认", content: "右键动作将按内置默认值显示", isSuccess: true)
+    }
+}
+
+private func postConfigChanged() {
+    DistributedNotificationCenter.default().postNotificationName(
+        Notification.Name("guyue.RightClickAssistant.configChanged"),
+        object: nil,
+        userInfo: nil,
+        deliverImmediately: true
+    )
+}
+
 // MARK: - B. 动作管理统一面板（根据不同分类渲染）
+struct ActionsHubView: View {
+    @State private var selectedCategory: ActionCategory = .newFile
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("选择要显示在 Finder 右键菜单中的常用动作。高风险动作集中在“高级”页管理。")
+                .font(.body)
+                .foregroundColor(.secondary)
+
+            Picker("动作分类", selection: $selectedCategory) {
+                ForEach(ActionCategory.allCases) { category in
+                    Text(category.localizedName).tag(category)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            ActionsManagerView(category: selectedCategory, includeAdvanced: false)
+        }
+    }
+}
+
 struct ActionsManagerView: View {
     let category: ActionCategory
+    var includeAdvanced: Bool = true
+    var showsIdentifiers: Bool = false
     
     private var items: [ActionItem] {
         let actions = ActionDispatcher.shared.actions(in: category)
@@ -351,11 +429,11 @@ struct ActionsManagerView: View {
     }
 
     private var standardItems: [ActionItem] {
-        items.filter { !$0.action.isHighRisk }
+        items.filter { $0.action.settingsGroup == .standard }
     }
 
     private var advancedItems: [ActionItem] {
-        items.filter { $0.action.isHighRisk }
+        items.filter { $0.action.settingsGroup == .advanced }
     }
     
     var body: some View {
@@ -367,14 +445,16 @@ struct ActionsManagerView: View {
             ActionListGroupView(
                 title: "\(category.localizedName)列表",
                 iconName: "list.bullet.indent",
-                items: standardItems
+                items: standardItems,
+                showsIdentifiers: showsIdentifiers
             )
 
-            if !advancedItems.isEmpty {
+            if includeAdvanced && !advancedItems.isEmpty {
                 ActionListGroupView(
                     title: "高级功能（默认关闭）",
                     iconName: "exclamationmark.triangle",
                     items: advancedItems,
+                    showsIdentifiers: showsIdentifiers,
                     footer: "这些动作可能永久删除文件、重启 Finder 或跨目录复制/移动项目。请确认自己理解影响后再启用。"
                 )
             }
@@ -386,6 +466,7 @@ struct ActionListGroupView: View {
     let title: String
     let iconName: String
     let items: [ActionItem]
+    var showsIdentifiers: Bool = false
     var footer: String? = nil
 
     var body: some View {
@@ -397,7 +478,7 @@ struct ActionListGroupView: View {
                         .padding()
                 } else {
                     ForEach(items) { item in
-                        ActionRowView(action: item.action)
+                        ActionRowView(action: item.action, showsIdentifier: showsIdentifiers)
                         if item.id != items.last?.id {
                             Divider()
                         }
@@ -420,6 +501,7 @@ struct ActionListGroupView: View {
 /// 单个动作的 Toggle 封装组件
 struct ActionRowView: View {
     let action: MenuAction
+    var showsIdentifier: Bool = false
     
     // 通过 actionId 绑定到 AppGroup 共享的 UserDefaults 中，让 Extension 动态读取是否渲染
     @State private var isEnabled = true
@@ -461,9 +543,11 @@ struct ActionRowView: View {
                             .background(Capsule().fill(Color.orange.opacity(0.14)))
                     }
                 }
-                Text("唯一标示: \(action.actionId)")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.secondary)
+                if showsIdentifier {
+                    Text("动作 ID: \(action.actionId)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
                 if let riskDescription = action.riskDescription {
                     Text(riskDescription)
                         .font(.caption)
