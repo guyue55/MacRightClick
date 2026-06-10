@@ -123,6 +123,12 @@ public final class FileManageAction: MenuAction {
                 content: "已将 \(targetURLs.count) 个项目加入剪切板，请在目标文件夹右键粘贴",
                 isSuccess: true
             )
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("guyue.RightClickAssistant.configChanged"),
+                object: nil,
+                userInfo: nil,
+                deliverImmediately: true
+            )
             return true
             
         case .paste:
@@ -173,6 +179,12 @@ public final class FileManageAction: MenuAction {
             
             print("[FileManage] 成功粘贴/移动了 \(successCount) 个文件。")
             FileCutClipboard.shared.clear() // 移动完成，清空剪切板
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("guyue.RightClickAssistant.configChanged"),
+                object: nil,
+                userInfo: nil,
+                deliverImmediately: true
+            )
             if successCount > 0 {
                 SharedHUDManager.show(
                     title: "粘贴成功",

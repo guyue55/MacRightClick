@@ -112,10 +112,18 @@ class FinderSync: FIFinderSync {
         
         logToSharedContainer("[FinderSync] 插件初始化启动...")
         
-        // 1. 设置并应用我们需要监控的访达路径目录
+        // 1. 注册原生 'cut' 角标图像
+        if let badgeImage = NSImage(systemSymbolName: "scissors", accessibilityDescription: "已剪切") {
+            FIFinderSyncController.default().setBadgeImage(badgeImage, label: "已剪切", forBadgeIdentifier: "cut")
+            logToSharedContainer("[FinderSync] 成功注册 'cut' 原生角标图像 (scissors)")
+        } else {
+            logToSharedContainer("[FinderSync] 警告: 无法加载 SF Symbol 'scissors'")
+        }
+        
+        // 2. 设置并应用我们需要监控的访达路径目录
         updateObservedDirectories()
         
-        // 2. 监听来自主程序的共享配置变更通知，以便及时刷新右键
+        // 3. 监听来自主程序的共享配置变更通知，以便及时刷新右键与角标
         DistributedNotificationCenter.default().addObserver(
             self,
             selector: #selector(configChanged),
@@ -123,13 +131,27 @@ class FinderSync: FIFinderSync {
             object: nil
         )
         
-        // 3. 在插件进程中也初始化默认动作集，以便直接在插件中分发执行
+        // 4. 在插件进程中也初始化默认动作集，以便直接在插件中分发执行
         registerDefaultActionsInExtension()
     }
     
     @objc private func configChanged() {
-        logToSharedContainer("[FinderSync] 收到配置变更，已同步刷新内存缓存和监听路径")
+        logToSharedContainer("[FinderSync] 收到配置变更，同步刷新内存缓存、监听路径与角标状态")
         updateObservedDirectories()
+        
+        // 强行刷新监控目录以立即触发生效/清除角标
+        let currentURLs = FIFinderSyncController.default().directoryURLs
+        FIFinderSyncController.default().directoryURLs = currentURLs
+    }
+    
+    override func requestBadgeIdentifier(for url: URL) {
+        let cutPaths = FileCutClipboard.shared.cutURLs.map { $0.path }
+        if cutPaths.contains(url.path) {
+            FIFinderSyncController.default().setBadgeIdentifier("cut", for: url)
+            logToSharedContainer("[FinderSync] 成功在 \(url.lastPathComponent) 上渲染已剪切 'cut' 状态角标")
+        } else {
+            FIFinderSyncController.default().setBadgeIdentifier("", for: url)
+        }
     }
     
     /// 获取沙盒外的真实用户 Home 目录

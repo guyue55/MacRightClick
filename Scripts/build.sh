@@ -158,6 +158,7 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/SharedFolderMonitor.swift \
     Sources/RightClickAssistant/Core/ActionDispatcher.swift \
     Sources/RightClickAssistant/Core/SharedHUDManager.swift \
+    Sources/RightClickAssistant/Core/LaunchServiceManager.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
