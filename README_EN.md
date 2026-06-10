@@ -28,6 +28,9 @@ More importantly, it incorporates a cutting-edge **"Distributed Signal + Kernel-
 - 🚀 **Instant Action, 0 ms Latency**: Removed all main thread synchronization locks and blocking disk I/O operations. Right-click actions are processed asynchronously on highly-privileged concurrent background queues, eliminating timing race conditions.
 - 🔒 **Elegant Sandbox Penetration**: Backed by a smart intermediary shared folder and double-write backup channels. It seamlessly solves the App Group returning `nil` issue under local Ad-hoc signature development, and bypasses the sandboxed DistributedNotification `userInfo` stripping restriction by macOS.
 - 🎨 **Non-Blocking Glassmorphism HUD**: Abandoned traditional blocking synchronous modal dialogs. It features a custom non-modal floating notification panel (`NSPanel`) designed with native macOS vibrancy (acrylic blur), rounded corners, fade micro-animations, and a 2.5s automatic fade-out.
+- 🦁 **Modern SMAppService Login Item Launch**: Relies on the macOS 13+ modern `SMAppService` API to legitimately register login items. Users can manage it via "System Settings -> General -> Login Items" with a neat App physical icon. Transparent, reliable, and secure.
+- ✂️ **Finder Native Cut Badging**: Natively leverages the `FIFinderSyncController` badging feature to render a beautiful scissors badge on items marked as "Cut". Coupled with distributed notifications for sub-second Finder UI redrawing, it solves the user interaction pain point of "whether files are successfully cut".
+- 🔋 **Seamless Status Item & Dock Toggle**: Supports hiding to the menu bar tray. Clicking the red close button hides the Dock icon and adjusts AppKit policy to `.accessory` for a ultra-lightweight daemon state. Clicking the tray restores it to `.regular` and brings it to front, achieving pure premium native hand feel.
 - 🖥️ **Universal 2 Architecture Native Support**: Native multi-architecture compile for both Apple Silicon (M1/M2/M3/M4) and Intel (x86_64) architectures, fitting perfectly into the macOS ecosystem.
 
 ---
@@ -134,7 +137,7 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 * **Cause**: MacRightClick is built on a multi-process, sandbox-penetrating distribution mechanism. While the Finder Sync extension renders menus, the actual file creation/hash calculations are performed by the main app in the background.
 * **Fix**:
   * The main App requests **System-level Execution Activity exemption** (`ProcessInfo.beginActivity`) upon startup, ensuring it won't be suspended or frozen by macOS App Nap.
-  * If you completely terminate the main app via `Cmd+Q`, the background execution channel is terminated. We recommend keeping the main app running in the background or setting it as a login item.
+  * It supports hiding into the system menu bar (Status Item Tray) for quiet background daemon execution upon window closing, and supports one-click registration of "Start on Launch" via the macOS modern `SMAppService` API. It is highly recommended to enable autostart to keep services alive!
 
 ---
 
