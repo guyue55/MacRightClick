@@ -136,10 +136,21 @@ sequenceDiagram
      ```
   3. 重新双击，即可完美、顺畅地拉起主设置窗口！
 
-### Q2: 右键菜单在访达 (Finder) 里不显示？
-* **原因**：macOS 默认不会在系统后台自动注册和激活第三方的 FinderSync 插件。
+### Q2: 右键菜单在访达 (Finder) 里不显示？或者在“系统设置 -> 扩展”中找不到“右键助手扩展”？
+* **原因**：macOS 默认不会在系统后台自动注册和激活第三方的 FinderSync 插件。特别是在本地编译、或者是从浏览器下载但未将其移动到 `/Applications` 文件夹、以及存在 Gatekeeper 隔离标记时，系统的 `pluginkit` 守护进程会漏掉扫描注册。
 * **解决办法（极简智能推荐）**：
   * **主程序智能引导**：主程序内置了极具人性化的 **智能新手引导 (Smart Onboarding)** 机制。程序会自动读取您当前的 macOS 系统大版本（针对 macOS 13、macOS 14+ 及老版本系统进行精准适配），并在主界面顶部或侧边栏渲染高亮的红色 `ⓘ 步骤图卡` 与 `[去系统设置中开启]` 一键直达按钮，跟随界面指引即可秒级完成勾选与启用！
+  * **终端一键“强力强制注册”（100% 物理见效）**：
+    若您在扩展页面中找不到“右键助手”，请打开 Mac 的 **终端 (Terminal.app)**，执行以下一键注册命令：
+    * **场景 A：如果您已将 App 安装在 `/Applications`（推荐）**：
+      ```bash
+      pluginkit -a /Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
+      ```
+    * **场景 B：如果您是在克隆的源码目录本地编译**：
+      ```bash
+      pluginkit -a \$(pwd)/build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
+      ```
+    注册成功后，请在终端执行 `killall Finder` 强制热重启访达，再次进入扩展页面即可完美勾选启用！
   * **手动备用步骤**：
     1. 打开 Mac 的 **系统设置 (System Settings)**；
     2. 依次进入：**隐私与安全性 (Privacy & Security) -> 扩展 (Extensions)**；

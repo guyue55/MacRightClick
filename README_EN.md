@@ -138,10 +138,21 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
      ```
   3. Re-double-click the app, and the setting window will pop up smoothly!
 
-### Q2: Right-click menu does not show up in Finder?
-* **Cause**: macOS does not register or enable third-party FinderSync extensions automatically.
+### Q2: Right-click menu does not show up in Finder? Or can't find "RightClickAssistantExtension" in System Settings -> Extensions?
+* **Cause**: macOS does not register or enable third-party FinderSync extensions automatically. Especially for local builds, or apps downloaded but not moved to the `/Applications` directory, or due to Gatekeeper quarantine flags, the system's `pluginkit` daemon may refuse or skip registration.
 * **Fix (Smart Onboarding Recommended)**:
   * **Intelligent App Guide**: The main app interface is now equipped with a highly intuitive **Smart Onboarding** card system. The app automatically detects your exact macOS system major version (precision targeting for macOS 13, macOS 14+, and legacy macOS) and renders a visual step-by-step indicator at the top or side panel. Click the high-vibrant button to navigate to System Settings with single click!
+  * **Terminal One-Click "Force Registration" (100% Effective)**:
+    If you cannot find the extension in settings, open **Terminal.app** and run the following command to register it physically:
+    * **Case A: If you installed the app in `/Applications` (Highly Recommended)**:
+      ```bash
+      pluginkit -a /Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
+      ```
+    * **Case B: If you are building locally in cloned repository directory**:
+      ```bash
+      pluginkit -a \$(pwd)/build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
+      ```
+    After registering, run `killall Finder` to force restart Finder, and reopen the Extension panel to enable it!
   * **Manual Fallback Steps**:
     1. Open your Mac's **System Settings**;
     2. Navigate to: **Privacy & Security -> Extensions**;
