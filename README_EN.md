@@ -76,9 +76,23 @@ sequenceDiagram
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Start & Downloads
 
-### 1. Local Automated Compilation
+### 📥 One-Click Official Download (Highly Recommended)
+
+For the fastest and most secure native experience, we highly recommend downloading our pre-compiled **Universal 2 Multi-Architecture (Apple Silicon M1/M2/M3/M4 + Intel x86_64 Dual Native Support)** app bundle. It is fully built and sandboxed automatically via cloud CI. We provide **permanent redirect URLs to the latest stable release** so you can grab the latest features instantly without worrying about version updates:
+
+| 📦 Format | 🚀 Direct One-Click Download Link | 💡 Use Case & Features |
+| :--- | :--- | :--- |
+| **Disk Image (DMG)** | [👉 Download Latest RightClickAssistant-Latest.dmg 👈](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg) | **Best Recommended.** Traditional drag-and-drop installer, secure and tamper-proof. |
+| **Green ZIP Archive** | [👉 Download Latest RightClickAssistant-Latest.zip 👈](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.zip) | **Portable green build.** Unzip and double-click to run from any directory directly. |
+
+> [!TIP]
+> 📌 **Release History & Changelogs**: You can visit the [GitHub Releases Page](https://github.com/guyue55/MacRightClick/releases) at any time to explore past stable releases, semantic multi-architecture packages, and detailed development changelogs.
+
+---
+
+### 🛠️ 1. Local Automated Compilation
 The repository is fully equipped with a modern Universal 2 build script:
 ```bash
 ./Scripts/build.sh
@@ -126,12 +140,14 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 
 ### Q2: Right-click menu does not show up in Finder?
 * **Cause**: macOS does not register or enable third-party FinderSync extensions automatically.
-* **Fix**:
-  1. Open your Mac's **System Settings**;
-  2. Navigate to: **Privacy & Security -> Extensions**;
-  3. Double-click the **Finder** option;
-  4. Find **"右键助手扩展"** (or RightClickAssistantExtension) and manually **tick to enable** it;
-  5. If it does not appear immediately, right-click any folder or run `killall Finder` in Terminal to force restart Finder.
+* **Fix (Smart Onboarding Recommended)**:
+  * **Intelligent App Guide**: The main app interface is now equipped with a highly intuitive **Smart Onboarding** card system. The app automatically detects your exact macOS system major version (precision targeting for macOS 13, macOS 14+, and legacy macOS) and renders a visual step-by-step indicator at the top or side panel. Click the high-vibrant button to navigate to System Settings with single click!
+  * **Manual Fallback Steps**:
+    1. Open your Mac's **System Settings**;
+    2. Navigate to: **Privacy & Security -> Extensions**;
+    3. Double-click the **Finder** option;
+    4. Find **"右键助手扩展"** (or RightClickAssistantExtension) and manually **tick to enable** it;
+    5. If it does not appear immediately, right-click any folder or run `killall Finder` in Terminal to force restart Finder.
 
 ### Q3: Does the right-click enhancement menu still work when the main setting app is closed?
 * **Cause**: MacRightClick is built on a multi-process, sandbox-penetrating distribution mechanism. While the Finder Sync extension renders menus, the actual file creation/hash calculations are performed by the main app in the background.

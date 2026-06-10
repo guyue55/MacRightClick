@@ -74,9 +74,23 @@ sequenceDiagram
 
 ---
 
-## ⚡ 快速开始
+## ⚡ 快速开始与下载
 
-### 1. 本地自动化编译
+### 📥 官方发布版一键下载（极力推荐）
+
+为了获得最极速、最安全的原生体验，推荐直接下载我们为您在云端全自动构建并签名的 **Universal 2 双架构 (Apple Silicon M1/M2/M3/M4 + Intel x86_64 双原生支持)** 磁盘映像包。我们提供了**永久最新稳定版**下载链接，无需关注版本号变动，点击即可秒级获取最新功能：
+
+| 📦 格式 | 🚀 一键直达下载链接 | 💡 适用场景 & 特性 |
+| :--- | :--- | :--- |
+| **磁盘映像 (DMG)** | [👉 立即下载最新 RightClickAssistant-Latest.dmg 👈](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg) | **最佳推荐。** 拖拽即可安装，包含完整的 Finder 扩展生命周期，安全防篡改。 |
+| **绿色压缩包 (ZIP)** | [👉 立即下载最新 RightClickAssistant-Latest.zip 👈](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.zip) | **免安装绿色版。** 解压即可在任意目录下双击直接运行，灵活小巧。 |
+
+> [!TIP]
+> 📌 **所有历史版本与更新日志**：您可以随时访问 [GitHub Releases 页面](https://github.com/guyue55/MacRightClick/releases) 查阅所有的历史发布版本、多架构安装包以及详尽的 Release Note 演进过程。
+
+---
+
+### 🛠️ 1. 本地自动化编译
 根目录下配备了标准的 Universal 2 多架构极速编译打包工具：
 ```bash
 ./Scripts/build.sh
@@ -124,12 +138,14 @@ sequenceDiagram
 
 ### Q2: 右键菜单在访达 (Finder) 里不显示？
 * **原因**：macOS 默认不会在系统后台自动注册和激活第三方的 FinderSync 插件。
-* **解决办法**：
-  1. 打开 Mac 的 **系统设置 (System Settings)**；
-  2. 依次进入：**隐私与安全性 (Privacy & Security) -> 扩展 (Extensions)**；
-  3. 双击点击 **访达 (Finder)** 选项；
-  4. 找到 **“右键助手扩展”**，手动将其**勾选勾亮**开启服务；
-  5. 若尚未即时显示，可右键随意点开一个 Finder 窗口，或在终端执行 `killall Finder` 强力热重启访达即可！
+* **解决办法（极简智能推荐）**：
+  * **主程序智能引导**：主程序内置了极具人性化的 **智能新手引导 (Smart Onboarding)** 机制。程序会自动读取您当前的 macOS 系统大版本（针对 macOS 13、macOS 14+ 及老版本系统进行精准适配），并在主界面顶部或侧边栏渲染高亮的红色 `ⓘ 步骤图卡` 与 `[去系统设置中开启]` 一键直达按钮，跟随界面指引即可秒级完成勾选与启用！
+  * **手动备用步骤**：
+    1. 打开 Mac 的 **系统设置 (System Settings)**；
+    2. 依次进入：**隐私与安全性 (Privacy & Security) -> 扩展 (Extensions)**；
+    3. 双击点击 **访达 (Finder)** 选项；
+    4. 找到 **“右键助手扩展”**，手动将其**勾选勾亮**开启服务；
+    5. 若尚未即时显示，可右键随意点开一个 Finder 窗口，或在终端执行 `killall Finder` 强力热重启访达即可！
 
 ### Q3: 主程序没有界面时，右键增强菜单还生效吗？
 * **原因**：MacRightClick 的架构属于“**双通道多进程沙盒穿透分发**”架构。Finder 菜单负责展示，真正的业务（如新建 Word 骨架、计算哈希等高特权文件读写）是由主 App 在后台常驻处理的。
