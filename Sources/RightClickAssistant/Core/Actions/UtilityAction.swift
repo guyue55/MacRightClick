@@ -50,22 +50,46 @@ public final class UtilityAction: MenuAction {
     }
     
     public func isAvailable(for targetURLs: [URL]) -> Bool {
-        switch utilityType {
-        case .toggleHiddenFiles:
-            return true // 无需选中任何文件也可以切换
-        case .calculateMD5, .calculateSHA256:
-            // 只有文件（非目录）可以使用哈希校验
-            guard let first = targetURLs.first else { return false }
-            var isDir: ObjCBool = false
-            return FileManager.default.fileExists(atPath: first.path, isDirectory: &isDir) && !isDir.boolValue
-        case .textToQRCode:
-            // 选中文本转二维码（可以通过剪切板内的内容）
-            return true
-        case .convertToPNG, .convertToJPEG:
-            // 必须选中了图片格式文件
-            guard let first = targetURLs.first else { return false }
-            let ext = first.pathExtension.lowercased()
-            return ["png", "jpg", "jpeg", "webp", "heic", "tiff", "gif", "bmp"].contains(ext)
+        return isAvailable(for: targetURLs, isContainer: false)
+    }
+    
+    public func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool {
+        if isContainer {
+            // 右键空白背景 (Container) 时：
+            switch utilityType {
+            case .toggleHiddenFiles, .textToQRCode:
+                return true // 切换隐藏文件与二维码无需选中文件也极其有用
+            case .calculateMD5, .calculateSHA256, .convertToPNG, .convertToJPEG:
+                return false // 哈希校验和图片格式转换在空白背景下毫无意义，直接隐藏
+            }
+        } else {
+            // 正常选中项目 (Items) 时：
+            switch utilityType {
+            case .toggleHiddenFiles:
+                return true // 依然可以切换
+            case .calculateMD5, .calculateSHA256:
+                // 必须选中且只操作单个文件（非目录）
+                guard targetURLs.count == 1, let first = targetURLs.first else { return false }
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: first.path, isDirectory: &isDir) && !isDir.boolValue
+            case .textToQRCode:
+                return true // 文本生成二维码依然可用
+            case .convertToPNG, .convertToJPEG:
+                // 必须选中了至少一个项目，且选中的每一个项目都必须是物理文件（绝非目录）且为受支持的图片格式
+                guard !targetURLs.isEmpty else { return false }
+                let supportedExts = ["png", "jpg", "jpeg", "webp", "heic", "tiff", "gif", "bmp"]
+                for url in targetURLs {
+                    var isDir: ObjCBool = false
+                    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && !isDir.boolValue else {
+                        return false // 如果其中有任何一个是目录，则此格式转换动作不适用
+                    }
+                    let ext = url.pathExtension.lowercased()
+                    guard supportedExts.contains(ext) else {
+                        return false // 如果其中有任何一个不是受支持的图片格式，则不适用
+                    }
+                }
+                return true
+            }
         }
     }
     

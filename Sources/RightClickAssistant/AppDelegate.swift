@@ -1,13 +1,14 @@
 import Cocoa
 import SwiftUI
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     fileprivate static var instance: AppDelegate?
 
     var window: NSWindow!
     private var folderMonitor: SharedFolderMonitor?
     private var activityToken: NSObjectProtocol?
+    private var statusItem: NSStatusItem?
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 1. 初始化并注册系统自带的右键菜单动作
@@ -49,11 +50,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.setFrameAutosaveName("MainWindow")
         window.contentView = NSHostingView(rootView: contentView)
+        window.delegate = self
         window.makeKeyAndOrderFront(nil)
         
-        // 保证应用图标显示在 Dock 栏
+        // 保证应用图标显示在 Dock 栏并启动系统顶栏托盘助手
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        setupStatusItem()
         
         print("[App] 右键助手宿主程序启动并初始化完成 (双保险中介链路就绪)")
         
@@ -203,6 +206,92 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             print("[App] [SelfTest] 3. 信号发送完毕，等待 AppDelegate 接收执行！")
         }
+    }
+    
+    // MARK: - 系统菜单栏托盘管理
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        guard let button = statusItem?.button else { return }
+        
+        // 采用 SF Symbols 原生 "contextualmenu" 渲染
+        if let image = NSImage(systemSymbolName: "contextualmenu", accessibilityDescription: "开源右键助手") {
+            image.isTemplate = true // 完美支持系统深/浅色顶栏、半透明磨砂及多屏色调适配
+            button.image = image
+        }
+        
+        let menu = NSMenu(title: "开源右键助手")
+        
+        let settingsItem = NSMenuItem(title: "显示右键助手设置", action: #selector(showSettingsWindow), keyEquivalent: "s")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+        
+        let toggleHiddenItem = NSMenuItem(title: "切换 Finder 隐藏文件", action: #selector(toggleHiddenFilesFromMenu), keyEquivalent: "h")
+        toggleHiddenItem.target = self
+        menu.addItem(toggleHiddenItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let aboutItem = NSMenuItem(title: "关于右键助手", action: #selector(showAboutDialog), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+        
+        let quitItem = NSMenuItem(title: "退出", action: #selector(terminateApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+        
+        statusItem?.menu = menu
+    }
+    
+    @objc private func showSettingsWindow() {
+        // 先恢复 Regular 模式，重新将图标带回 Dock 栏并获取物理焦点
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+    
+    @objc private func toggleHiddenFilesFromMenu() {
+        SharedStorageManager.shared.writeLog("[App] [Tray] 收到菜单栏点击一键切换 Finder 隐藏文件...")
+        let success = ActionDispatcher.shared.dispatch(actionId: "guyue.action.utility.toggleHiddenFiles", targetURLs: [])
+        SharedStorageManager.shared.writeLog("[App] [Tray] 菜单栏切换隐藏文件执行结果: \(success ? "成功" : "失败")")
+    }
+    
+    @objc private func showAboutDialog() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "关于右键助手"
+        
+        // 从 Bundle 动态拉取当前最新的全局单源版本号
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+        alert.informativeText = """
+        开源右键助手 (RightClickAssistant)
+        版本: v\(version)
+        
+        一款极致追求性能、视觉体验与商业级稳定性的 macOS 右键增强工具。
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "确定")
+        
+        alert.window.level = .modalPanel
+        alert.window.orderFrontRegardless()
+        alert.runModal()
+    }
+    
+    @objc private func terminateApp() {
+        NSApp.terminate(nil)
+    }
+    
+    // MARK: - NSWindowDelegate (常驻后台静默运行生命周期拦截)
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // 1. 物理隐藏偏好设置窗口，避免被彻底销毁
+        window.orderOut(nil)
+        
+        // 2. 动态下调激活策略为 .accessory，从系统的 Dock 栏里干净地隐藏应用图标
+        NSApp.setActivationPolicy(.accessory)
+        
+        SharedStorageManager.shared.writeLog("[App] 偏好设置窗口已被关闭，宿主程序自动降级为 .accessory 常驻后台静默运行中...")
+        
+        // 3. 返回 false 拦截窗口的实际销毁与主程序自动退出
+        return false
     }
 }
 

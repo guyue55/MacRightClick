@@ -220,6 +220,8 @@ class FinderSync: FIFinderSync {
         
         logToSharedContainer("[FinderSync] 右键菜单触发渲染, 类型: \(menuKind == .contextualMenuForItems ? "Items" : "Container"), 目标路径: \(targetURLs.map { $0.path })")
         
+        let isContainer = (menuKind == .contextualMenuForContainer)
+        
         let menu = NSMenu(title: "开源右键助手")
         
         // 从共享的 AppGroup 存储中加载需要显示的动作列表
@@ -244,8 +246,8 @@ class FinderSync: FIFinderSync {
                 // 检查用户是否在主 App 中启用了这个选项，通过 SharedStorageManager 自动实现多级兜底同步
                 let key = "enable_action_\(action.actionId)"
                 let isEnabled = SharedStorageManager.shared.getBool(forKey: key)
-                let isAvail = action.isAvailable(for: targetURLs)
-                logToSharedContainer("[FinderSync] 过滤检查 Action [\(action.localizedTitle)] (\(action.actionId)): isEnabled(配置) = \(isEnabled), isAvailable(状态) = \(isAvail)")
+                let isAvail = action.isAvailable(for: targetURLs, isContainer: isContainer)
+                logToSharedContainer("[FinderSync] 过滤检查 Action [\(action.localizedTitle)] (\(action.actionId)): isEnabled(配置) = \(isEnabled), isAvailable(状态, isContainer: \(isContainer)) = \(isAvail)")
                 return isEnabled && isAvail
             }
             logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] 过滤后生效的 actions 数量: \(enabledActions.count)")

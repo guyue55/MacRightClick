@@ -38,6 +38,12 @@ public protocol MenuAction {
     /// - Parameter urls: 用户右键选中的资源列表
     func isAvailable(for targetURLs: [URL]) -> Bool
     
+    /// 判断此动作在自适应上下文（如右键空白背景）下是否可用
+    /// - Parameters:
+    ///   - targetURLs: 用户右键选中的资源列表
+    ///   - isContainer: 是否为右键空白背景容器本身
+    func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool
+    
     /// 执行动作
     /// - Parameter targetURLs: 用户右键选中的资源列表
     /// - Returns: 是否执行成功
@@ -49,6 +55,11 @@ public extension MenuAction {
     func isAvailable(for targetURLs: [URL]) -> Bool {
         // 默认情况下，只要选中了对象，或者在空白处（此时 urls 为当前路径）就可用
         return true
+    }
+    
+    func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool {
+        // 默认转发至老接口，确保 100% 的向后兼容性
+        return isAvailable(for: targetURLs)
     }
     
     var associatedBundleIdentifier: String? {

@@ -90,13 +90,24 @@ public final class FileManageAction: MenuAction {
     }
     
     public func isAvailable(for targetURLs: [URL]) -> Bool {
-        switch manageType {
-        case .paste:
-            // 粘贴必须建立在已经剪切了文件，且当前选中了目录（或空白目录处）的前提下
-            return !FileCutClipboard.shared.cutURLs.isEmpty && !targetURLs.isEmpty
-        case .cut, .permanentDelete, .copyPath, .copyName, .moveTo, .copyTo:
-            // 这些操作都需要选中至少一个目标文件或文件夹
-            return !targetURLs.isEmpty
+        return isAvailable(for: targetURLs, isContainer: false)
+    }
+    
+    public func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool {
+        if isContainer {
+            // 右键空白背景 (Container) 时：只有“粘贴”操作可能可用（前提是剪切板内有被剪切的文件）
+            // 此时 cut, permanentDelete, copyPath, copyName, moveTo, copyTo 等针对特定选中项目的动作全部隐藏
+            return manageType == .paste && !FileCutClipboard.shared.cutURLs.isEmpty
+        } else {
+            // 正常选中项目 (Items) 时：
+            switch manageType {
+            case .paste:
+                // 粘贴必须建立在已经剪切了文件，且当前选中了目录（或选中的项目是目录）的前提下
+                return !FileCutClipboard.shared.cutURLs.isEmpty && !targetURLs.isEmpty
+            case .cut, .permanentDelete, .copyPath, .copyName, .moveTo, .copyTo:
+                // 这些操作都需要选中至少一个目标文件或文件夹
+                return !targetURLs.isEmpty
+            }
         }
     }
     
