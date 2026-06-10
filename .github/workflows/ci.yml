@@ -35,13 +35,22 @@ jobs:
       run: |
         ./Scripts/build.sh
 
+    - name: Prepare Versioned and Latest Artifacts for Release
+      run: |
+        VERSION=$(cat VERSION | tr -d '\n' | tr -d '\r')
+        echo "Detected version: $VERSION"
+        cp build/RightClickAssistant.zip build/RightClickAssistant-v${VERSION}-macOS-Universal.zip
+        cp build/RightClickAssistant.dmg build/RightClickAssistant-v${VERSION}-macOS-Universal.dmg
+        cp build/RightClickAssistant.dmg build/RightClickAssistant-Latest.dmg
+
     - name: Upload Universal 2 App Bundle (Actions Artifacts)
       uses: actions/upload-artifact@v4
       with:
         name: MacRightClick-Universal2
         path: |
-          build/RightClickAssistant.zip
-          build/RightClickAssistant.dmg
+          build/RightClickAssistant-v*-macOS-Universal.zip
+          build/RightClickAssistant-v*-macOS-Universal.dmg
+          build/RightClickAssistant-Latest.dmg
         retention-days: 14
 
     - name: Create GitHub Release and Upload Assets
@@ -49,10 +58,12 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          build/RightClickAssistant.zip
-          build/RightClickAssistant.dmg
+          build/RightClickAssistant-v*-macOS-Universal.zip
+          build/RightClickAssistant-v*-macOS-Universal.dmg
+          build/RightClickAssistant-Latest.dmg
         draft: false
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
