@@ -109,6 +109,10 @@ struct GeneralSettingsView: View {
     @AppStorage("shouldEnableiCloudMenu", store: UserDefaults(suiteName: "group.guyue.RightClickAssistant"))
     private var shouldEnableiCloudMenu = false
     
+    @State private var hasFullDiskAccess = false
+    @State private var isPulsing = false
+    let fdaTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             GroupBox(label: Label("系统集成", systemImage: "cpu")) {
@@ -122,6 +126,93 @@ struct GeneralSettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            GroupBox(label: Label("系统权限与诊断", systemImage: "shield.and.key.badge.shield.exclamationmark")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if hasFullDiskAccess {
+                        HStack(spacing: 12) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.green)
+                                .frame(width: 28, height: 28)
+                                .background(Color.green.opacity(0.15))
+                                .cornerRadius(6)
+                            
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("完全磁盘访问权限 (FDA) 已授予")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                Text("右键助手已经拥有完整的系统目录访问权限，所有特色工具运行在最佳状态。")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 6, height: 6)
+                                    .scaleEffect(isPulsing ? 1.3 : 0.8)
+                                    .opacity(isPulsing ? 1.0 : 0.4)
+                                    .onAppear {
+                                        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                                            isPulsing = true
+                                        }
+                                    }
+                                Text("已授权")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.green.opacity(0.12)))
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.shield.fill")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.orange)
+                                    .frame(width: 28, height: 28)
+                                    .background(Color.orange.opacity(0.15))
+                                    .cornerRadius(6)
+                                
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("完全磁盘访问权限 (FDA) 尚未授予")
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                    Text("这可能会限制右键助手的部分深度文件和系统级脚本操作。建议前往系统设置中授权。")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                            
+                            HStack {
+                                Spacer()
+                                Button(action: {
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }) {
+                                    HStack(spacing: 4) {
+                                        Text("前往系统设置授予权限")
+                                        Image(systemName: "arrow.up.forward.app.fill")
+                                    }
+                                    .font(.system(size: 11, weight: .semibold))
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.orange)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             
@@ -158,6 +249,25 @@ struct GeneralSettingsView: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+        .onAppear {
+            checkFullDiskAccess()
+        }
+        .onReceive(fdaTimer) { _ in
+            checkFullDiskAccess()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            checkFullDiskAccess()
+        }
+    }
+    
+    private func checkFullDiskAccess() {
+        let path = "/Library/Application Support/com.apple.TCC"
+        do {
+            _ = try FileManager.default.contentsOfDirectory(atPath: path)
+            hasFullDiskAccess = true
+        } catch {
+            hasFullDiskAccess = false
         }
     }
 }

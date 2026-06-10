@@ -20,9 +20,11 @@ public final class UtilityAction: MenuAction {
     public let category: ActionCategory = .utility
     
     public let utilityType: UtilityType
+    private let imageConverter: ImageConverterProtocol
     
-    public init(type: UtilityType) {
+    public init(type: UtilityType, imageConverter: ImageConverterProtocol = DefaultImageConverter()) {
         self.utilityType = type
+        self.imageConverter = imageConverter
         self.actionId = "guyue.action.utility.\(type.rawValue)"
         
         switch type {
@@ -80,13 +82,55 @@ public final class UtilityAction: MenuAction {
             return generateQRCodeFromClipboard()
             
         case .convertToPNG, .convertToJPEG:
-            var success = true
+            let isPNG = (utilityType == .convertToPNG)
+            let formatStr = isPNG ? "PNG" : "JPEG"
+            
+            var successCount = 0
+            var failureCount = 0
+            var lastErrorMsg = "未知错误"
+            
             for url in targetURLs {
-                if !convertImageFormat(from: url, toPNG: (utilityType == .convertToPNG)) {
-                    success = false
+                let result = imageConverter.convert(url: url, toFormat: formatStr)
+                switch result {
+                case .success(let destURL):
+                    successCount += 1
+                    print("[UtilityAction] 图片转换成功: \(destURL.path)")
+                case .failure(let error):
+                    failureCount += 1
+                    lastErrorMsg = error.localizedDescription
+                    print("[UtilityAction] 图片转换失败: \(error.localizedDescription)")
                 }
             }
-            return success
+            
+            let totalCount = targetURLs.count
+            if totalCount > 0 {
+                if failureCount == 0 {
+                    SharedHUDManager.show(
+                        title: "批量转换完成",
+                        content: "已成功将 \(successCount) 张图片转换为 \(formatStr) 格式",
+                        isSuccess: true
+                    )
+                } else if successCount == 0 {
+                    SharedHUDManager.show(
+                        title: "批量转换失败",
+                        content: "转换失败。原因：\(lastErrorMsg)",
+                        isSuccess: false
+                    )
+                } else {
+                    SharedHUDManager.show(
+                        title: "转换部分成功",
+                        content: "成功转换 \(successCount) 张，失败 \(failureCount) 张。最近错误：\(lastErrorMsg)",
+                        isSuccess: false
+                    )
+                }
+            } else {
+                SharedHUDManager.show(
+                    title: "转换无效",
+                    content: "未选中任何有效的图片文件进行转换",
+                    isSuccess: false
+                )
+            }
+            return failureCount == 0
         }
     }
     
@@ -111,16 +155,15 @@ public final class UtilityAction: MenuAction {
             SharedHUDManager.show(title: "哈希计算成功", content: "已将校验码拷贝至剪贴板：\(hashString)", isSuccess: true)
             return true
         } catch {
-            print("[UtilityAction] 读取文件计算 Hash 失败: \(error.localizedDescription)")
+            let errorMsg = error.localizedDescription
+            print("[UtilityAction] 读取文件计算 Hash 失败: \(errorMsg)")
+            SharedHUDManager.show(title: "哈希计算失败", content: "无法读取文件数据：\(errorMsg)", isSuccess: false)
             return false
         }
     }
     
     // MARK: - 2. 显示/隐藏隐藏文件
     private func toggleHiddenSystemFiles() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        
         // 读取当前状态
         let readProcess = Process()
         readProcess.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
@@ -151,26 +194,58 @@ public final class UtilityAction: MenuAction {
             try killProcess.run()
             killProcess.waitUntilExit()
             
+            let stateStr = toggleVal == "YES" ? "显示" : "隐藏"
+            SharedHUDManager.show(
+                title: "系统配置更新成功",
+                content: "已成功切换系统隐藏文件状态为：【\(stateStr)】",
+                isSuccess: true
+            )
             return true
         } catch {
             print("[UtilityAction] 切换显示隐藏文件失败: \(error.localizedDescription)")
+            SharedHUDManager.show(
+                title: "切换状态失败",
+                content: "在调用系统指令 defaults 或重启 Finder 时发生错误：\(error.localizedDescription)",
+                isSuccess: false
+            )
             return false
         }
     }
     
     // MARK: - 3. 生成二维码
     private func generateQRCodeFromClipboard() -> Bool {
-        let text = NSPasteboard.general.string(forType: .string) ?? "Antigravity 右键助手"
+        let text = NSPasteboard.general.string(forType: .string) ?? ""
+        
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            SharedHUDManager.show(
+                title: "生成二维码失败",
+                content: "剪贴板中未检测到有效文本，请先拷贝文本后再试",
+                isSuccess: false
+            )
+            return false
+        }
         
         guard let data = text.data(using: .utf8),
               let filter = CIFilter(name: "CIQRCodeGenerator") else {
+            SharedHUDManager.show(
+                title: "生成二维码失败",
+                content: "系统二维码生成滤镜 CIFilter 初始化失败",
+                isSuccess: false
+            )
             return false
         }
         
         filter.setValue(data, forKey: "inputMessage")
         filter.setValue("H", forKey: "inputCorrectionLevel") // 高纠错
         
-        guard let ciImage = filter.outputImage else { return false }
+        guard let ciImage = filter.outputImage else {
+            SharedHUDManager.show(
+                title: "生成二维码失败",
+                content: "未能从 CIFilter 生成目标 CIImage",
+                isSuccess: false
+            )
+            return false
+        }
         
         // 放大二维码，避免高清晰度下像素模糊
         let transform = CGAffineTransform(scaleX: 10, y: 10)
@@ -205,19 +280,54 @@ public final class UtilityAction: MenuAction {
             window.contentView = contentView
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            
+            SharedHUDManager.show(
+                title: "生成二维码成功",
+                content: "已成功解析剪贴板内容并展示二维码",
+                isSuccess: true
+            )
         }
         return true
     }
     
-    // MARK: - 4. 图片格式转换
-    private func convertImageFormat(from url: URL, toPNG: Bool) -> Bool {
-        guard let nsImage = NSImage(contentsOf: url) else { return false }
-        guard let tiffData = nsImage.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData) else {
-            return false
+
+}
+ public extension Data {
+    struct HexEncodingOptions: OptionSet {
+        public let rawValue: Int
+        public static let upperCase = HexEncodingOptions(rawValue: 1 << 0)
+        public init(rawValue: Int) {
+            self.rawValue = rawValue
+        }
+    }
+}
+
+// MARK: - 5. 图片格式转换接口与商业级实现
+/// 图像转换服务协议，方便后续灵活变更转换实现或支持更多格式
+public protocol ImageConverterProtocol {
+    func convert(url: URL, toFormat format: String) -> Result<URL, Error>
+}
+
+/// 默认的商业级图像转换器实现
+public final class DefaultImageConverter: ImageConverterProtocol {
+    public init() {}
+    
+    public func convert(url: URL, toFormat format: String) -> Result<URL, Error> {
+        let normalizedFormat = format.lowercased()
+        guard normalizedFormat == "png" || normalizedFormat == "jpeg" || normalizedFormat == "jpg" else {
+            return .failure(NSError(domain: "guyue.ImageConverter", code: 400, userInfo: [NSLocalizedDescriptionKey: "不支持的目标转换格式：\(format)"]))
         }
         
-        let destExt = toPNG ? "png" : "jpg"
+        guard let nsImage = NSImage(contentsOf: url) else {
+            return .failure(NSError(domain: "guyue.ImageConverter", code: 404, userInfo: [NSLocalizedDescriptionKey: "无法读取或解析输入图片文件"]))
+        }
+        
+        guard let tiffData = nsImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return .failure(NSError(domain: "guyue.ImageConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "无法提取图片的 Bitmap 表达"]))
+        }
+        
+        let destExt = normalizedFormat == "png" ? "png" : "jpg"
         let destURL = url.deletingPathExtension().appendingPathExtension(destExt)
         
         // 自动重名处理
@@ -232,30 +342,20 @@ public final class UtilityAction: MenuAction {
         
         do {
             let outData: Data?
-            if toPNG {
+            if normalizedFormat == "png" {
                 outData = bitmap.representation(using: .png, properties: [:])
             } else {
                 outData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
             }
             
-            guard let finalData = outData else { return false }
+            guard let finalData = outData else {
+                return .failure(NSError(domain: "guyue.ImageConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "生成目标图像二进制数据失败"]))
+            }
+            
             try finalData.write(to: finalDestURL)
-            print("[UtilityAction] 图片转换成功: \(finalDestURL.path)")
-            return true
+            return .success(finalDestURL)
         } catch {
-            print("[UtilityAction] 图片转换失败: \(error.localizedDescription)")
-            return false
-        }
-    }
-    
-
-}
- public extension Data {
-    struct HexEncodingOptions: OptionSet {
-        public let rawValue: Int
-        public static let upperCase = HexEncodingOptions(rawValue: 1 << 0)
-        public init(rawValue: Int) {
-            self.rawValue = rawValue
+            return .failure(error)
         }
     }
 }

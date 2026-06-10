@@ -4,6 +4,7 @@ import AppKit
 /// 全局高保真磨砂玻璃 HUD 提示管理器 (SharedHUDManager)
 /// 专为 macOS 商业级桌面体验设计，提供带微动画、支持毛玻璃特效的右上角轻量通知。
 public final class SharedHUDManager {
+    private static weak var activePanel: NSPanel?
     
     /// 显示一个全局悬浮 HUD 通知
     /// - Parameters:
@@ -13,6 +14,11 @@ public final class SharedHUDManager {
     ///   - isSuccess: 是否代表操作成功（用以调整图标颜色与微视觉渲染）
     public static func show(title: String, content: String, iconName: String? = nil, isSuccess: Bool = true) {
         DispatchQueue.main.async {
+            if let existing = activePanel {
+                existing.close()
+                activePanel = nil
+            }
+            
             let width: CGFloat = 360
             let height: CGFloat = 85
             
@@ -27,6 +33,8 @@ public final class SharedHUDManager {
                 backing: .buffered,
                 defer: false
             )
+            
+            activePanel = panel
             
             panel.level = .statusBar
             panel.backgroundColor = .clear
