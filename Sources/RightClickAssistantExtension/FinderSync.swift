@@ -164,21 +164,11 @@ class FinderSync: FIFinderSync {
         var observedURLs: Set<URL> = []
         let homePath = getRealHomeDirectory()
         
-        // 【关键安全重构】：macOS 14/15 强沙盒与 TCC 限制下，FinderSync 注册整个 Home 根目录会因为隐私限制而被系统底层直接挂起或拒绝加载。
-            // 精准注册用户常用子工作区，避免监听整个 Home 目录带来的隐私和性能问题。
-        let subfolders = ["Desktop", "Downloads", "Documents", "GitProject"]
-        for subfolder in subfolders {
-            let folderURL = URL(fileURLWithPath: homePath).appendingPathComponent(subfolder)
+        // 精准注册用户常用或自定义工作区，避免监听整个 Home 目录带来的隐私和性能问题。
+        for folderURL in SharedStorageManager.shared.watchedDirectoryURLs {
             if FileManager.default.fileExists(atPath: folderURL.path) {
                 observedURLs.insert(folderURL)
                 logToSharedContainer("[FinderSync] 激活工作区监控: \(folderURL.path)", level: .debug)
-            } else {
-                // 如果没有 GitProject 目录，我们可以动态创建它，或者直接跳过
-                if subfolder == "GitProject" {
-                    try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
-                    observedURLs.insert(folderURL)
-                    logToSharedContainer("[FinderSync] 动态初始化并激活监控: \(folderURL.path)", level: .debug)
-                }
             }
         }
         
@@ -237,8 +227,9 @@ class FinderSync: FIFinderSync {
         
         let menu = NSMenu(title: "开源右键助手")
         
-        // 从共享的 AppGroup 存储中加载需要显示的动作列表
+        // 从共享存储中加载需要显示的动作列表
         let dispatcher = ActionDispatcher.shared
+        let storage = SharedStorageManager.shared
         
         // 打印当前 dispatcher 中注册的所有 actions，确保在当前进程内真的有注册动作
         let registeredAll = dispatcher.allActions
@@ -247,6 +238,27 @@ class FinderSync: FIFinderSync {
             logToSharedContainer("[FinderSync] 已注册 Action: ID = \(action.actionId), Title = \(action.localizedTitle), Category = \(action.category.rawValue)", level: .debug)
         }
         
+        let favoriteActions = dispatcher.allActions
+            .filter { action in
+                storage.isFavoriteAction(action)
+                    && storage.isActionEnabled(action)
+                    && action.isAvailable(for: targetURLs, isContainer: isContainer)
+            }
+            .sorted { $0.localizedTitle < $1.localizedTitle }
+
+        if !favoriteActions.isEmpty {
+            let favoritesItem = NSMenuItem(title: "常用", action: nil, keyEquivalent: "")
+            let favoritesMenu = NSMenu(title: "常用")
+
+            for action in favoriteActions {
+                let item = makeMenuItem(for: action)
+                favoritesMenu.addItem(item)
+            }
+
+            favoritesItem.submenu = favoritesMenu
+            menu.addItem(favoritesItem)
+        }
+
         // 使用二级子菜单组织动作，减少 Finder 顶层右键菜单负担。
         let categories = ActionCategory.allCases
         logToSharedContainer("[FinderSync] 开始遍历分类渲染菜单, 分类总数: \(categories.count)", level: .debug)
@@ -257,10 +269,10 @@ class FinderSync: FIFinderSync {
             
             let enabledActions = actions.filter { action in
                 // 检查用户是否在主 App 中启用了这个动作。
-                let isEnabled = SharedStorageManager.shared.isActionEnabled(action)
+                let isEnabled = storage.isActionEnabled(action)
                 let isAvail = action.isAvailable(for: targetURLs, isContainer: isContainer)
                 logToSharedContainer("[FinderSync] 过滤检查 Action [\(action.localizedTitle)] (\(action.actionId)): isEnabled(配置) = \(isEnabled), isAvailable(状态, isContainer: \(isContainer)) = \(isAvail)", level: .debug)
-                return isEnabled && isAvail
+                return isEnabled && isAvail && !storage.isFavoriteAction(action)
             }
             logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] 过滤后生效的 actions 数量: \(enabledActions.count)", level: .debug)
             
@@ -270,19 +282,7 @@ class FinderSync: FIFinderSync {
                 let subMenu = NSMenu(title: category.localizedName)
                 
                 for action in enabledActions {
-                    let item = NSMenuItem(
-                        title: action.localizedTitle,
-                        action: #selector(actionMenuItemSelected(_:)),
-                        keyEquivalent: ""
-                    )
-                    // 使用静态双向 Mapper 生成并绑定标量 tag。
-                    item.tag = FinderSync.getTag(for: action.actionId)
-                    item.target = self
-                    
-                    if let iconName = action.iconName {
-                        item.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)
-                    }
-                    
+                    let item = makeMenuItem(for: action)
                     subMenu.addItem(item)
                     logToSharedContainer("[FinderSync] 成功添加子菜单项: [\(action.localizedTitle)] (Tag: \(item.tag))", level: .debug)
                 }
@@ -296,6 +296,22 @@ class FinderSync: FIFinderSync {
         logToSharedContainer("[FinderSync] 菜单渲染完毕，主菜单 Items 数量: \(menu.items.count)", level: .debug)
         // 若全部为空则不展示任何项
         return menu.items.isEmpty ? nil : menu
+    }
+
+    private func makeMenuItem(for action: MenuAction) -> NSMenuItem {
+        let item = NSMenuItem(
+            title: action.localizedTitle,
+            action: #selector(actionMenuItemSelected(_:)),
+            keyEquivalent: ""
+        )
+        item.tag = FinderSync.getTag(for: action.actionId)
+        item.target = self
+
+        if let iconName = action.iconName {
+            item.image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)
+        }
+
+        return item
     }
     
     /// 在 Extension 的独立沙盒进程中注册默认支持的一套右键操作

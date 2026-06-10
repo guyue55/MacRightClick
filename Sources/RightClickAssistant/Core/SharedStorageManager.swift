@@ -23,6 +23,8 @@ public final class SharedStorageManager {
 
     public enum Keys {
         public static let enableDebugLogging = "enable_debug_logging"
+        public static let favoriteActionIds = "favorite_action_ids"
+        public static let watchedDirectoryPaths = "watched_directory_paths"
     }
     
     private let appGroupIdentifier = "group.guyue.RightClickAssistant"
@@ -114,6 +116,22 @@ public final class SharedStorageManager {
     /// 详细调试日志开关。默认关闭，避免生产环境持续记录用户路径与菜单渲染细节。
     public var isDebugLoggingEnabled: Bool {
         return getBool(forKey: Keys.enableDebugLogging, defaultValue: false)
+    }
+
+    /// 默认监听的 Finder 常用目录。不会创建不存在的目录。
+    public static func defaultWatchedDirectoryPaths(
+        homePath: String,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> [String] {
+        return ["Desktop", "Downloads", "Documents"]
+            .map { (homePath as NSString).appendingPathComponent($0) }
+            .filter(fileExists)
+    }
+
+    public var watchedDirectoryURLs: [URL] {
+        let defaultPaths = Self.defaultWatchedDirectoryPaths(homePath: getRealHomeDirectory())
+        let paths = getStringArray(forKey: Keys.watchedDirectoryPaths, defaultValue: defaultPaths)
+        return paths.map { URL(fileURLWithPath: $0) }
     }
 
     /// 将运行日志追加写入共享日志文件，方便后续排查。
@@ -271,9 +289,30 @@ public final class SharedStorageManager {
         return defaultValue
     }
 
+    public func getStringArray(forKey key: String, defaultValue: [String] = []) -> [String] {
+        if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
+           let values = sharedDefaults.stringArray(forKey: key) {
+            return values
+        }
+
+        let config = loadConfig()
+        if let values = config[key] as? [String] {
+            return values
+        }
+        return defaultValue
+    }
+
     /// 按动作自身默认值和共享配置判断是否启用，供 Finder 菜单与托盘菜单共用。
     public func isActionEnabled(_ action: MenuAction) -> Bool {
         return getBool(forKey: "enable_action_\(action.actionId)", defaultValue: action.isEnabledByDefault)
+    }
+
+    public var favoriteActionIds: [String] {
+        return getStringArray(forKey: Keys.favoriteActionIds)
+    }
+
+    public func isFavoriteAction(_ action: MenuAction) -> Bool {
+        return favoriteActionIds.contains(action.actionId)
     }
     
     /// 写入指定菜单项的启用状态（在宿主设置界面变更配置时调用）
@@ -289,6 +328,31 @@ public final class SharedStorageManager {
         var config = loadConfig()
         config[key] = value
         saveConfig(config)
+    }
+
+    public func setStringArray(_ values: [String], forKey key: String) {
+        let uniqueValues = Array(NSOrderedSet(array: values)).compactMap { $0 as? String }
+
+        if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
+            sharedDefaults.set(uniqueValues, forKey: key)
+            sharedDefaults.synchronize()
+        }
+
+        var config = loadConfig()
+        config[key] = uniqueValues
+        saveConfig(config)
+    }
+
+    public func setAction(_ action: MenuAction, favorite: Bool) {
+        var ids = favoriteActionIds
+        if favorite {
+            if !ids.contains(action.actionId) {
+                ids.append(action.actionId)
+            }
+        } else {
+            ids.removeAll { $0 == action.actionId }
+        }
+        setStringArray(ids, forKey: Keys.favoriteActionIds)
     }
 
     /// 移除指定配置值，让后续读取回到默认值。用于恢复默认设置和测试隔离。

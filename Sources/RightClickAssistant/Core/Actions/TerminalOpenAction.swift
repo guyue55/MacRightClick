@@ -44,6 +44,10 @@ public final class TerminalOpenAction: MenuAction {
     public var associatedBundleIdentifier: String? {
         return appType.bundleIdentifier
     }
+
+    public var isEnabledByDefault: Bool {
+        return appType == .terminal
+    }
     
     public init(type: TerminalEditorType) {
         self.appType = type

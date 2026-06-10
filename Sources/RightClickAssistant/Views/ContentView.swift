@@ -190,6 +190,7 @@ struct OverviewSettingsView: View {
 struct PermissionsSettingsView: View {
     @State private var hasFullDiskAccess = false
     @State private var shouldEnableiCloudMenu = false
+    @State private var watchedDirectoryPaths: [String] = []
     let timer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -245,6 +246,41 @@ struct PermissionsSettingsView: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            GroupBox(label: Label("Finder 菜单监听目录", systemImage: "folder.badge.gearshape")) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if watchedDirectoryPaths.isEmpty {
+                        Text("暂无监听目录")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(watchedDirectoryPaths, id: \.self) { path in
+                            HStack {
+                                Image(systemName: "folder")
+                                    .foregroundColor(.accentColor)
+                                Text(path)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer()
+                                Button("移除") {
+                                    removeWatchedDirectory(path)
+                                }
+                            }
+                        }
+                    }
+
+                    HStack {
+                        Button("添加目录") {
+                            addWatchedDirectory()
+                        }
+                        Button("恢复默认目录") {
+                            resetWatchedDirectories()
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .onAppear(perform: refresh)
         .onReceive(timer) { _ in refresh() }
@@ -253,7 +289,40 @@ struct PermissionsSettingsView: View {
 
     private func refresh() {
         shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
+        watchedDirectoryPaths = SharedStorageManager.shared.watchedDirectoryURLs.map(\.path)
         checkFullDiskAccess()
+    }
+
+    private func addWatchedDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "添加"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            var paths = watchedDirectoryPaths
+            if !paths.contains(url.path) {
+                paths.append(url.path)
+                saveWatchedDirectories(paths)
+            }
+        }
+    }
+
+    private func removeWatchedDirectory(_ path: String) {
+        saveWatchedDirectories(watchedDirectoryPaths.filter { $0 != path })
+    }
+
+    private func resetWatchedDirectories() {
+        SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
+        refresh()
+        postConfigChanged()
+    }
+
+    private func saveWatchedDirectories(_ paths: [String]) {
+        watchedDirectoryPaths = paths
+        SharedStorageManager.shared.setStringArray(paths, forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
+        postConfigChanged()
     }
 
     private func checkFullDiskAccess() {
@@ -402,7 +471,7 @@ struct ActionsHubView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("选择要显示在 Finder 右键菜单中的常用动作。高风险动作集中在“高级”页管理。")
+            Text("选择要显示在 Finder 右键菜单中的动作。星标动作会出现在右键菜单的“常用”分组中。")
                 .font(.body)
                 .foregroundColor(.secondary)
 
@@ -505,6 +574,7 @@ struct ActionRowView: View {
     
     // 通过 actionId 绑定到 AppGroup 共享的 UserDefaults 中，让 Extension 动态读取是否渲染
     @State private var isEnabled = true
+    @State private var isFavorite = false
     
     var body: some View {
         HStack(spacing: 12) {
@@ -556,6 +626,13 @@ struct ActionRowView: View {
             }
             
             Spacer()
+
+            Button(action: toggleFavorite) {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .foregroundColor(isFavorite ? .yellow : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(isFavorite ? "从常用分组移除" : "加入常用分组")
             
             Toggle("", isOn: $isEnabled)
                 .toggleStyle(.switch)
@@ -567,18 +644,14 @@ struct ActionRowView: View {
         .padding(.vertical, 6)
         .onAppear {
             loadStateFromSharedDefaults()
+            loadFavoriteState()
         }
     }
     
     private func saveStateToSharedDefaults(_ enabled: Bool) {
         SharedStorageManager.shared.setBool(enabled, forKey: "enable_action_\(action.actionId)")
         // 发送分布式通知让 FinderSync 插件知道配置已经发生变动，即时刷新菜单内容
-        DistributedNotificationCenter.default().postNotificationName(
-            Notification.Name("guyue.RightClickAssistant.configChanged"),
-            object: nil,
-            userInfo: nil,
-            deliverImmediately: true
-        )
+        postConfigChanged()
     }
     
     private func loadStateFromSharedDefaults() {
@@ -586,6 +659,16 @@ struct ActionRowView: View {
             forKey: "enable_action_\(action.actionId)",
             defaultValue: action.isEnabledByDefault
         )
+    }
+
+    private func loadFavoriteState() {
+        isFavorite = SharedStorageManager.shared.isFavoriteAction(action)
+    }
+
+    private func toggleFavorite() {
+        isFavorite.toggle()
+        SharedStorageManager.shared.setAction(action, favorite: isFavorite)
+        postConfigChanged()
     }
 }
 

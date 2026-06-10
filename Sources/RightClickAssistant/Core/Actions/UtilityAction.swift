@@ -27,7 +27,12 @@ public final class UtilityAction: MenuAction {
     }
 
     public var isEnabledByDefault: Bool {
-        return !isHighRisk
+        switch utilityType {
+        case .calculateSHA256, .textToQRCode:
+            return true
+        case .calculateMD5, .toggleHiddenFiles, .convertToPNG, .convertToJPEG:
+            return false
+        }
     }
 
     public var riskDescription: String? {

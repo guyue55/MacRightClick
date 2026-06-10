@@ -183,4 +183,46 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(permanentDelete.settingsGroup, .advanced)
         XCTAssertEqual(toggleHiddenFiles.settingsGroup, .advanced)
     }
+
+    /// 11. 默认菜单保持精简，低频动作由用户按需开启
+    func testDefaultMenuKeepsLowFrequencyActionsDisabled() {
+        XCTAssertTrue(NewFileAction(fileType: .txt).isEnabledByDefault)
+        XCTAssertTrue(FileManageAction(type: .copyPath).isEnabledByDefault)
+        XCTAssertTrue(TerminalOpenAction(type: .terminal).isEnabledByDefault)
+
+        XCTAssertFalse(NewFileAction(fileType: .xlsx).isEnabledByDefault)
+        XCTAssertFalse(TerminalOpenAction(type: .warp).isEnabledByDefault)
+        XCTAssertFalse(UtilityAction(type: .convertToJPEG).isEnabledByDefault)
+    }
+
+    /// 12. 收藏动作通过共享配置持久化，供 Finder 菜单生成常用区
+    func testFavoriteActionIdsRoundTrip() {
+        let storage = SharedStorageManager.shared
+        let action = NewFileAction(fileType: .txt)
+
+        storage.setAction(action, favorite: false)
+        XCTAssertFalse(storage.isFavoriteAction(action))
+
+        storage.setAction(action, favorite: true)
+        XCTAssertTrue(storage.isFavoriteAction(action))
+
+        storage.setAction(action, favorite: false)
+    }
+
+    /// 13. 默认监听目录不应包含或创建用户项目目录
+    func testDefaultWatchedDirectoriesDoNotIncludeGitProject() {
+        let paths = SharedStorageManager.defaultWatchedDirectoryPaths(
+            homePath: "/Users/example",
+            fileExists: { path in
+                ["/Users/example/Desktop", "/Users/example/Downloads", "/Users/example/Documents", "/Users/example/GitProject"].contains(path)
+            }
+        )
+
+        XCTAssertEqual(paths, [
+            "/Users/example/Desktop",
+            "/Users/example/Downloads",
+            "/Users/example/Documents"
+        ])
+        XCTAssertFalse(paths.contains("/Users/example/GitProject"))
+    }
 }

@@ -98,6 +98,15 @@ public final class NewFileAction: MenuAction {
     
     public let fileType: SupportedFileType
     private let customTemplateURL: URL?
+
+    public var isEnabledByDefault: Bool {
+        switch fileType {
+        case .txt, .md, .pdf:
+            return true
+        case .json, .csv, .html, .docx, .xlsx, .pptx:
+            return false
+        }
+    }
     
     public init(fileType: SupportedFileType, customTemplateURL: URL? = nil) {
         self.fileType = fileType
