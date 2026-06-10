@@ -108,7 +108,7 @@ public final class UtilityAction: MenuAction {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(hashString, forType: .string)
             
-            showFloatingHUD(title: "哈希计算成功", content: "已将校验码拷贝至剪贴板：\(hashString)")
+            SharedHUDManager.show(title: "哈希计算成功", content: "已将校验码拷贝至剪贴板：\(hashString)", isSuccess: true)
             return true
         } catch {
             print("[UtilityAction] 读取文件计算 Hash 失败: \(error.localizedDescription)")
@@ -248,79 +248,7 @@ public final class UtilityAction: MenuAction {
         }
     }
     
-    /// 在屏幕右上方弹出一个极为精美、优雅、带微动画的 HUD 悬浮通知条（不阻塞主线程）
-    private func showFloatingHUD(title: String, content: String) {
-        DispatchQueue.main.async {
-            let width: CGFloat = 360
-            let height: CGFloat = 85
-            
-            let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
-            let x = screenRect.origin.x + screenRect.size.width - width - 20
-            let y = screenRect.origin.y + screenRect.size.height - height - 20
-            
-            let panel = NSPanel(
-                contentRect: NSRect(x: x, y: y, width: width, height: height),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
-            
-            panel.level = .statusBar
-            panel.backgroundColor = .clear
-            panel.isOpaque = false
-            panel.hasShadow = true
-            panel.hidesOnDeactivate = false
-            
-            // 2. 磨砂玻璃特效背景 (Visual Effect View)
-            let visualEffectView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-            visualEffectView.material = .hudWindow
-            visualEffectView.blendingMode = .behindWindow
-            visualEffectView.state = .active
-            visualEffectView.layer?.cornerRadius = 12
-            visualEffectView.wantsLayer = true
-            
-            // 3. 内容布局
-            let iconImageView = NSImageView(frame: NSRect(x: 16, y: 20, width: 44, height: 44))
-            iconImageView.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-            iconImageView.contentTintColor = .systemGreen
-            
-            let titleLabel = NSTextField(labelWithString: title)
-            titleLabel.frame = NSRect(x: 72, y: 44, width: 270, height: 20)
-            titleLabel.font = .systemFont(ofSize: 14, weight: .bold)
-            titleLabel.textColor = .labelColor
-            
-            let contentLabel = NSTextField(labelWithString: content)
-            contentLabel.frame = NSRect(x: 72, y: 12, width: 270, height: 30)
-            contentLabel.font = .systemFont(ofSize: 11, weight: .regular)
-            contentLabel.textColor = .secondaryLabelColor
-            contentLabel.cell?.lineBreakMode = .byTruncatingTail
-            
-            visualEffectView.addSubview(iconImageView)
-            visualEffectView.addSubview(titleLabel)
-            visualEffectView.addSubview(contentLabel)
-            
-            panel.contentView = visualEffectView
-            
-            // 4. 完美展现并淡入
-            panel.alphaValue = 0
-            panel.makeKeyAndOrderFront(nil)
-            
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.3
-                panel.animator().alphaValue = 1.0
-            }, completionHandler: {
-                // 5. 延迟 2.5 秒后自动淡出并关闭
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    NSAnimationContext.runAnimationGroup({ context in
-                        context.duration = 0.4
-                        panel.animator().alphaValue = 0
-                    }, completionHandler: {
-                        panel.close()
-                    })
-                }
-            })
-        }
-    }
+
 }
  public extension Data {
     struct HexEncodingOptions: OptionSet {

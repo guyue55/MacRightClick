@@ -141,14 +141,14 @@ struct GeneralSettingsView: View {
             
             GroupBox(label: Label("关于项目", systemImage: "info.circle")) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("开源右键助手 (RightClickAssistant) v1.0.0")
+                    Text("开源右键助手 (RightClickAssistant) v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
                         .font(.headline)
                     Text("完全免费，采用 GPL-3.0 协议开源。致力于打造 macOS 最轻量、最强大的纯净生产力入口，100% 杜绝收费、广告与隐私收集。")
                         .font(.body)
                         .foregroundColor(.secondary)
                     
                     Button("访问 GitHub 源码仓库") {
-                        if let url = URL(string: "https://github.com/guyue/mac-right-click-assistant") {
+                        if let url = URL(string: "https://github.com/guyue/MacRightClick") {
                             NSWorkspace.shared.open(url)
                         }
                     }
@@ -217,9 +217,22 @@ struct ActionRowView: View {
             }
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(action.localizedTitle)
-                    .font(.body)
-                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(action.localizedTitle)
+                        .font(.body)
+                        .fontWeight(.medium)
+                    
+                    if let bundleId = action.associatedBundleIdentifier {
+                        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) == nil {
+                            Text("未检测到应用")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                        }
+                    }
+                }
                 Text("唯一标示: \(action.actionId)")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.secondary)
@@ -230,7 +243,7 @@ struct ActionRowView: View {
             Toggle("", isOn: $isEnabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .onChange(of: isEnabled) { _, newValue in
+                .onChange(of: isEnabled) { newValue in
                     saveStateToSharedDefaults(newValue)
                 }
         }

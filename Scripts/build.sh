@@ -13,6 +13,13 @@ APP_NAME="RightClickAssistant"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 EXT_BUNDLE="$APP_BUNDLE/Contents/PlugIns/${APP_NAME}Extension.appex"
 
+if [ -f "VERSION" ]; then
+    VERSION=$(cat VERSION | tr -d '\n' | tr -d '\r')
+else
+    VERSION="1.0.0"
+fi
+echo "🏷️ [Build] 检测到全局版本号: $VERSION"
+
 echo "🧹 [Build] 清理旧编译目录: $BUILD_DIR..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
@@ -65,11 +72,11 @@ cat <<EOF > "$APP_BUNDLE/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>13.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>CFBundleIconFile</key>
@@ -96,11 +103,11 @@ cat <<EOF > "$EXT_BUNDLE/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>13.0</string>
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionPointIdentifier</key>
@@ -150,6 +157,7 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/SharedStorageManager.swift \
     Sources/RightClickAssistant/Core/SharedFolderMonitor.swift \
     Sources/RightClickAssistant/Core/ActionDispatcher.swift \
+    Sources/RightClickAssistant/Core/SharedHUDManager.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
@@ -161,6 +169,7 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/MenuAction.swift \
     Sources/RightClickAssistant/Core/SharedStorageManager.swift \
     Sources/RightClickAssistant/Core/ActionDispatcher.swift \
+    Sources/RightClickAssistant/Core/SharedHUDManager.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
@@ -172,10 +181,10 @@ COMMON_FLAGS="-Onone -parse-as-library -sdk $SDK_PATH -vfsoverlay $BUILD_DIR/ove
 
 # 6. 编译宿主主程序 (arm64 与 x86_64)
 echo "🛠️ [Build] 编译宿主主程序 (arm64)..."
-swiftc $COMMON_FLAGS -target arm64-apple-macosx14.0 $HOST_SOURCES -o "$BUILD_DIR/RightClickAssistant_arm64"
+swiftc $COMMON_FLAGS -target arm64-apple-macosx13.0 $HOST_SOURCES -o "$BUILD_DIR/RightClickAssistant_arm64"
 
 echo "🛠️ [Build] 编译宿主主程序 (x86_64)..."
-swiftc $COMMON_FLAGS -target x86_64-apple-macosx14.0 $HOST_SOURCES -o "$BUILD_DIR/RightClickAssistant_x86_64"
+swiftc $COMMON_FLAGS -target x86_64-apple-macosx13.0 $HOST_SOURCES -o "$BUILD_DIR/RightClickAssistant_x86_64"
 
 echo "🔗 [Build] 使用 lipo 创建宿主主程序的 Universal 胖二进制文件..."
 lipo -create -output "$APP_BUNDLE/Contents/MacOS/RightClickAssistant" "$BUILD_DIR/RightClickAssistant_arm64" "$BUILD_DIR/RightClickAssistant_x86_64"
@@ -183,10 +192,10 @@ lipo -create -output "$APP_BUNDLE/Contents/MacOS/RightClickAssistant" "$BUILD_DI
 
 # 7. 编译 Finder Sync 插件 (arm64 与 x86_64)
 echo "🛠️ [Build] 编译 Finder Sync 扩展插件 (arm64)..."
-swiftc $COMMON_FLAGS -target arm64-apple-macosx14.0 $EXT_SOURCES -o "$BUILD_DIR/RightClickAssistantExtension_arm64"
+swiftc $COMMON_FLAGS -target arm64-apple-macosx13.0 $EXT_SOURCES -o "$BUILD_DIR/RightClickAssistantExtension_arm64"
 
 echo "🛠️ [Build] 编译 Finder Sync 扩展插件 (x86_64)..."
-swiftc $COMMON_FLAGS -target x86_64-apple-macosx14.0 $EXT_SOURCES -o "$BUILD_DIR/RightClickAssistantExtension_x86_64"
+swiftc $COMMON_FLAGS -target x86_64-apple-macosx13.0 $EXT_SOURCES -o "$BUILD_DIR/RightClickAssistantExtension_x86_64"
 
 echo "🔗 [Build] 使用 lipo 创建扩展插件的 Universal 胖二进制文件..."
 lipo -create -output "$EXT_BUNDLE/Contents/MacOS/RightClickAssistantExtension" "$BUILD_DIR/RightClickAssistantExtension_arm64" "$BUILD_DIR/RightClickAssistantExtension_x86_64"
@@ -194,10 +203,10 @@ lipo -create -output "$EXT_BUNDLE/Contents/MacOS/RightClickAssistantExtension" "
 
 # 8. 编译 ActionVerifier 工具 (arm64 与 x86_64)
 echo "🛠️ [Build] 编译 ActionVerifier 校验程序 (arm64)..."
-swiftc -Onone -parse-as-library -sdk $SDK_PATH -vfsoverlay "$BUILD_DIR/overlay.yaml" -target arm64-apple-macosx14.0 Sources/ActionVerifier/ActionVerifier.swift -o "$BUILD_DIR/ActionVerifier_arm64"
+swiftc -Onone -parse-as-library -sdk $SDK_PATH -vfsoverlay "$BUILD_DIR/overlay.yaml" -target arm64-apple-macosx13.0 Sources/ActionVerifier/ActionVerifier.swift -o "$BUILD_DIR/ActionVerifier_arm64"
 
 echo "🛠️ [Build] 编译 ActionVerifier 校验程序 (x86_64)..."
-swiftc -Onone -parse-as-library -sdk $SDK_PATH -vfsoverlay "$BUILD_DIR/overlay.yaml" -target x86_64-apple-macosx14.0 Sources/ActionVerifier/ActionVerifier.swift -o "$BUILD_DIR/ActionVerifier_x86_64"
+swiftc -Onone -parse-as-library -sdk $SDK_PATH -vfsoverlay "$BUILD_DIR/overlay.yaml" -target x86_64-apple-macosx13.0 Sources/ActionVerifier/ActionVerifier.swift -o "$BUILD_DIR/ActionVerifier_x86_64"
 
 echo "🔗 [Build] 使用 lipo 创建 ActionVerifier 的 Universal 胖二进制文件..."
 lipo -create -output "ActionVerifier_bin" "$BUILD_DIR/ActionVerifier_arm64" "$BUILD_DIR/ActionVerifier_x86_64"

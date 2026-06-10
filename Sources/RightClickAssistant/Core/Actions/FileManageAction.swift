@@ -107,6 +107,11 @@ public final class FileManageAction: MenuAction {
         case .cut:
             FileCutClipboard.shared.cutURLs = targetURLs
             print("[FileManage] 剪切了 \(targetURLs.count) 个文件。")
+            SharedHUDManager.show(
+                title: "剪切成功",
+                content: "已将 \(targetURLs.count) 个项目加入剪切板，请在目标文件夹右键粘贴",
+                isSuccess: true
+            )
             return true
             
         case .paste:
@@ -142,6 +147,19 @@ public final class FileManageAction: MenuAction {
             
             print("[FileManage] 成功粘贴/移动了 \(successCount) 个文件。")
             FileCutClipboard.shared.clear() // 移动完成，清空剪切板
+            if successCount > 0 {
+                SharedHUDManager.show(
+                    title: "粘贴成功",
+                    content: "已成功移动并粘贴了 \(successCount) 个项目",
+                    isSuccess: true
+                )
+            } else {
+                SharedHUDManager.show(
+                    title: "粘贴失败",
+                    content: "请检查该目录是否有可写的系统或安全权限",
+                    isSuccess: false
+                )
+            }
             return successCount > 0
             
         case .permanentDelete:
@@ -170,6 +188,19 @@ public final class FileManageAction: MenuAction {
                         print("[FileManage] 彻底删除失败: \(fileURL.path) -> \(error.localizedDescription)")
                     }
                 }
+                if successCount > 0 {
+                    SharedHUDManager.show(
+                        title: "删除成功",
+                        content: "已彻底从磁盘抹除 \(successCount) 个项目",
+                        isSuccess: true
+                    )
+                } else {
+                    SharedHUDManager.show(
+                        title: "删除失败",
+                        content: "请检查系统权限或文件是否被锁定",
+                        isSuccess: false
+                    )
+                }
                 return successCount > 0
             }
             return false
@@ -179,6 +210,11 @@ public final class FileManageAction: MenuAction {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(paths, forType: .string)
             print("[FileManage] 已成功拷贝 \(targetURLs.count) 个路径到系统剪贴板。")
+            SharedHUDManager.show(
+                title: "路径已拷贝",
+                content: "已成功将物理路径写入剪切板",
+                isSuccess: true
+            )
             return true
             
         case .copyName:
@@ -186,6 +222,11 @@ public final class FileManageAction: MenuAction {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(names, forType: .string)
             print("[FileManage] 已成功拷贝 \(targetURLs.count) 个文件名到系统剪贴板。")
+            SharedHUDManager.show(
+                title: "名称已拷贝",
+                content: "已成功将文件名写入剪切板",
+                isSuccess: true
+            )
             return true
             
         case .moveTo, .copyTo:
@@ -235,6 +276,19 @@ public final class FileManageAction: MenuAction {
                 } catch {
                     print("[FileManage] \(manageType == .copyTo ? "复制" : "移动")失败: \(error.localizedDescription)")
                 }
+            }
+            if successCount > 0 {
+                SharedHUDManager.show(
+                    title: manageType == .copyTo ? "复制成功" : "移动成功",
+                    content: "已成功\(manageType == .copyTo ? "复制" : "移动") \(successCount) 个项目到目标目录",
+                    isSuccess: true
+                )
+            } else {
+                SharedHUDManager.show(
+                    title: manageType == .copyTo ? "复制失败" : "移动失败",
+                    content: "项目转移过程中权限不足或被系统拦截",
+                    isSuccess: false
+                )
             }
             return successCount > 0
         }

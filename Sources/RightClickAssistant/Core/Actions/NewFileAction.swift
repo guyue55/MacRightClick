@@ -124,6 +124,12 @@ public final class NewFileAction: MenuAction {
             try fileData.write(to: finalURL, options: .atomic)
             print("[NewFileAction] 文件创建成功: \(finalURL.path)")
             
+            SharedHUDManager.show(
+                title: "新建成功",
+                content: "已生成并高亮: \(finalURL.lastPathComponent)",
+                isSuccess: true
+            )
+            
             // 可选：在 Finder 中高亮显示或者直接打开该文件
             DispatchQueue.main.async {
                 NSWorkspace.shared.selectFile(finalURL.path, inFileViewerRootedAtPath: destinationDir.path)
@@ -131,6 +137,11 @@ public final class NewFileAction: MenuAction {
             return true
         } catch {
             print("[NewFileAction] 创建文件失败: \(error.localizedDescription)")
+            SharedHUDManager.show(
+                title: "新建失败",
+                content: "请检查该目录写入权限",
+                isSuccess: false
+            )
             return false
         }
     }

@@ -41,6 +41,10 @@ public final class TerminalOpenAction: MenuAction {
     
     public let appType: TerminalEditorType
     
+    public var associatedBundleIdentifier: String? {
+        return appType.bundleIdentifier
+    }
+    
     public init(type: TerminalEditorType) {
         self.appType = type
         self.actionId = "guyue.action.terminal.\(type.rawValue)"
@@ -87,8 +91,18 @@ public final class TerminalOpenAction: MenuAction {
         NSWorkspace.shared.open([pathURL], withApplicationAt: appURL, configuration: configuration) { _, error in
             if let error = error {
                 print("[TerminalAction] 拉起 \(self.appType.displayName) 失败: \(error.localizedDescription)")
+                SharedHUDManager.show(
+                    title: "拉起失败",
+                    content: "无法启动 \(self.appType.displayName)",
+                    isSuccess: false
+                )
             } else {
                 success = true
+                SharedHUDManager.show(
+                    title: "拉起成功",
+                    content: "已在 \(self.appType.displayName) 中打开目录",
+                    isSuccess: true
+                )
             }
             group.leave()
         }

@@ -50,4 +50,8 @@ public extension MenuAction {
         // 默认情况下，只要选中了对象，或者在空白处（此时 urls 为当前路径）就可用
         return true
     }
+    
+    var associatedBundleIdentifier: String? {
+        return nil
+    }
 }
