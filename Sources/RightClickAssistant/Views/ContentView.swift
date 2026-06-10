@@ -124,6 +124,20 @@ struct GeneralSettingsView: View {
                     Text("启用此项可在开机后，后台静默为您维护右键加速器，完全无感、超低消耗。")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    Toggle("启用操作成功悬浮通知", isOn: Binding(
+                        get: { SharedStorageManager.shared.getBool(forKey: "enable_success_hud", defaultValue: true) },
+                        set: { SharedStorageManager.shared.setBool($0, forKey: "enable_success_hud") }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.body)
+                    
+                    Text("启用此项可在执行完右键动作后，在屏幕顶部中央滑出高保真灵动岛药丸通知。关闭后正常操作将处于静默状态，但当执行失败、权限不足或系统被拦截时，仍然 100% 弹出故障通知。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)

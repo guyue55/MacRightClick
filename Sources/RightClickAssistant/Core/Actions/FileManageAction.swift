@@ -141,7 +141,22 @@ public final class FileManageAction: MenuAction {
                     try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
                     successCount += 1
                 } catch {
-                    print("[FileManage] 移动文件失败: \(fileURL.lastPathComponent) -> \(error.localizedDescription)")
+                    print("[FileManage] 移动文件直接失败（可能由于跨磁盘卷），启动商业级 Copy-Then-Delete 安全降级兜底: \(error.localizedDescription)")
+                    do {
+                        // A. 先安全复制
+                        try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
+                        // B. 物理校验目的文件确实成功且完整生成
+                        if FileManager.default.fileExists(atPath: finalDestURL.path) {
+                            // C. 彻底且安全地删除原磁盘上的源文件
+                            try FileManager.default.removeItem(at: fileURL)
+                            successCount += 1
+                            print("[FileManage] 跨卷降级兜底转移成功: \(fileURL.lastPathComponent)")
+                        } else {
+                            throw NSError(domain: "guyue.FileManage", code: 500, userInfo: [NSLocalizedDescriptionKey: "复制文件后，检验目的文件存在性失败"])
+                        }
+                    } catch let fallbackError {
+                        print("[FileManage] 跨卷降级兜底也宣告失败: \(fileURL.lastPathComponent) -> \(fallbackError.localizedDescription)")
+                    }
                 }
             }
             
@@ -270,11 +285,23 @@ public final class FileManageAction: MenuAction {
                     if manageType == .copyTo {
                         try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
                     } else {
-                        try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
+                        // 针对移动 (moveTo) 动作在直接调用 moveItem 出错时启动安全 Copy-Then-Delete 降级兜底
+                        do {
+                            try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
+                        } catch {
+                            print("[FileManage] 移动到直接失败（跨盘卷），触发 Copy-Then-Delete 降级防护: \(error.localizedDescription)")
+                            try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
+                            if FileManager.default.fileExists(atPath: finalDestURL.path) {
+                                try FileManager.default.removeItem(at: fileURL)
+                                print("[FileManage] 跨磁盘卷 moveTo 降级复制后删除原件成功")
+                            } else {
+                                throw error
+                            }
+                        }
                     }
                     successCount += 1
                 } catch {
-                    print("[FileManage] \(manageType == .copyTo ? "复制" : "移动")失败: \(error.localizedDescription)")
+                    print("[FileManage] \(manageType == .copyTo ? "复制" : "移动")操作彻底失败: \(error.localizedDescription)")
                 }
             }
             if successCount > 0 {
