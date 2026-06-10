@@ -58,6 +58,32 @@ public final class FileManageAction: MenuAction {
     
     public let manageType: FileManageType
     private let customTargetPath: URL? // 针对特定复制到/移动到文件夹的预设路径
+
+    public var isHighRisk: Bool {
+        switch manageType {
+        case .permanentDelete, .moveTo, .copyTo:
+            return true
+        case .cut, .paste, .copyPath, .copyName:
+            return false
+        }
+    }
+
+    public var isEnabledByDefault: Bool {
+        return !isHighRisk
+    }
+
+    public var riskDescription: String? {
+        switch manageType {
+        case .permanentDelete:
+            return "绕过废纸篓直接删除文件，无法撤销。"
+        case .moveTo:
+            return "会将选中项目移动到其他目录，跨磁盘卷时会执行复制后删除原件。"
+        case .copyTo:
+            return "会将选中项目复制到其他目录，可能产生大量副本。"
+        case .cut, .paste, .copyPath, .copyName:
+            return nil
+        }
+    }
     
     public init(type: FileManageType, customTargetPath: URL? = nil, customTitle: String? = nil) {
         self.manageType = type
@@ -96,6 +122,21 @@ public final class FileManageAction: MenuAction {
             return DispatchQueue.main.sync {
                 return block()
             }
+        }
+    }
+
+    private func confirmHighRiskOperation(title: String, message: String, confirmTitle: String) -> Bool {
+        return runOnMainThread {
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = message
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: confirmTitle)
+            alert.addButton(withTitle: "取消")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.window.level = .modalPanel
+            alert.window.orderFrontRegardless()
+            return alert.runModal() == .alertFirstButtonReturn
         }
     }
     
@@ -168,7 +209,7 @@ public final class FileManageAction: MenuAction {
                     try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
                     successCount += 1
                 } catch {
-                    print("[FileManage] 移动文件直接失败（可能由于跨磁盘卷），启动商业级 Copy-Then-Delete 安全降级兜底: \(error.localizedDescription)")
+                    print("[FileManage] 移动文件直接失败（可能由于跨磁盘卷），启动 Copy-Then-Delete 降级处理: \(error.localizedDescription)")
                     do {
                         // A. 先安全复制
                         try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
@@ -211,24 +252,13 @@ public final class FileManageAction: MenuAction {
             return successCount > 0
             
         case .permanentDelete:
-            // 彻底删除需要二次确认，如果静默删除可以用此接口，但在真实的右键菜单中最好弹出确认框或通过系统静默 rm -rf
-            // 这里我们展示核心删除逻辑：
-            let response = runOnMainThread { () -> NSApplication.ModalResponse in
-                let alert = NSAlert()
-                alert.messageText = "确定要彻底删除选中的项目吗？"
-                alert.informativeText = "此操作将绕过废纸篓直接从硬盘删除文件，且无法撤销！"
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "确定彻底删除")
-                alert.addButton(withTitle: "取消")
-                
-                // 让对话框置顶弹出
-                NSApp.activate(ignoringOtherApps: true)
-                alert.window.level = .modalPanel
-                alert.window.orderFrontRegardless()
-                return alert.runModal()
-            }
-            
-            if response == .alertFirstButtonReturn {
+            let confirmed = confirmHighRiskOperation(
+                title: "确认永久删除？",
+                message: "将绕过废纸篓直接删除 \(targetURLs.count) 个项目，且无法撤销。",
+                confirmTitle: "确认并永久删除"
+            )
+
+            if confirmed {
                 var successCount = 0
                 for fileURL in targetURLs {
                     do {
@@ -305,6 +335,15 @@ public final class FileManageAction: MenuAction {
                     return false
                 }
                 destinationDir = url
+            }
+
+            let operationName = manageType == .copyTo ? "复制" : "移动"
+            guard confirmHighRiskOperation(
+                title: "确认\(operationName)到其他目录？",
+                message: "将\(operationName) \(targetURLs.count) 个项目到：\n\(destinationDir.path)",
+                confirmTitle: "确认\(operationName)"
+            ) else {
+                return false
             }
             
             var successCount = 0

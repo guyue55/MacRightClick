@@ -75,7 +75,7 @@ public final class ActionDispatcher {
         print("[Dispatcher] 执行动作: \(action.localizedTitle) (ID: \(actionId)) 对目标: \(finalURLs.map { $0.lastPathComponent })")
         
         // 2. 物理防崩安全屏障：通过上方 targetURLs 精密健康度过滤完成大部分 IO 防护后，
-        // 直接执行核心动作。这样既做到了防御式编程，又保证了 Swift Statically Safe 0 warnings 商业级完美编译。
+        // 直接执行核心动作，并保持调度入口简单可预测。
         return action.execute(targetURLs: finalURLs)
     }
 }

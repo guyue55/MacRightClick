@@ -60,7 +60,7 @@ public struct ContentView: View {
                     Text(selectedTab.title)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                     Spacer()
-                    Text("完全免费且开源")
+                    Text("免费开源")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 10)
@@ -103,9 +103,7 @@ public struct ContentView: View {
 // MARK: - A. 通用设置面板
 struct GeneralSettingsView: View {
     @State private var isLaunchEnabled = false
-    
-    @AppStorage("shouldEnableiCloudMenu", store: UserDefaults(suiteName: "group.guyue.RightClickAssistant"))
-    private var shouldEnableiCloudMenu = false
+    @State private var shouldEnableiCloudMenu = false
     
     @State private var hasFullDiskAccess = false
     @State private var isPulsing = false
@@ -118,10 +116,7 @@ struct GeneralSettingsView: View {
                 self.isLaunchEnabled = newValue
                 let success = LaunchServiceManager.shared.setEnabled(newValue)
                 if success {
-                    // 写入 AppGroup 共享库备份，维护配置双写兼容性
-                    if let defaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant") {
-                        defaults.set(newValue, forKey: "shouldStartOnLaunch")
-                    }
+                    SharedStorageManager.shared.setBool(newValue, forKey: "shouldStartOnLaunch")
                     SharedHUDManager.show(
                         title: newValue ? "开机自启已启用" : "开机自启已禁用",
                         content: newValue ? "右键助手将在您登录系统时自动为您保驾护航" : "已从系统开机自启项中安全移除",
@@ -149,7 +144,7 @@ struct GeneralSettingsView: View {
                         .toggleStyle(.checkbox)
                         .font(.body)
                     
-                    Text("启用此项可在开机后，后台静默为您维护右键加速器，完全无感、超低消耗。")
+                    Text("启用后，右键助手会在登录系统时自动启动并在后台处理右键动作。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
@@ -163,7 +158,21 @@ struct GeneralSettingsView: View {
                     .toggleStyle(.checkbox)
                     .font(.body)
                     
-                    Text("启用此项可在执行完右键动作后，在屏幕顶部中央滑出高保真灵动岛药丸通知。关闭后正常操作将处于静默状态，但当执行失败、权限不足或系统被拦截时，仍然 100% 弹出故障通知。")
+                    Text("启用后，成功动作会显示简短悬浮提示。关闭后，成功动作保持静默；失败、权限不足或系统拦截仍会提示。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    Toggle("启用详细调试日志", isOn: Binding(
+                        get: { SharedStorageManager.shared.isDebugLoggingEnabled },
+                        set: { SharedStorageManager.shared.setBool($0, forKey: SharedStorageManager.Keys.enableDebugLogging) }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.body)
+
+                    Text("默认关闭。开启后会记录菜单渲染、路径监听和动作过滤细节，便于排查 Finder 扩展问题。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -186,7 +195,7 @@ struct GeneralSettingsView: View {
                                 Text("完全磁盘访问权限 (FDA) 已授予")
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .foregroundColor(.primary)
-                                Text("右键助手已经拥有完整的系统目录访问权限，所有特色工具运行在最佳状态。")
+                                Text("右键助手可以访问更多受保护目录，部分文件操作会更稳定。")
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }
@@ -260,11 +269,23 @@ struct GeneralSettingsView: View {
             
             GroupBox(label: Label("云同步盘特殊兼容", systemImage: "icloud")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("在 iCloud 与 OneDrive 文件夹中强制显示菜单", isOn: $shouldEnableiCloudMenu)
+                    Toggle("在 iCloud 与 OneDrive 文件夹中强制显示菜单", isOn: Binding(
+                        get: { shouldEnableiCloudMenu },
+                        set: { newValue in
+                            shouldEnableiCloudMenu = newValue
+                            SharedStorageManager.shared.setBool(newValue, forKey: "shouldEnableiCloudMenu")
+                            DistributedNotificationCenter.default().postNotificationName(
+                                Notification.Name("guyue.RightClickAssistant.configChanged"),
+                                object: nil,
+                                userInfo: nil,
+                                deliverImmediately: true
+                            )
+                        }
+                    ))
                         .toggleStyle(.checkbox)
                         .font(.body)
                     
-                    Text("因为 macOS 的访达限制，在被其他同步客户端托管的目录中，普通右键扩展可能失效。开启此项后，您可以通过修饰键(如 Option) + 右键或三指轻拍，在云盘目录下完美唤出右键菜单。")
+                    Text("某些云同步目录由系统 File Provider 托管，Finder 扩展可能无法稳定出现。开启后会额外监听常见云盘位置。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -276,7 +297,7 @@ struct GeneralSettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("开源右键助手 (RightClickAssistant) v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
                         .font(.headline)
-                    Text("完全免费，采用 GPL-3.0 协议开源。致力于打造 macOS 最轻量、最强大的纯净生产力入口，100% 杜绝收费、广告与隐私收集。")
+                    Text("免费开源，采用 MIT 协议。项目不包含广告，也不会主动收集使用数据。")
                         .font(.body)
                         .foregroundColor(.secondary)
                     
@@ -295,14 +316,17 @@ struct GeneralSettingsView: View {
         .onAppear {
             checkFullDiskAccess()
             isLaunchEnabled = LaunchServiceManager.shared.isEnabled
+            shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
         }
         .onReceive(fdaTimer) { _ in
             checkFullDiskAccess()
             isLaunchEnabled = LaunchServiceManager.shared.isEnabled
+            shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
             checkFullDiskAccess()
             isLaunchEnabled = LaunchServiceManager.shared.isEnabled
+            shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
         }
     }
     
@@ -325,6 +349,14 @@ struct ActionsManagerView: View {
         let actions = ActionDispatcher.shared.actions(in: category)
         return actions.map { ActionItem(id: $0.actionId, action: $0) }
     }
+
+    private var standardItems: [ActionItem] {
+        items.filter { !$0.action.isHighRisk }
+    }
+
+    private var advancedItems: [ActionItem] {
+        items.filter { $0.action.isHighRisk }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -332,23 +364,55 @@ struct ActionsManagerView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
             
-            GroupBox(label: Label("\(category.localizedName)列表", systemImage: "list.bullet.indent")) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if items.isEmpty {
-                        Text("暂无可用动作")
-                            .foregroundColor(.secondary)
-                            .padding()
-                    } else {
-                        ForEach(items) { item in
-                            ActionRowView(action: item.action)
-                            if item.id != items.last?.id {
-                                Divider()
-                            }
+            ActionListGroupView(
+                title: "\(category.localizedName)列表",
+                iconName: "list.bullet.indent",
+                items: standardItems
+            )
+
+            if !advancedItems.isEmpty {
+                ActionListGroupView(
+                    title: "高级功能（默认关闭）",
+                    iconName: "exclamationmark.triangle",
+                    items: advancedItems,
+                    footer: "这些动作可能永久删除文件、重启 Finder 或跨目录复制/移动项目。请确认自己理解影响后再启用。"
+                )
+            }
+        }
+    }
+}
+
+struct ActionListGroupView: View {
+    let title: String
+    let iconName: String
+    let items: [ActionItem]
+    var footer: String? = nil
+
+    var body: some View {
+        GroupBox(label: Label(title, systemImage: iconName)) {
+            VStack(alignment: .leading, spacing: 4) {
+                if items.isEmpty {
+                    Text("暂无可用动作")
+                        .foregroundColor(.secondary)
+                        .padding()
+                } else {
+                    ForEach(items) { item in
+                        ActionRowView(action: item.action)
+                        if item.id != items.last?.id {
+                            Divider()
                         }
                     }
                 }
-                .padding(.vertical, 6)
+
+                if let footer = footer {
+                    Divider()
+                        .padding(.vertical, 4)
+                    Text(footer)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
+            .padding(.vertical, 6)
         }
     }
 }
@@ -387,10 +451,24 @@ struct ActionRowView: View {
                                 .background(Capsule().fill(Color.secondary.opacity(0.12)))
                         }
                     }
+
+                    if action.isHighRisk {
+                        Text("高级")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(Color.orange.opacity(0.14)))
+                    }
                 }
                 Text("唯一标示: \(action.actionId)")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.secondary)
+                if let riskDescription = action.riskDescription {
+                    Text(riskDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             
             Spacer()
@@ -409,27 +487,21 @@ struct ActionRowView: View {
     }
     
     private func saveStateToSharedDefaults(_ enabled: Bool) {
-        if let defaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant") {
-            defaults.set(enabled, forKey: "enable_action_\(action.actionId)")
-            // 发送分布式通知让 FinderSync 插件知道配置已经发生变动，即时刷新菜单内容
-            DistributedNotificationCenter.default().postNotificationName(
-                Notification.Name("guyue.RightClickAssistant.configChanged"),
-                object: nil,
-                userInfo: nil,
-                deliverImmediately: true
-            )
-        }
+        SharedStorageManager.shared.setBool(enabled, forKey: "enable_action_\(action.actionId)")
+        // 发送分布式通知让 FinderSync 插件知道配置已经发生变动，即时刷新菜单内容
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("guyue.RightClickAssistant.configChanged"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
     }
     
     private func loadStateFromSharedDefaults() {
-        if let defaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant") {
-            // 默认情况下，全部右键功能都是开启的
-            if defaults.object(forKey: "enable_action_\(action.actionId)") == nil {
-                isEnabled = true
-            } else {
-                isEnabled = defaults.bool(forKey: "enable_action_\(action.actionId)")
-            }
-        }
+        isEnabled = SharedStorageManager.shared.getBool(
+            forKey: "enable_action_\(action.actionId)",
+            defaultValue: action.isEnabledByDefault
+        )
     }
 }
 
@@ -450,7 +522,7 @@ struct ExtensionStatusBanner: View {
     var body: some View {
         Group {
             if isEnabled {
-                // 🟢 翡翠绿高阶已激活 Banner
+                // 已激活 Banner
                 HStack(spacing: 14) {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 18, weight: .bold))
@@ -463,7 +535,7 @@ struct ExtensionStatusBanner: View {
                         Text("右键助手扩展服务已启用")
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundColor(.primary)
-                        Text("系统右键引擎安全运行中。您可以在下方自由管理各项右键动作。")
+                            Text("Finder 扩展正在运行。您可以在下方管理右键动作。")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
@@ -507,7 +579,7 @@ struct ExtensionStatusBanner: View {
                 .padding(.horizontal)
                 .padding(.top, 16)
             } else {
-                // 🟠 HSL 优雅橘黄未激活 Banner + 智能步骤化激活路线卡片
+                // 未激活 Banner + 步骤引导
                 VStack(alignment: .leading, spacing: 14) {
                     // 1. 顶部的紧凑式提醒 Row
                     HStack(spacing: 14) {
@@ -533,7 +605,7 @@ struct ExtensionStatusBanner: View {
                             FIFinderSyncController.showExtensionManagementInterface()
                         }) {
                             HStack(spacing: 5) {
-                                Text("一键启用扩展")
+                                Text("打开扩展设置")
                                 Image(systemName: "arrow.up.forward.app.fill")
                             }
                             .font(.system(size: 12, weight: .semibold))
@@ -571,7 +643,7 @@ struct ExtensionStatusBanner: View {
         .onReceive(timer) { _ in
             checkStatus()
         }
-        // 监听系统 willBecomeActive 通知：用户在设置勾选后，切回 App 时瞬间秒刷新，无感切换！
+        // 监听系统 willBecomeActive 通知：用户在系统设置中勾选后，切回 App 时刷新状态。
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
             checkStatus()
         }
@@ -604,7 +676,7 @@ struct OnboardingStepsView: View {
                 Image(systemName: "info.circle.fill")
                     .font(.system(size: 11))
                     .foregroundColor(.orange)
-                Text("智能指南：已自动识别当前系统为 macOS \(systemVersion.major).\(systemVersion.minor)，请按以下步骤操作：")
+                Text("已识别当前系统为 macOS \(systemVersion.major).\(systemVersion.minor)，请按以下步骤操作：")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundColor(.orange.opacity(0.9))
                 Spacer()
@@ -618,7 +690,7 @@ struct OnboardingStepsView: View {
                         step: 1,
                         iconName: "macwindow.and.cursorarrow",
                         title: "打开扩展管理窗口",
-                        desc: "点击上方橙色的「一键启用扩展」按钮，系统将自动弹出「系统设置」的扩展面板。"
+                        desc: "点击上方的「打开扩展设置」按钮，系统将打开扩展管理面板。"
                     )
                     
                     StepRow(
@@ -633,7 +705,7 @@ struct OnboardingStepsView: View {
                         step: 3,
                         iconName: "checkmark.square.fill",
                         title: "勾选「右键助手扩展」并完成",
-                        desc: "在弹出的浮层中，勾选「右键助手扩展」，然后点击「完成」即可瞬间激活！"
+                        desc: "在弹出的浮层中，勾选「右键助手扩展」，然后点击「完成」。"
                     )
                 }
             } else {
@@ -643,7 +715,7 @@ struct OnboardingStepsView: View {
                         step: 1,
                         iconName: "macwindow.and.cursorarrow",
                         title: "打开扩展管理面板",
-                        desc: "点击上方橙色的「一键启用扩展」按钮，系统将自动弹出「系统偏好设置 -> 扩展」窗口。"
+                        desc: "点击上方的「打开扩展设置」按钮，系统将打开「系统偏好设置 -> 扩展」。"
                     )
                     
                     StepRow(
@@ -719,5 +791,3 @@ struct StepRow: View {
         )
     }
 }
-
-

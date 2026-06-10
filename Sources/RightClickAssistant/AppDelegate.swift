@@ -1,7 +1,7 @@
 import Cocoa
 import SwiftUI
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     
     fileprivate static var instance: AppDelegate?
 
@@ -23,9 +23,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             suspensionBehavior: .deliverImmediately
         )
         
-        // 3. 挂载内核级 DispatchSource 物理共享目录监听服务（双保险机制二：BSD kqueue 穿透监听，完美防挂起、丢包与沙盒拦截）
-        let sharedContainerURL = SharedStorageManager.shared.sharedContainerURL
-        let monitor = SharedFolderMonitor(folderURL: sharedContainerURL)
+        // 3. 挂载 DispatchSource 动作队列监听服务。
+        let pendingActionsURL = SharedStorageManager.shared.pendingActionsDirectoryURL
+        let monitor = SharedFolderMonitor(folderURL: pendingActionsURL)
         monitor.onFolderChanged = { [weak self] in
             guard let self = self else { return }
             self.processPendingAction()
@@ -60,7 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         print("[App] 右键助手宿主程序启动并初始化完成 (双保险中介链路就绪)")
         
-        // 增加系统级保活机制，100% 阻止 App Nap 冻结我们的后台监控与通知消费
+        // 增加系统级保活机制，降低后台监控与通知消费被 App Nap 影响的概率。
         self.activityToken = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiated, .idleSystemSleepDisabled, .suddenTerminationDisabled],
             reason: "Keep background folder monitor active for RightClickAssistant"
@@ -76,45 +76,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         processPendingAction()
     }
     
-    /// 原子消费处理 pending_action.json 中介动作数据包（双保险统一消费入口，多重互斥锁保护）
+    /// 原子消费处理 PendingActions 队列动作数据包（双保险统一消费入口，多重互斥锁保护）
     private func processPendingAction() {
-        let pendingActionURL = SharedStorageManager.shared.pendingActionURL
-        
         // 使用同步保护，防止分布式通知与 BSD 目录监听在极短毫秒内并发调用引起的文件系统竞争
         objc_sync_enter(self)
         defer { objc_sync_exit(self) }
         
-        guard FileManager.default.fileExists(atPath: pendingActionURL.path) else {
-            // 已被消费并安全删除，静默退出
-            return
+        let events = SharedStorageManager.shared.consumePendingActionEvents()
+        guard !events.isEmpty else { return }
+
+        SharedStorageManager.shared.writeLog("[App] [processPendingAction] 开始消费动作队列，事件数: \(events.count)")
+
+        for event in events {
+            SharedStorageManager.shared.writeLog("[App] [processPendingAction] 成功解析动作: \(event.actionId), 目标路径总数: \(event.paths.count), eventId: \(event.id)")
+
+            let urls = event.paths.map { URL(fileURLWithPath: $0) }
+
+            // 【线程性能优化】：移除外层强制主线程分发，直接在 SharedFolderMonitor 的高特权后台并发队列中同步执行 I/O 和计算。
+            // 这彻底释放了主线程，消除 UI 线程卡顿引起的动作延迟。涉及到 UI 的悬浮 HUD 和二维码窗口在 UtilityAction 内部已安全包装了 DispatchQueue.main.async。
+            SharedStorageManager.shared.writeLog("[App] [processPendingAction] 即将由 ActionDispatcher 分发动作 \(event.actionId)...")
+            let success = ActionDispatcher.shared.dispatch(actionId: event.actionId, targetURLs: urls)
+            SharedStorageManager.shared.writeLog("[App] [processPendingAction] 动作 \(event.actionId) 代理执行结果: \(success ? "成功" : "失败")")
         }
-        
-        SharedStorageManager.shared.writeLog("[App] [processPendingAction] 开始消费中介物理动作数据包...")
-        
-        guard let jsonData = try? Data(contentsOf: pendingActionURL) else {
-            SharedStorageManager.shared.writeLog("[App] [processPendingAction] 错误: 无法读取共享 JSON 交换文件数据")
-            return
-        }
-        
-        guard let jsonObject = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any],
-              let actionId = jsonObject["actionId"] as? String,
-              let paths = jsonObject["paths"] as? [String] else {
-            SharedStorageManager.shared.writeLog("[App] [processPendingAction] 错误: 解析共享 JSON 交换文件结构失败")
-            return
-        }
-        
-        // 立即物理删除该 JSON 交换文件，防止二次消费（高内聚、高安全性）
-        try? FileManager.default.removeItem(at: pendingActionURL)
-        
-        SharedStorageManager.shared.writeLog("[App] [processPendingAction] 成功解析动作: \(actionId), 目标路径总数: \(paths.count)")
-        
-        let urls = paths.map { URL(fileURLWithPath: $0) }
-        
-        // 【线程性能优化】：移除外层强制主线程分发，直接在 SharedFolderMonitor 的高特权后台并发队列中同步执行 I/O 和计算。
-        // 这彻底释放了主线程，消除 UI 线程卡顿引起的动作延迟。涉及到 UI 的悬浮 HUD 和二维码窗口在 UtilityAction 内部已安全包装了 DispatchQueue.main.async。
-        SharedStorageManager.shared.writeLog("[App] [processPendingAction] 即将由 ActionDispatcher 分发动作 \(actionId)...")
-        let success = ActionDispatcher.shared.dispatch(actionId: actionId, targetURLs: urls)
-        SharedStorageManager.shared.writeLog("[App] [processPendingAction] 动作 \(actionId) 代理执行结果: \(success ? "成功" : "失败")")
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {
@@ -175,27 +158,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
             print("[App] [SelfTest] 正在模拟 Extension 写入中介共享并触发右键点击信号...")
             
-            let pendingActionURL = SharedStorageManager.shared.pendingActionURL
-            
             // 仿真自检目标：在当前用户的 Downloads 文件夹下模拟新建一个文本文档
             let homeDir = NSHomeDirectory()
             let downloadsPath = (homeDir as NSString).appendingPathComponent("Downloads")
             
             print("[App] [SelfTest] 目标工作区: \(downloadsPath)")
             
-            let mockData: [String: Any] = [
-                "actionId": "guyue.action.newfile.txt",
-                "paths": [downloadsPath]
-            ]
-            
-            if let jsonData = try? JSONSerialization.data(withJSONObject: mockData, options: .prettyPrinted) {
-                do {
-                    try jsonData.write(to: pendingActionURL, options: .atomic)
-                    print("[App] [SelfTest] 1. 成功向中介共享写入 pending_action.json 动作参数: \(pendingActionURL.path)")
-                } catch {
-                    print("[App] [SelfTest] 错误: 写入 JSON 失败: \(error.localizedDescription)")
-                    return
-                }
+            do {
+                let eventURL = try SharedStorageManager.shared.enqueueAction(
+                    actionId: "guyue.action.newfile.txt",
+                    paths: [downloadsPath]
+                )
+                print("[App] [SelfTest] 1. 成功向中介共享写入队列动作参数: \(eventURL.path)")
+            } catch {
+                print("[App] [SelfTest] 错误: 写入队列动作失败: \(error.localizedDescription)")
+                return
             }
             
             // 3. 通过 DistributedNotificationCenter 发送不带 userInfo 的纯分布式通知信号
@@ -217,19 +194,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // 采用 SF Symbols 原生 "contextualmenu" 渲染
         if let image = NSImage(systemSymbolName: "contextualmenu", accessibilityDescription: "开源右键助手") {
-            image.isTemplate = true // 完美支持系统深/浅色顶栏、半透明磨砂及多屏色调适配
+            image.isTemplate = true // 跟随系统深/浅色菜单栏渲染
             button.image = image
         }
         
         let menu = NSMenu(title: "开源右键助手")
-        
+        menu.delegate = self
+        rebuildStatusMenu(menu)
+        statusItem?.menu = menu
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        rebuildStatusMenu(menu)
+    }
+
+    private func rebuildStatusMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+
         let settingsItem = NSMenuItem(title: "显示右键助手设置", action: #selector(showSettingsWindow), keyEquivalent: "s")
         settingsItem.target = self
         menu.addItem(settingsItem)
-        
-        let toggleHiddenItem = NSMenuItem(title: "切换 Finder 隐藏文件", action: #selector(toggleHiddenFilesFromMenu), keyEquivalent: "h")
-        toggleHiddenItem.target = self
-        menu.addItem(toggleHiddenItem)
+
+        let toggleHiddenAction = UtilityAction(type: .toggleHiddenFiles)
+        if SharedStorageManager.shared.isActionEnabled(toggleHiddenAction) {
+            let toggleHiddenItem = NSMenuItem(title: "切换 Finder 隐藏文件", action: #selector(toggleHiddenFilesFromMenu), keyEquivalent: "h")
+            toggleHiddenItem.target = self
+            menu.addItem(toggleHiddenItem)
+        }
         
         menu.addItem(NSMenuItem.separator())
         
@@ -240,8 +231,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let quitItem = NSMenuItem(title: "退出", action: #selector(terminateApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-        
-        statusItem?.menu = menu
     }
     
     @objc private func showSettingsWindow() {
@@ -252,7 +241,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     @objc private func toggleHiddenFilesFromMenu() {
-        SharedStorageManager.shared.writeLog("[App] [Tray] 收到菜单栏点击一键切换 Finder 隐藏文件...")
+        SharedStorageManager.shared.writeLog("[App] [Tray] 收到菜单栏切换 Finder 隐藏文件请求...")
         let success = ActionDispatcher.shared.dispatch(actionId: "guyue.action.utility.toggleHiddenFiles", targetURLs: [])
         SharedStorageManager.shared.writeLog("[App] [Tray] 菜单栏切换隐藏文件执行结果: \(success ? "成功" : "失败")")
     }
@@ -268,7 +257,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         开源右键助手 (RightClickAssistant)
         版本: v\(version)
         
-        一款极致追求性能、视觉体验与商业级稳定性的 macOS 右键增强工具。
+        一款免费开源的 macOS 右键菜单增强工具。
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "确定")

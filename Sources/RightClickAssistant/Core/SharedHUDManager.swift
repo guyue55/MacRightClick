@@ -1,8 +1,8 @@
 import Foundation
 import AppKit
 
-/// 全局高保真磨砂玻璃 HUD 提示管理器 (SharedHUDManager)
-/// 专为 macOS 商业级桌面体验设计，提供带微动画、支持毛玻璃特效的屏幕顶部中央灵动岛紧凑型通知。
+/// 全局磨砂玻璃 HUD 提示管理器 (SharedHUDManager)
+/// 提供带微动画、支持毛玻璃特效的屏幕顶部中央紧凑型通知。
 /// 实现了高内聚低耦合、接口隔离与完全双写配置感知（注2、注4）。
 public final class SharedHUDManager {
     private static weak var activePanel: NSPanel?
@@ -14,9 +14,9 @@ public final class SharedHUDManager {
     ///   - iconName: 自定义系统 SFSymbol 图标名称（若为 nil 则根据 isSuccess 自动决定）
     ///   - isSuccess: 是否代表操作成功（用以调整图标颜色与微视觉渲染）
     public static func show(title: String, content: String, iconName: String? = nil, isSuccess: Bool = true) {
-        // 1. 成功通知的一键静默过滤。
-        // 当用户在设置中关闭了“启用操作成功悬浮通知”后，成功的日常 HUD 提示将被 100% 零延迟静默拦截，
-        // 从而最大程度提供无打扰效率，而错误/失败 HUD 则始终能够强制警示，提供最安全的故障防御可视性。
+        // 1. 成功通知静默过滤。
+        // 当用户在设置中关闭了“启用操作成功悬浮通知”后，成功的日常 HUD 提示保持静默；
+        // 错误/失败 HUD 仍会显示，便于发现权限或系统拦截问题。
         let isHUDEnabled = SharedStorageManager.shared.getBool(forKey: "enable_success_hud", defaultValue: true)
         if isSuccess && !isHUDEnabled {
             print("[SharedHUD] 成功提示静默过滤拦截: \(title) - \(content)")
@@ -30,14 +30,14 @@ public final class SharedHUDManager {
                 activePanel = nil
             }
             
-            // 3. 灵动岛 (Dynamic Island/AirPods) 紧凑型高保真胶囊几何尺寸 (260x48)
+            // 3. 紧凑型胶囊几何尺寸 (260x48)
             let width: CGFloat = 260
             let height: CGFloat = 48
             
             // 4. 定位屏幕正中央挂在菜单栏（Mac Top Menu Bar）正下方的优雅安全区
             let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
             let x = screenRect.origin.x + (screenRect.size.width - width) / 2
-            let y = screenRect.origin.y + screenRect.size.height - height - 30 // 完美契合顶栏
+            let y = screenRect.origin.y + screenRect.size.height - height - 30 // 位于菜单栏下方
             
             let panel = NSPanel(
                 contentRect: NSRect(x: x, y: y, width: width, height: height),

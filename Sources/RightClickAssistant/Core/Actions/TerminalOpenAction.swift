@@ -74,8 +74,8 @@ public final class TerminalOpenAction: MenuAction {
         // 确定需要打开的文件夹路径
         let pathURL = getDirectoryURL(for: targetURL)
         
-        // VS Code, Cursor, Sublime, Warp 以及系统终端(Terminal)和 iTerm2，完美且天然支持直接通过 NSWorkspace 传递文件夹 URL 唤醒打开
-        // LaunchServices 会合规豁免 TCC Automation 自动化控制确认，实现 100% 稳定无阻碍的极速秒开
+        // VS Code、Cursor、Sublime、Warp、Terminal 和 iTerm2 均通过 NSWorkspace 传递目录 URL 打开。
+        // 该方式避免额外的 AppleScript 自动化权限请求。
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appType.bundleIdentifier) else {
             print("[TerminalAction] 错误: 找不到应用: \(appType.displayName)")
             return false

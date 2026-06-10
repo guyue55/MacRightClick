@@ -1,7 +1,7 @@
 import Foundation
 
 /// 共享文件夹监控器，采用 BSD 内核的 kqueue (DispatchSourceFileSystemObject) 机制，
-/// 实现 100% 物理穿透、无延迟、极简低功耗的跨进程异步文件消费与调度触发。
+/// 监听共享动作队列目录，用于跨进程异步文件消费与调度触发。
 /// 彻底解决 macOS 新版本对分布式通知 (DistributedNotificationCenter) 的后台挂起和安全黑盒拦截问题。
 public final class SharedFolderMonitor {
     private let folderURL: URL

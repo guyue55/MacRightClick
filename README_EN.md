@@ -17,21 +17,21 @@
 
 ## 🌟 Overview
 
-**MacRightClick** is an elegant, ultra-fast, and modern open-source **Right-Click Context Menu Enhancement Assistant** designed specifically for macOS. It supports 28 daily high-frequency right-click actions (such as one-click creation of various file formats, opening current folders in Terminal/iTerm/VSCode/Cursor, physical file hash checksum extraction, toggle display of system hidden files, text-to-QR Code generation, etc.).
+**MacRightClick** is a free and open-source **Right-Click Context Menu Enhancement Assistant** for macOS. It supports 28 daily right-click actions, including creating common document formats, opening folders in terminals or editors, extracting file hashes, generating QR codes, and converting images.
 
-More importantly, it incorporates a cutting-edge **"Distributed Signal + Kernel-level BSD kqueue (DispatchSource)" Dual-Channel Sandbox-Penetrating Distribution Mechanism**. This ensures **100% absolute physical stability, 0 ms response latency, and 0 packet loss** even under strict sandbox isolation and local Ad-Hoc code signatures!
+The app uses a **Distributed Signal + BSD kqueue (DispatchSource)** queue-based dispatch mechanism that fits FinderSync extensions, website distribution, and local development builds.
 
 ---
 
 ## ✨ Features
 
-- 🚀 **Instant Action, 0 ms Latency**: Removed all main thread synchronization locks and blocking disk I/O operations. Right-click actions are processed asynchronously on highly-privileged concurrent background queues, eliminating timing race conditions.
-- 🔒 **Elegant Sandbox Penetration**: Backed by a smart intermediary shared folder and double-write backup channels. It seamlessly solves the App Group returning `nil` issue under local Ad-hoc signature development, and bypasses the sandboxed DistributedNotification `userInfo` stripping restriction by macOS.
+- 🚀 **Queued Action Dispatch**: Every click writes an independent UUID event file that the host app consumes in order, avoiding overwrite problems from a single pending file.
+- 🔒 **Clear Shared Channel**: The current website distribution route uses the extension sandbox intermediary directory so Ad-hoc and Developer ID builds share the same path behavior. Queue-based action files plus dual wake-up signals avoid sandboxed DistributedNotification `userInfo` stripping. A future Mac App Store route should switch to formal App Groups and security-scoped access.
 - 🎨 **Non-Blocking Glassmorphism HUD**: Abandoned traditional blocking synchronous modal dialogs. It features a custom non-modal floating notification panel (`NSPanel`) designed with native macOS vibrancy (acrylic blur), rounded corners, fade micro-animations, and a 2.5s automatic fade-out.
-- 🦁 **Modern SMAppService Login Item Launch**: Relies on the macOS 13+ modern `SMAppService` API to legitimately register login items. Users can manage it via "System Settings -> General -> Login Items" with a neat App physical icon. Transparent, reliable, and secure.
+- 🦁 **Modern SMAppService Login Item Launch**: Uses the macOS 13+ `SMAppService` API to register login items. Users can manage it in "System Settings -> General -> Login Items".
 - ✂️ **Finder Native Cut Badging**: Natively leverages the `FIFinderSyncController` badging feature to render a beautiful scissors badge on items marked as "Cut". Coupled with distributed notifications for sub-second Finder UI redrawing, it solves the user interaction pain point of "whether files are successfully cut".
-- 🔋 **Seamless Status Item & Dock Toggle**: Supports hiding to the menu bar tray. Clicking the red close button hides the Dock icon and adjusts AppKit policy to `.accessory` for a ultra-lightweight daemon state. Clicking the tray restores it to `.regular` and brings it to front, achieving pure premium native hand feel.
-- 🖥️ **Universal 2 Architecture Native Support**: Native multi-architecture compile for both Apple Silicon (M1/M2/M3/M4) and Intel (x86_64) architectures, fitting perfectly into the macOS ecosystem.
+- 🔋 **Status Item & Dock Toggle**: Supports hiding to the menu bar. Closing the settings window hides the Dock icon and adjusts AppKit policy to `.accessory`; opening settings restores the regular app window.
+- 🖥️ **Universal 2 Architecture Support**: Multi-architecture builds for both Apple Silicon (M1/M2/M3/M4) and Intel (x86_64).
 
 ---
 
@@ -39,13 +39,13 @@ More importantly, it incorporates a cutting-edge **"Distributed Signal + Kernel-
 
 | 📂 File Creation | 📝 File Management | 💻 Editor & Terminal | 🧰 Utility & Tools |
 | :--- | :--- | :--- | :--- |
-| - New `.txt` Text File<br>- New `.md` Markdown<br>- New `.json` Data File<br>- New `.csv` Spreadsheet<br>- New `.html` Web Page<br>- New `.docx` Word Document<br>- New `.xlsx` Excel Sheet<br>- New `.pptx` PowerPoint<br>- New `.pdf` PDF Document | - Cut selected items<br>- Paste clipboard items<br>- Permanent force delete<br>- Copy absolute file paths<br>- Copy file name only<br>- Fast "Copy To..."<br>- Fast "Move To..." | - Open in Terminal<br>- Open in iTerm2<br>- Open in Warp<br>- Open in VSCode<br>- Open in Sublime Text<br>- Open in Cursor | - Compute file MD5 hash<br>- Compute file SHA256 hash<br>- Toggle show hidden files<br>- Text-to-QR Code window<br>- Convert image to PNG<br>- Convert image to JPEG |
+| - New `.txt` Text File<br>- New `.md` Markdown<br>- New `.json` Data File<br>- New `.csv` Spreadsheet<br>- New `.html` Web Page<br>- New `.docx` Word Document<br>- New `.xlsx` Excel Sheet<br>- New `.pptx` PowerPoint<br>- New `.pdf` PDF Document | - Cut selected items<br>- Paste clipboard items<br>- Permanent delete (Advanced, off by default)<br>- Copy absolute file paths<br>- Copy file name only<br>- Copy To... (Advanced, off by default)<br>- Move To... (Advanced, off by default) | - Open in Terminal<br>- Open in iTerm2<br>- Open in Warp<br>- Open in VSCode<br>- Open in Sublime Text<br>- Open in Cursor | - Compute file MD5 hash<br>- Compute file SHA256 hash<br>- Toggle show hidden files (Advanced, off by default)<br>- Generate QR Code from clipboard<br>- Convert image to PNG<br>- Convert image to JPEG |
 
 ---
 
 ## 📐 Architecture
 
-MacRightClick leverages a highly cohesive **Data Channel Isolation Abstraction Layer**. Upper-level Action definitions, SwiftUI setting views, and FinderSync extension callbacks are decoupled through the `SharedStorageManager` block. Communication details and shared cache directory paths are high-cohesion, presenting a 100% transparent API to upper layers.
+MacRightClick uses a centralized **Data Channel Isolation Abstraction Layer**. Action definitions, SwiftUI settings, and FinderSync callbacks share `SharedStorageManager`, which owns queued events, configuration files, and shared logs.
 
 ```mermaid
 sequenceDiagram
@@ -59,38 +59,52 @@ sequenceDiagram
     
     User->>FS: User clicks "New Text File (.txt)"
     Note over FS: actionMenuItemSelected Callback
-    FS->>SC: 1. Write pending_action.json
+    FS->>SC: 1. Write PendingActions/{timestamp}-{uuid}.json
     FS->>SC: 2. Append execution logs to extension.log
     FS->>Host: 3. Post DistributedNotification (empty payload) - Backup 1
-    SC-->>Host: 4. Trigger BSD kqueue kernel event (Backup 2 - 0.001ms response)
+    SC-->>Host: 4. Trigger BSD kqueue event (Backup 2)
     
     Note over Host: Awakened by either backup channel
     Note over Host: Lock via objc_sync_enter mutex
     
-    Host->>SC: 5. Read and parse JSON payload
-    Host->>SC: 6. Delete/Clear pending_action.json (Prevent double execution)
+    Host->>SC: 5. Consume all queued JSON events by creation time
+    Host->>SC: 6. Delete consumed event files (Prevent double execution)
     
     Host->>Host: 7. ActionDispatcher.shared.dispatch (Concurrent queue)
-    Host-->>User: 8. Create 'Untitled.txt' instantaneously!
+    Host-->>User: 8. Create 'Untitled.txt'
 ```
 
 ---
 
 ## ⚡ Quick Start & Downloads
 
-### 📥 One-Click Official Download (Highly Recommended)
+### 📥 Official Download
 
-For the fastest and most secure native experience, we highly recommend downloading our pre-compiled **Universal 2 Multi-Architecture (Apple Silicon M1/M2/M3/M4 + Intel x86_64 Dual Native Support)** app bundle. It is fully built and sandboxed automatically via cloud CI. We provide **permanent redirect URLs to the latest stable release** so you can grab the latest features instantly without worrying about version updates:
+Download the pre-compiled **Universal 2 Multi-Architecture (Apple Silicon + Intel x86_64)** app bundle. Release builds should use Developer ID signing, Hardened Runtime, Apple notarization, and stapled tickets; local development builds can still use Ad-hoc signing for quick iteration.
 
 | 📦 Format | 🚀 Direct One-Click Download Link | 💡 Use Case & Features |
 | :--- | :--- | :--- |
-| **Disk Image (DMG)** | [👉 Download Latest RightClickAssistant-Latest.dmg 👈](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg) | **Best Recommended.** Traditional drag-and-drop installer, secure and tamper-proof. |
-| **Green ZIP Archive** | [👉 Download Latest RightClickAssistant-Latest.zip 👈](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.zip) | **Portable green build.** Unzip and double-click to run from any directory directly. |
+| **Disk Image (DMG)** | [Download Latest RightClickAssistant-Latest.dmg](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg) | Recommended drag-and-drop installer. |
+| **ZIP Archive** | [Download Latest RightClickAssistant-Latest.zip](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.zip) | Useful for testing or temporary use. |
 
 > [!TIP]
 > 📌 **Release History & Changelogs**: You can visit the [GitHub Releases Page](https://github.com/guyue55/MacRightClick/releases) at any time to explore past stable releases, semantic multi-architecture packages, and detailed development changelogs.
 
 ---
+
+### 🚢 Distribution Route
+
+The current primary route is **website / GitHub Releases distribution**, not Mac App Store distribution. For release builds:
+```bash
+DISTRIBUTION_ROUTE=website-release \
+DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="your-notarytool-profile" \
+./Scripts/build.sh
+```
+
+This route enables Developer ID signing, Hardened Runtime, notarytool submission, and `stapler staple` for both the `.app` bundle and `.dmg`.
+
+Mac App Store is not the default route. If the project later targets the Mac App Store, the main app must restore App Sandbox, formal App Groups, security-scoped access/bookmarks, and re-review advanced actions such as permanent deletion, Finder restart, and cross-directory movement.
 
 ### 🛠️ 1. Local Automated Compilation
 The repository is fully equipped with a modern Universal 2 build script:
@@ -101,8 +115,8 @@ Upon successful compilation, artifacts are packaged in the `build/` folder:
 * 📍 App Bundle path: `build/RightClickAssistant.app`
 * 📦 Distributable Zip path: `build/RightClickAssistant.zip`
 
-### 2. End-to-End Simulation Test Run
-The codebase integrates automated verification tools. You can run the following one-liner to compile, uninstall older versions, perform fresh deployment, and run 8 core physical assertions:
+### 2. Local Verification
+The codebase integrates local verification tools. You can run the following command to compile, uninstall older versions, deploy a fresh build, and run core assertions:
 ```bash
 ./Scripts/build.sh && ./Scripts/uninstall.sh && cp -R build/RightClickAssistant.app /Applications/ && open /Applications/RightClickAssistant.app && sleep 5 && ./ActionVerifier_bin
 ```
@@ -113,11 +127,11 @@ The codebase integrates automated verification tools. You can run the following 
 🟢 Passed: 10 / 10
 🔴 Failed: 0 / 10
 ==============================================================================
-🎉 [Verifier] 🎉 All Green! Seamless multi-process messaging loop & actions validated!
+✅ [Verifier] Verification passed: multi-process action queue, lifecycle, and core actions behave as expected.
 ```
 
-### 3. Uninstall (Restore Clean System)
-To completely remove the app, unregister the Finder Sync extension, delete shared sandboxed caches, and force restart Finder to release memory, simply run:
+### 3. Uninstall
+To remove the app, unregister the Finder Sync extension, delete shared sandbox caches, and restart Finder to release extension sessions, run:
 ```bash
 ./Scripts/uninstall.sh
 ```
@@ -136,15 +150,15 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
      ```bash
      xattr -cr /Applications/RightClickAssistant.app
      ```
-  3. Re-double-click the app, and the setting window will pop up smoothly!
+  3. Double-click the app again.
 
 ### Q2: Right-click menu does not show up in Finder? Or can't find "RightClickAssistantExtension" in System Settings -> Extensions?
 * **Cause**: macOS does not register or enable third-party FinderSync extensions automatically. Especially for local builds, or apps downloaded but not moved to the `/Applications` directory, or due to Gatekeeper quarantine flags, the system's `pluginkit` daemon may refuse or skip registration.
-* **Fix (Smart Onboarding Recommended)**:
-  * **Intelligent App Guide**: The main app interface is now equipped with a highly intuitive **Smart Onboarding** card system. The app automatically detects your exact macOS system major version (precision targeting for macOS 13, macOS 14+, and legacy macOS) and renders a visual step-by-step indicator at the top or side panel. Click the high-vibrant button to navigate to System Settings with single click!
-  * **Terminal One-Click "Force Registration" (100% Effective)**:
-    If you cannot find the extension in settings, open **Terminal.app** and run the following command to register it physically:
-    * **Case A: If you installed the app in `/Applications` (Highly Recommended)**:
+* **Fix**:
+  * **App Guide**: The main app detects your macOS version and shows the matching extension enablement steps with a System Settings shortcut.
+  * **Terminal Manual Registration**:
+    If you cannot find the extension in settings, open **Terminal.app** and run the following command:
+    * **Case A: If you installed the app in `/Applications`**:
       ```bash
       pluginkit -a /Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
       ```
@@ -152,19 +166,26 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
       ```bash
       pluginkit -a \$(pwd)/build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
       ```
-    After registering, run `killall Finder` to force restart Finder, and reopen the Extension panel to enable it!
+    After registering, run `killall Finder` to restart Finder, then reopen the Extension panel to enable it.
   * **Manual Fallback Steps**:
     1. Open your Mac's **System Settings**;
     2. Navigate to: **Privacy & Security -> Extensions**;
     3. Double-click the **Finder** option;
     4. Find **"右键助手扩展"** (or RightClickAssistantExtension) and manually **tick to enable** it;
-    5. If it does not appear immediately, right-click any folder or run `killall Finder` in Terminal to force restart Finder.
+    5. If it does not appear immediately, right-click any folder or run `killall Finder` in Terminal to restart Finder.
 
 ### Q3: Does the right-click enhancement menu still work when the main setting app is closed?
 * **Cause**: MacRightClick is built on a multi-process, sandbox-penetrating distribution mechanism. While the Finder Sync extension renders menus, the actual file creation/hash calculations are performed by the main app in the background.
 * **Fix**:
-  * The main App requests **System-level Execution Activity exemption** (`ProcessInfo.beginActivity`) upon startup, ensuring it won't be suspended or frozen by macOS App Nap.
-  * It supports hiding into the system menu bar (Status Item Tray) for quiet background daemon execution upon window closing, and supports one-click registration of "Start on Launch" via the macOS modern `SMAppService` API. It is highly recommended to enable autostart to keep services alive!
+  * The main app requests an execution activity (`ProcessInfo.beginActivity`) at startup to reduce the chance of App Nap interrupting queue consumption.
+  * It supports hiding into the menu bar when the settings window closes, and supports "Start on Launch" via the macOS `SMAppService` API.
+
+### Privacy And Security
+
+- The project contains no ads and does not actively collect or upload usage data.
+- Detailed debug logging is off by default. When enabled, logs may include menu rendering, watched path, and action filtering details; use it only for troubleshooting.
+- High-risk actions such as permanent deletion, cross-directory copy/move, and hidden-file toggling are off by default and require confirmation before execution.
+- Website release builds should use Developer ID, Hardened Runtime, Apple notarization, and stapled tickets for both `.app` and `.dmg` artifacts.
 
 ---
 

@@ -33,6 +33,15 @@ public protocol MenuAction {
     
     /// 动作所属分类
     var category: ActionCategory { get }
+
+    /// 是否默认启用。破坏性或会重启系统组件的动作应默认关闭，由用户显式开启。
+    var isEnabledByDefault: Bool { get }
+
+    /// 是否属于高级/高风险动作，用于设置界面分组与提示。
+    var isHighRisk: Bool { get }
+
+    /// 高风险动作说明，展示给用户作为开启前的上下文。
+    var riskDescription: String? { get }
     
     /// 判断此动作在当前选中的文件/文件夹下是否可用
     /// - Parameter urls: 用户右键选中的资源列表
@@ -58,11 +67,23 @@ public extension MenuAction {
     }
     
     func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool {
-        // 默认转发至老接口，确保 100% 的向后兼容性
+        // 默认转发至老接口，保持向后兼容。
         return isAvailable(for: targetURLs)
     }
     
     var associatedBundleIdentifier: String? {
+        return nil
+    }
+
+    var isEnabledByDefault: Bool {
+        return true
+    }
+
+    var isHighRisk: Bool {
+        return false
+    }
+
+    var riskDescription: String? {
         return nil
     }
 }

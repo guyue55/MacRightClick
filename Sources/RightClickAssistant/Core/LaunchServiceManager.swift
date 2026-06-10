@@ -3,7 +3,7 @@ import ServiceManagement
 
 /// 现代 macOS 系统级自启动管理服务 (LaunchServiceManager)
 /// 采用 macOS 13.0 (Ventura) 引入的现代 SMAppService API，
-/// 100% 对用户透明，在系统“登录项”中具备规范的应用物理图标与自启一键开关（注3、注4）。
+/// 使用系统“登录项”能力注册或注销开机自启。
 public final class LaunchServiceManager {
     public static let shared = LaunchServiceManager()
     

@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 /// 机器端全自动物理仿真验证工具 (ActionVerifier)
-/// 一键检验宿主进程对 26 个动作的分发、保活与执行成效，输出绝对真实的物理断言绿灯报告！
+/// 检验宿主进程对核心动作的分发、保活与执行成效。
 @main
 struct ActionVerifier {
     static func main() {
@@ -18,8 +18,9 @@ struct ActionVerifier {
         
         print("📂 [Verifier] 1. 创建测试物理专属工作区: \(testDirURL.path)")
         
-        let pendingActionURL = URL(fileURLWithPath: homeDir).appendingPathComponent("Library/Containers/guyue.RightClickAssistant.Extension/Data/pending_action.json")
-        print("📂 [Verifier] 2. 中介交换地址: \(pendingActionURL.path)")
+        let pendingActionsDirectoryURL = URL(fileURLWithPath: homeDir).appendingPathComponent("Library/Containers/guyue.RightClickAssistant.Extension/Data/PendingActions")
+        try? FileManager.default.createDirectory(at: pendingActionsDirectoryURL, withIntermediateDirectories: true)
+        print("📂 [Verifier] 2. 中介动作队列地址: \(pendingActionsDirectoryURL.path)")
         
         // 我们选取代表 4 大分类的核心动作集进行严丝合缝的机器物理断言
         var passCount = 0
@@ -29,9 +30,10 @@ struct ActionVerifier {
             print("\n------------------------------------------------------------------------------")
             print("▶️ [Verifier] 测试项: \(name) [ID: \(actionId)]")
             
-            // A. 清空并写入 pending_action.json
-            try? FileManager.default.removeItem(at: pendingActionURL)
+            // A. 写入独立 UUID 队列事件，避免连续测试覆盖
             let actionData: [String: Any] = [
+                "id": UUID().uuidString,
+                "createdAt": Date().timeIntervalSince1970,
                 "actionId": actionId,
                 "paths": targets.map { $0.path }
             ]
@@ -42,10 +44,12 @@ struct ActionVerifier {
                 return
             }
             
+            let eventURL = pendingActionsDirectoryURL.appendingPathComponent("\(Int64(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString).json")
+
             do {
-                try jsonData.write(to: pendingActionURL, options: .atomic)
+                try jsonData.write(to: eventURL, options: .atomic)
             } catch {
-                print("❌ [Verifier] 写入 pending_action.json 失败: \(error.localizedDescription)")
+                print("❌ [Verifier] 写入队列动作文件失败: \(error.localizedDescription)")
                 failCount += 1
                 return
             }
@@ -58,7 +62,7 @@ struct ActionVerifier {
                 deliverImmediately: true
             )
             
-            // C. 强力睡眠 2.5s，为主 App 留出非常宽裕的主线程调度与文件 I/O 执行时间
+            // C. 等待主 App 消费队列并完成文件 I/O。
             Thread.sleep(forTimeInterval: 2.5)
             
             // D. 物理结果断言
@@ -87,8 +91,16 @@ struct ActionVerifier {
             let hasFirst = FileManager.default.fileExists(atPath: firstURL.path)
             
             // 手动仿真第二次
-            try? JSONSerialization.data(withJSONObject: ["actionId": "guyue.action.newfile.md", "paths": [testDirURL.path]], options: [])
-                .write(to: pendingActionURL)
+            let secondAction: [String: Any] = [
+                "id": UUID().uuidString,
+                "createdAt": Date().timeIntervalSince1970,
+                "actionId": "guyue.action.newfile.md",
+                "paths": [testDirURL.path]
+            ]
+            if let secondData = try? JSONSerialization.data(withJSONObject: secondAction, options: []) {
+                let secondURL = pendingActionsDirectoryURL.appendingPathComponent("\(Int64(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString).json")
+                try? secondData.write(to: secondURL, options: .atomic)
+            }
             DistributedNotificationCenter.default().postNotificationName(
                 Notification.Name("guyue.RightClickAssistant.triggerActionSignal"), object: nil, userInfo: nil, deliverImmediately: true)
             Thread.sleep(forTimeInterval: 2.5)
@@ -156,22 +168,18 @@ struct ActionVerifier {
             return clipStr.count == 64 // 满足 SHA256 字符位数
         }
         
-        runTest(name: "切换 Finder 隐藏文件显示状态", actionId: "guyue.action.utility.toggleHiddenFiles", targets: [testDirURL]) {
-            // 读取 defaults 应该能读到 com.apple.finder AppleShowAllFiles 状态
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-            process.arguments = ["read", "com.apple.finder", "AppleShowAllFiles"]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            try? process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let status = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            print("ℹ️ [Verifier] Finder 显示隐藏文件状态: \(status)")
-            return status == "YES" || status == "NO"
+        let pngFile = testDirURL.appendingPathComponent("convert_source.png")
+        let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        if let pngData = Data(base64Encoded: pngBase64) {
+            try? pngData.write(to: pngFile)
+        }
+
+        runTest(name: "图片转换为 JPEG", actionId: "guyue.action.utility.convertToJPG", targets: [pngFile]) {
+            let jpgFile = testDirURL.appendingPathComponent("convert_source.jpg")
+            return FileManager.default.fileExists(atPath: jpgFile.path)
         }
         
-        // 强力睡眠 1.5 秒，等主 App 彻底消费并完成所有异步文件操作后再清理测试目录，防止发生冲突
+        // 等待主 App 完成异步文件操作后再清理测试目录。
         Thread.sleep(forTimeInterval: 1.5)
         try? FileManager.default.removeItem(at: testDirURL)
         print("\n🧹 [Verifier] 清理物理测试目录完成")
@@ -185,7 +193,7 @@ struct ActionVerifier {
         if failCount > 0 {
             exit(1)
         } else {
-            print("🎉 [Verifier] 全绿灯！多进程物理大本营通信消费、生命周期与所有 Action 逻辑完美闭环！")
+            print("✅ [Verifier] 验证通过：多进程动作队列、生命周期与核心 Action 逻辑符合预期。")
             exit(0)
         }
     }

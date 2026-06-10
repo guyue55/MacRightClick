@@ -133,7 +133,7 @@ public final class NewFileAction: MenuAction {
             destinationDir = targetURL.deletingLastPathComponent()
         }
         
-        // 2. 确定新建文件的基础名称（并完美处理重名冲突逻辑）
+        // 2. 确定新建文件的基础名称，并处理重名冲突。
         let baseName = "未命名"
         let ext = fileType.extensionName
         var finalURL = destinationDir.appendingPathComponent("\(baseName).\(ext)")

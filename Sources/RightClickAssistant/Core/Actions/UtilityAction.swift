@@ -21,6 +21,21 @@ public final class UtilityAction: MenuAction {
     
     public let utilityType: UtilityType
     private let imageConverter: ImageConverterProtocol
+
+    public var isHighRisk: Bool {
+        return utilityType == .toggleHiddenFiles
+    }
+
+    public var isEnabledByDefault: Bool {
+        return !isHighRisk
+    }
+
+    public var riskDescription: String? {
+        if utilityType == .toggleHiddenFiles {
+            return "会修改 Finder 系统偏好并重启 Finder，可能打断当前 Finder 操作。"
+        }
+        return nil
+    }
     
     public init(type: UtilityType, imageConverter: ImageConverterProtocol = DefaultImageConverter()) {
         self.utilityType = type
@@ -38,7 +53,7 @@ public final class UtilityAction: MenuAction {
             self.localizedTitle = "切换显示隐藏文件"
             self.iconName = "eye.slash"
         case .textToQRCode:
-            self.localizedTitle = "转换选中文本为二维码"
+            self.localizedTitle = "从剪贴板生成二维码"
             self.iconName = "qrcode"
         case .convertToPNG:
             self.localizedTitle = "转换为 PNG 格式"
@@ -157,6 +172,30 @@ public final class UtilityAction: MenuAction {
             return failureCount == 0
         }
     }
+
+    private func runOnMainThread<T>(_ block: () -> T) -> T {
+        if Thread.isMainThread {
+            return block()
+        }
+        return DispatchQueue.main.sync {
+            block()
+        }
+    }
+
+    private func confirmToggleHiddenFiles() -> Bool {
+        return runOnMainThread {
+            let alert = NSAlert()
+            alert.messageText = "确认切换 Finder 隐藏文件显示？"
+            alert.informativeText = "此操作会修改 Finder 系统偏好并重启 Finder，当前 Finder 窗口可能短暂关闭或刷新。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "确认切换并重启 Finder")
+            alert.addButton(withTitle: "取消")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.window.level = .modalPanel
+            alert.window.orderFrontRegardless()
+            return alert.runModal() == .alertFirstButtonReturn
+        }
+    }
     
     // MARK: - 1. 哈希计算
     private func calculateHash(for url: URL) -> Bool {
@@ -188,6 +227,10 @@ public final class UtilityAction: MenuAction {
     
     // MARK: - 2. 显示/隐藏隐藏文件
     private func toggleHiddenSystemFiles() -> Bool {
+        guard confirmToggleHiddenFiles() else {
+            return false
+        }
+
         // 读取当前状态
         let readProcess = Process()
         readProcess.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
@@ -326,13 +369,13 @@ public final class UtilityAction: MenuAction {
     }
 }
 
-// MARK: - 5. 图片格式转换接口与商业级实现
+// MARK: - 5. 图片格式转换接口与默认实现
 /// 图像转换服务协议，方便后续灵活变更转换实现或支持更多格式
 public protocol ImageConverterProtocol {
     func convert(url: URL, toFormat format: String) -> Result<URL, Error>
 }
 
-/// 默认的商业级图像转换器实现
+/// 默认的图像转换器实现
 public final class DefaultImageConverter: ImageConverterProtocol {
     public init() {}
     

@@ -32,7 +32,7 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(retrieved?.category, .newFile)
     }
     
-    /// 2. 测试新建文件在发生重名时的自增重命名逻辑（完美冲突解决）
+    /// 2. 测试新建文件在发生重名时的自增重命名逻辑
     func testNewFileNameCollisionResolution() {
         let action = NewFileAction(fileType: .txt)
         
@@ -109,5 +109,67 @@ final class RightClickAssistantTests: XCTestCase {
         let html = (try? String(contentsOf: expectedURL, encoding: .utf8)) ?? ""
         XCTAssertTrue(html.contains("<!doctype html>"), "HTML 文件应该包含基础 doctype")
         XCTAssertTrue(html.contains("<title>未命名</title>"), "HTML 文件应该包含默认标题")
+    }
+
+    /// 6. 测试共享动作通道使用 UUID 队列，连续写入不会互相覆盖
+    func testSharedActionQueuePreservesMultipleEvents() throws {
+        let storage = SharedStorageManager.shared
+        try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
+        try? FileManager.default.removeItem(at: storage.pendingActionURL)
+
+        _ = try storage.enqueueAction(actionId: "guyue.action.newfile.txt", paths: [tempDirectory.path])
+        _ = try storage.enqueueAction(actionId: "guyue.action.newfile.md", paths: [tempDirectory.path])
+
+        let events = storage.consumePendingActionEvents()
+
+        XCTAssertEqual(Set(events.map(\.actionId)), Set([
+            "guyue.action.newfile.txt",
+            "guyue.action.newfile.md"
+        ]))
+        let remainingFiles = (try? FileManager.default.contentsOfDirectory(atPath: storage.pendingActionsDirectoryURL.path)) ?? []
+        XCTAssertTrue(remainingFiles.isEmpty)
+    }
+
+    /// 7. 高风险动作默认关闭，避免首次安装即暴露破坏性菜单项
+    func testHighRiskActionsAreDisabledByDefault() {
+        let permanentDelete = FileManageAction(type: .permanentDelete)
+        let moveTo = FileManageAction(type: .moveTo)
+        let copyTo = FileManageAction(type: .copyTo)
+        let toggleHiddenFiles = UtilityAction(type: .toggleHiddenFiles)
+        let newTextFile = NewFileAction(fileType: .txt)
+
+        XCTAssertFalse(permanentDelete.isEnabledByDefault)
+        XCTAssertFalse(moveTo.isEnabledByDefault)
+        XCTAssertFalse(copyTo.isEnabledByDefault)
+        XCTAssertFalse(toggleHiddenFiles.isEnabledByDefault)
+        XCTAssertTrue(newTextFile.isEnabledByDefault)
+    }
+
+    /// 8. 托盘中的高风险动作必须复用共享启用策略，默认不暴露给用户
+    func testHighRiskStatusMenuActionRequiresExplicitEnablement() {
+        let storage = SharedStorageManager.shared
+        let toggleHiddenFiles = UtilityAction(type: .toggleHiddenFiles)
+        let key = "enable_action_\(toggleHiddenFiles.actionId)"
+
+        storage.removeValue(forKey: key)
+        XCTAssertFalse(storage.isActionEnabled(toggleHiddenFiles))
+
+        storage.setBool(true, forKey: key)
+        XCTAssertTrue(storage.isActionEnabled(toggleHiddenFiles))
+
+        storage.removeValue(forKey: key)
+    }
+
+    /// 9. 生产日志默认关闭详细调试，避免右键渲染时持续写入用户路径
+    func testDebugLoggingDefaultsToDisabled() {
+        let storage = SharedStorageManager.shared
+
+        storage.removeValue(forKey: SharedStorageManager.Keys.enableDebugLogging)
+        XCTAssertFalse(storage.isDebugLoggingEnabled)
+
+        storage.setBool(true, forKey: SharedStorageManager.Keys.enableDebugLogging)
+        XCTAssertTrue(storage.isDebugLoggingEnabled)
+
+        storage.removeValue(forKey: SharedStorageManager.Keys.enableDebugLogging)
     }
 }

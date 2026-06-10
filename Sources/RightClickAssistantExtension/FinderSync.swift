@@ -6,10 +6,8 @@ import Darwin
 @objc(FinderSync)
 class FinderSync: FIFinderSync {
     
-    private let sharedDefaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant")
-    
     // MARK: - ActionTagMapper (双向唯一整数 Tag 映射表)
-    // 彻底摒弃不稳定的 representedObject 机制，采用 100% 跨 XPC 穿透的标量 tag (注2)
+    // 使用稳定的整数 tag 传递菜单动作标识，避免依赖 representedObject。
     private static var tagToActionId: [Int: String] = [:]
     private static var nextTag: Int = 1000
     
@@ -27,17 +25,17 @@ class FinderSync: FIFinderSync {
         return tagToActionId[tag]
     }
     
-    /// 当用户点击菜单项时的回调函数（回归 Principal 插件类本身，完美解决 Obj-C XPC 派发寻址失败的大坑）
+    /// 当用户点击菜单项时的回调函数。
     @objc func actionMenuItemSelected(_ sender: NSMenuItem) {
         let tag = sender.tag
-        logToSharedContainer("[FinderSync] [actionMenuItemSelected] 收到菜单点击事件，Tag: \(tag)")
+        logToSharedContainer("[FinderSync] [actionMenuItemSelected] 收到菜单点击事件，Tag: \(tag)", level: .debug)
         
         guard let actionId = FinderSync.getActionId(for: tag) else {
             logToSharedContainer("[FinderSync] [actionMenuItemSelected] 错误: 无法根据 Tag \(tag) 映射出动作 ID")
             return
         }
         
-        // 动态以最权威、最原生的方式实时获取当前选中的物理文件/目录路径，弃用 representedObject 自带的静态路径数据
+        // 实时获取当前选中的文件/目录路径，避免使用创建菜单时的静态路径数据。
         var targets = FIFinderSyncController.default().selectedItemURLs() ?? []
         if targets.isEmpty {
             if let targetedURL = FIFinderSyncController.default().targetedURL() {
@@ -50,27 +48,20 @@ class FinderSync: FIFinderSync {
             return
         }
         
-        logToSharedContainer("[FinderSync] [actionMenuItemSelected] 解析动作成功: \(actionId), 目标路径总数: \(targets.count)")
+        logToSharedContainer("[FinderSync] [actionMenuItemSelected] 解析动作成功: \(actionId), 目标路径总数: \(targets.count)", level: .debug)
         
-        // 1. 写入中介共享 JSON 交换文件
-        let pendingActionURL = SharedStorageManager.shared.pendingActionURL
+        // 1. 写入中介共享动作队列文件
         let paths = targets.map { $0.path }
-        
-        let actionData: [String: Any] = [
-            "actionId": actionId,
-            "paths": paths
-        ]
-        
-        if let jsonData = try? JSONSerialization.data(withJSONObject: actionData, options: .prettyPrinted) {
-            do {
-                try jsonData.write(to: pendingActionURL, options: .atomic)
-                logToSharedContainer("[FinderSync] [actionMenuItemSelected] 成功向中介写入 pending_action.json 动作参数")
-            } catch {
-                logToSharedContainer("[FinderSync] [actionMenuItemSelected] 错误: 写入共享 JSON 失败: \(error.localizedDescription)")
-            }
+
+        do {
+            let eventURL = try SharedStorageManager.shared.enqueueAction(actionId: actionId, paths: paths)
+            logToSharedContainer("[FinderSync] [actionMenuItemSelected] 成功向中介队列写入动作参数: \(eventURL.lastPathComponent)", level: .debug)
+        } catch {
+            logToSharedContainer("[FinderSync] [actionMenuItemSelected] 错误: 写入共享动作队列失败: \(error.localizedDescription)")
+            return
         }
         
-        // 2. 发送分布式空信号（系统 100% 允许跨沙盒自由传导）
+        // 2. 发送分布式空信号，通知宿主消费队列。
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name("guyue.RightClickAssistant.triggerActionSignal"),
             object: nil,
@@ -78,7 +69,7 @@ class FinderSync: FIFinderSync {
             deliverImmediately: true
         )
         
-        logToSharedContainer("[FinderSync] [actionMenuItemSelected] 成功跨沙盒发出分布式空信号")
+        logToSharedContainer("[FinderSync] [actionMenuItemSelected] 已发出动作触发信号", level: .debug)
         
         // 3. 智能拉起并有针对性地前台激活/静默唤醒宿主主程序
         if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "guyue.RightClickAssistant") {
@@ -101,7 +92,7 @@ class FinderSync: FIFinderSync {
                 if let error = error {
                     self.logToSharedContainer("[FinderSync] [actionMenuItemSelected] 激活宿主 App 失败: \(error.localizedDescription), needsUI: \(needsUI)")
                 } else {
-                    self.logToSharedContainer("[FinderSync] [actionMenuItemSelected] 宿主 App 状态更新成功, needsUI: \(needsUI)")
+                    self.logToSharedContainer("[FinderSync] [actionMenuItemSelected] 宿主 App 状态更新成功, needsUI: \(needsUI)", level: .debug)
                 }
             }
         }
@@ -115,7 +106,7 @@ class FinderSync: FIFinderSync {
         // 1. 注册原生 'cut' 角标图像
         if let badgeImage = NSImage(systemSymbolName: "scissors", accessibilityDescription: "已剪切") {
             FIFinderSyncController.default().setBadgeImage(badgeImage, label: "已剪切", forBadgeIdentifier: "cut")
-            logToSharedContainer("[FinderSync] 成功注册 'cut' 原生角标图像 (scissors)")
+            logToSharedContainer("[FinderSync] 成功注册 'cut' 原生角标图像 (scissors)", level: .debug)
         } else {
             logToSharedContainer("[FinderSync] 警告: 无法加载 SF Symbol 'scissors'")
         }
@@ -148,7 +139,7 @@ class FinderSync: FIFinderSync {
         let cutPaths = FileCutClipboard.shared.cutURLs.map { $0.path }
         if cutPaths.contains(url.path) {
             FIFinderSyncController.default().setBadgeIdentifier("cut", for: url)
-            logToSharedContainer("[FinderSync] 成功在 \(url.lastPathComponent) 上渲染已剪切 'cut' 状态角标")
+            logToSharedContainer("[FinderSync] 成功在 \(url.lastPathComponent) 上渲染已剪切 'cut' 状态角标", level: .debug)
         } else {
             FIFinderSyncController.default().setBadgeIdentifier("", for: url)
         }
@@ -163,58 +154,58 @@ class FinderSync: FIFinderSync {
         return NSHomeDirectory()
     }
     
-    /// 将日志安全写入到共享的日志文件，提供黑盒运行期可观测性
-    private func logToSharedContainer(_ message: String) {
-        SharedStorageManager.shared.writeLog(message)
+    /// 将日志写入共享日志文件。调试日志默认关闭，避免生产环境记录菜单渲染细节。
+    private func logToSharedContainer(_ message: String, level: SharedLogLevel = .info) {
+        SharedStorageManager.shared.writeLog(message, level: level)
     }
     
-    /// 动态探测并应用需要监控的访达路径（完美支持子目录、iCloud/OneDrive 云同步特殊目录）
+    /// 动态探测并应用需要监控的访达路径。
     private func updateObservedDirectories() {
         var observedURLs: Set<URL> = []
         let homePath = getRealHomeDirectory()
         
         // 【关键安全重构】：macOS 14/15 强沙盒与 TCC 限制下，FinderSync 注册整个 Home 根目录会因为隐私限制而被系统底层直接挂起或拒绝加载。
-        // 业界最佳实践是精准注册并观察用户最高频交互 of 常用子工作区，从而百分百获得系统授权并展现右键菜单。
+            // 精准注册用户常用子工作区，避免监听整个 Home 目录带来的隐私和性能问题。
         let subfolders = ["Desktop", "Downloads", "Documents", "GitProject"]
         for subfolder in subfolders {
             let folderURL = URL(fileURLWithPath: homePath).appendingPathComponent(subfolder)
             if FileManager.default.fileExists(atPath: folderURL.path) {
                 observedURLs.insert(folderURL)
-                logToSharedContainer("[FinderSync] 激活工作区监控: \(folderURL.path)")
+                logToSharedContainer("[FinderSync] 激活工作区监控: \(folderURL.path)", level: .debug)
             } else {
                 // 如果没有 GitProject 目录，我们可以动态创建它，或者直接跳过
                 if subfolder == "GitProject" {
                     try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
                     observedURLs.insert(folderURL)
-                    logToSharedContainer("[FinderSync] 动态初始化并激活监控: \(folderURL.path)")
+                    logToSharedContainer("[FinderSync] 动态初始化并激活监控: \(folderURL.path)", level: .debug)
                 }
             }
         }
         
-        let shouldEnableCloudCompat = sharedDefaults?.bool(forKey: "shouldEnableiCloudMenu") ?? false
+        let shouldEnableCloudCompat = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
         
         if shouldEnableCloudCompat {
-            logToSharedContainer("[FinderSync] 云盘特殊兼容已启用，正在激活云端监听...")
+            logToSharedContainer("[FinderSync] 云盘特殊兼容已启用，正在激活云端监听...", level: .debug)
             
             // A. iCloud Drive 的标准本地路径：~/Library/Mobile Documents
             let iCloudURL = URL(fileURLWithPath: homePath).appendingPathComponent("Library/Mobile Documents")
             if FileManager.default.fileExists(atPath: iCloudURL.path) {
                 observedURLs.insert(iCloudURL)
-                logToSharedContainer("[FinderSync] 激活 iCloud Drive 监控: \(iCloudURL.path)")
+                logToSharedContainer("[FinderSync] 激活 iCloud Drive 监控: \(iCloudURL.path)", level: .debug)
             }
             
             // B. OneDrive / Dropbox 等第三方同步客户端在 macOS 上统一由 FileProvider 托管的宿主根路径
             let cloudStorageURL = URL(fileURLWithPath: homePath).appendingPathComponent("Library/CloudStorage")
             if FileManager.default.fileExists(atPath: cloudStorageURL.path) {
                 observedURLs.insert(cloudStorageURL)
-                logToSharedContainer("[FinderSync] 激活 CloudStorage (OneDrive/Dropbox) 监控: \(cloudStorageURL.path)")
+                logToSharedContainer("[FinderSync] 激活 CloudStorage (OneDrive/Dropbox) 监控: \(cloudStorageURL.path)", level: .debug)
             }
             
             // C. 备用检测：经典的本地 OneDrive 根目录
             let legacyOneDriveURL = URL(fileURLWithPath: homePath).appendingPathComponent("OneDrive")
             if FileManager.default.fileExists(atPath: legacyOneDriveURL.path) {
                 observedURLs.insert(legacyOneDriveURL)
-                logToSharedContainer("[FinderSync] 激活 Legacy OneDrive 监控: \(legacyOneDriveURL.path)")
+                logToSharedContainer("[FinderSync] 激活 Legacy OneDrive 监控: \(legacyOneDriveURL.path)", level: .debug)
             }
         }
         
@@ -240,7 +231,7 @@ class FinderSync: FIFinderSync {
         
         guard !targetURLs.isEmpty else { return nil }
         
-        logToSharedContainer("[FinderSync] 右键菜单触发渲染, 类型: \(menuKind == .contextualMenuForItems ? "Items" : "Container"), 目标路径: \(targetURLs.map { $0.path })")
+        logToSharedContainer("[FinderSync] 右键菜单触发渲染, 类型: \(menuKind == .contextualMenuForItems ? "Items" : "Container"), 目标路径: \(targetURLs.map { $0.path })", level: .debug)
         
         let isContainer = (menuKind == .contextualMenuForContainer)
         
@@ -251,28 +242,27 @@ class FinderSync: FIFinderSync {
         
         // 打印当前 dispatcher 中注册的所有 actions，确保在当前进程内真的有注册动作
         let registeredAll = dispatcher.allActions
-        logToSharedContainer("[FinderSync] 当前 ActionDispatcher 中注册的所有动作总数: \(registeredAll.count)")
+        logToSharedContainer("[FinderSync] 当前 ActionDispatcher 中注册的所有动作总数: \(registeredAll.count)", level: .debug)
         for action in registeredAll {
-            logToSharedContainer("[FinderSync] 已注册 Action: ID = \(action.actionId), Title = \(action.localizedTitle), Category = \(action.category.rawValue)")
+            logToSharedContainer("[FinderSync] 已注册 Action: ID = \(action.actionId), Title = \(action.localizedTitle), Category = \(action.category.rawValue)", level: .debug)
         }
         
-        // 我们在右键菜单中建立结构化的二级子菜单，使菜单看起来极为干净利落（对标 Windows 的层级设计）
+        // 使用二级子菜单组织动作，减少 Finder 顶层右键菜单负担。
         let categories = ActionCategory.allCases
-        logToSharedContainer("[FinderSync] 开始遍历分类渲染菜单, 分类总数: \(categories.count)")
+        logToSharedContainer("[FinderSync] 开始遍历分类渲染菜单, 分类总数: \(categories.count)", level: .debug)
         
         for category in categories {
             let actions = dispatcher.actions(in: category)
-            logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] (\(category.rawValue)) 下共有 actions: \(actions.count) 个")
+            logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] (\(category.rawValue)) 下共有 actions: \(actions.count) 个", level: .debug)
             
             let enabledActions = actions.filter { action in
-                // 检查用户是否在主 App 中启用了这个选项，通过 SharedStorageManager 自动实现多级兜底同步
-                let key = "enable_action_\(action.actionId)"
-                let isEnabled = SharedStorageManager.shared.getBool(forKey: key)
+                // 检查用户是否在主 App 中启用了这个动作。
+                let isEnabled = SharedStorageManager.shared.isActionEnabled(action)
                 let isAvail = action.isAvailable(for: targetURLs, isContainer: isContainer)
-                logToSharedContainer("[FinderSync] 过滤检查 Action [\(action.localizedTitle)] (\(action.actionId)): isEnabled(配置) = \(isEnabled), isAvailable(状态, isContainer: \(isContainer)) = \(isAvail)")
+                logToSharedContainer("[FinderSync] 过滤检查 Action [\(action.localizedTitle)] (\(action.actionId)): isEnabled(配置) = \(isEnabled), isAvailable(状态, isContainer: \(isContainer)) = \(isAvail)", level: .debug)
                 return isEnabled && isAvail
             }
-            logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] 过滤后生效的 actions 数量: \(enabledActions.count)")
+            logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] 过滤后生效的 actions 数量: \(enabledActions.count)", level: .debug)
             
             // 只有当该子分类下有启用且可用的菜单项时，才渲染该分类的子菜单
             if !enabledActions.isEmpty {
@@ -285,7 +275,7 @@ class FinderSync: FIFinderSync {
                         action: #selector(actionMenuItemSelected(_:)),
                         keyEquivalent: ""
                     )
-                    // 使用静态双向 Mapper 生成并绑定 100% 跨 XPC 无损穿透的标量 tag
+                    // 使用静态双向 Mapper 生成并绑定标量 tag。
                     item.tag = FinderSync.getTag(for: action.actionId)
                     item.target = self
                     
@@ -294,16 +284,16 @@ class FinderSync: FIFinderSync {
                     }
                     
                     subMenu.addItem(item)
-                    logToSharedContainer("[FinderSync] 成功添加子菜单项: [\(action.localizedTitle)] (Tag: \(item.tag))")
+                    logToSharedContainer("[FinderSync] 成功添加子菜单项: [\(action.localizedTitle)] (Tag: \(item.tag))", level: .debug)
                 }
                 
                 categoryItem.submenu = subMenu
                 menu.addItem(categoryItem)
-                logToSharedContainer("[FinderSync] 成功向主菜单挂载分类: [\(category.localizedName)]")
+                logToSharedContainer("[FinderSync] 成功向主菜单挂载分类: [\(category.localizedName)]", level: .debug)
             }
         }
         
-        logToSharedContainer("[FinderSync] 菜单渲染完毕，主菜单 Items 数量: \(menu.items.count)")
+        logToSharedContainer("[FinderSync] 菜单渲染完毕，主菜单 Items 数量: \(menu.items.count)", level: .debug)
         // 若全部为空则不展示任何项
         return menu.items.isEmpty ? nil : menu
     }
