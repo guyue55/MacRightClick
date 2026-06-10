@@ -317,9 +317,11 @@ class FinderSync: FIFinderSync {
         dispatcher.register(action: NewFileAction(fileType: .md))
         dispatcher.register(action: NewFileAction(fileType: .json))
         dispatcher.register(action: NewFileAction(fileType: .csv))
+        dispatcher.register(action: NewFileAction(fileType: .html))
         dispatcher.register(action: NewFileAction(fileType: .docx))
         dispatcher.register(action: NewFileAction(fileType: .xlsx))
         dispatcher.register(action: NewFileAction(fileType: .pptx))
+        dispatcher.register(action: NewFileAction(fileType: .pdf))
         
         // B. 文件管理类
         dispatcher.register(action: FileManageAction(type: .cut))

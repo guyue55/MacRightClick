@@ -256,11 +256,11 @@ echo "🔐 [Build] 自动进行嵌套沙盒签名 (Ad-Hoc Nested Codesign)..."
 codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE/Contents/MacOS/RightClickAssistantExtension"
 codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE"
 
-# B. 再签名主程序二进制
-codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
+# B. 再签名主程序二进制 (作为非沙盒程序进行 Ad-Hoc 签名，彻底解除系统文件访问限制与 IPC 隔离)
+codesign --force --sign - "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
 
-# C. 最后整体签名宿主主 App Bundle (至关重要！解决 launchd spawn 162 崩溃)
-codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE"
+# C. 最后整体签名宿主主 App Bundle (作为非沙盒程序整体进行 Ad-Hoc 签名)
+codesign --force --sign - "$APP_BUNDLE"
 
 # D. 签名自检程序
 codesign --force --sign - "ActionVerifier_bin"

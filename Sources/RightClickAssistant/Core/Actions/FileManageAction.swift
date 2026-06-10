@@ -89,6 +89,16 @@ public final class FileManageAction: MenuAction {
         }
     }
     
+    private func runOnMainThread<T>(_ block: () -> T) -> T {
+        if Thread.isMainThread {
+            return block()
+        } else {
+            return DispatchQueue.main.sync {
+                return block()
+            }
+        }
+    }
+    
     public func isAvailable(for targetURLs: [URL]) -> Bool {
         return isAvailable(for: targetURLs, isContainer: false)
     }
@@ -203,18 +213,20 @@ public final class FileManageAction: MenuAction {
         case .permanentDelete:
             // 彻底删除需要二次确认，如果静默删除可以用此接口，但在真实的右键菜单中最好弹出确认框或通过系统静默 rm -rf
             // 这里我们展示核心删除逻辑：
-            let alert = NSAlert()
-            alert.messageText = "确定要彻底删除选中的项目吗？"
-            alert.informativeText = "此操作将绕过废纸篓直接从硬盘删除文件，且无法撤销！"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "确定彻底删除")
-            alert.addButton(withTitle: "取消")
-            
-            // 让对话框置顶弹出
-            NSApp.activate(ignoringOtherApps: true)
-            alert.window.level = .modalPanel
-            alert.window.orderFrontRegardless()
-            let response = alert.runModal()
+            let response = runOnMainThread { () -> NSApplication.ModalResponse in
+                let alert = NSAlert()
+                alert.messageText = "确定要彻底删除选中的项目吗？"
+                alert.informativeText = "此操作将绕过废纸篓直接从硬盘删除文件，且无法撤销！"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "确定彻底删除")
+                alert.addButton(withTitle: "取消")
+                
+                // 让对话框置顶弹出
+                NSApp.activate(ignoringOtherApps: true)
+                alert.window.level = .modalPanel
+                alert.window.orderFrontRegardless()
+                return alert.runModal()
+            }
             
             if response == .alertFirstButtonReturn {
                 var successCount = 0
@@ -273,19 +285,26 @@ public final class FileManageAction: MenuAction {
             if let customPath = customTargetPath {
                 destinationDir = customPath
             } else {
-                let openPanel = NSOpenPanel()
-                openPanel.canChooseFiles = false
-                openPanel.canChooseDirectories = true
-                openPanel.allowsMultipleSelection = false
-                openPanel.prompt = "选择目标文件夹"
+                let selectedURL = runOnMainThread { () -> URL? in
+                    let openPanel = NSOpenPanel()
+                    openPanel.canChooseFiles = false
+                    openPanel.canChooseDirectories = true
+                    openPanel.allowsMultipleSelection = false
+                    openPanel.prompt = "选择目标文件夹"
+                    
+                    NSApp.activate(ignoringOtherApps: true)
+                    openPanel.level = .modalPanel
+                    openPanel.orderFrontRegardless()
+                    if openPanel.runModal() == .OK {
+                        return openPanel.url
+                    }
+                    return nil
+                }
                 
-                NSApp.activate(ignoringOtherApps: true)
-                openPanel.level = .modalPanel
-                openPanel.orderFrontRegardless()
-                guard openPanel.runModal() == .OK, let selectedURL = openPanel.url else {
+                guard let url = selectedURL else {
                     return false
                 }
-                destinationDir = selectedURL
+                destinationDir = url
             }
             
             var successCount = 0

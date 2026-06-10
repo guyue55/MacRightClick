@@ -111,36 +111,43 @@ struct GeneralSettingsView: View {
     @State private var isPulsing = false
     let fdaTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
     
+    private var launchEnabledBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: { self.isLaunchEnabled },
+            set: { newValue in
+                self.isLaunchEnabled = newValue
+                let success = LaunchServiceManager.shared.setEnabled(newValue)
+                if success {
+                    // 写入 AppGroup 共享库备份，维护配置双写兼容性
+                    if let defaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant") {
+                        defaults.set(newValue, forKey: "shouldStartOnLaunch")
+                    }
+                    SharedHUDManager.show(
+                        title: newValue ? "开机自启已启用" : "开机自启已禁用",
+                        content: newValue ? "右键助手将在您登录系统时自动为您保驾护航" : "已从系统开机自启项中安全移除",
+                        iconName: newValue ? "bolt.fill" : "bolt.slash.fill",
+                        isSuccess: true
+                    )
+                } else {
+                    // 物理回滚 UI 状态
+                    self.isLaunchEnabled = LaunchServiceManager.shared.isEnabled
+                    SharedHUDManager.show(
+                        title: "自启设置失败",
+                        content: "系统限制或进程授权不足，请前往系统设置重试",
+                        isSuccess: false
+                    )
+                }
+            }
+        )
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             GroupBox(label: Label("系统集成", systemImage: "cpu")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("开机时自动启动右键助手", isOn: $isLaunchEnabled)
+                    Toggle("开机时自动启动右键助手", isOn: launchEnabledBinding)
                         .toggleStyle(.checkbox)
                         .font(.body)
-                        .onChange(of: isLaunchEnabled) { newValue in
-                            let success = LaunchServiceManager.shared.setEnabled(newValue)
-                            if success {
-                                // 写入 AppGroup 共享库备份，维护配置双写兼容性
-                                if let defaults = UserDefaults(suiteName: "group.guyue.RightClickAssistant") {
-                                    defaults.set(newValue, forKey: "shouldStartOnLaunch")
-                                }
-                                SharedHUDManager.show(
-                                    title: newValue ? "开机自启已启用" : "开机自启已禁用",
-                                    content: newValue ? "右键助手将在您登录系统时自动为您保驾护航" : "已从系统开机自启项中安全移除",
-                                    iconName: newValue ? "bolt.fill" : "bolt.slash.fill",
-                                    isSuccess: true
-                                )
-                            } else {
-                                // 物理回滚 UI 状态
-                                isLaunchEnabled = LaunchServiceManager.shared.isEnabled
-                                SharedHUDManager.show(
-                                    title: "自启设置失败",
-                                    content: "系统限制或进程授权不足，请前往系统设置重试",
-                                    isSuccess: false
-                                )
-                            }
-                        }
                     
                     Text("启用此项可在开机后，后台静默为您维护右键加速器，完全无感、超低消耗。")
                         .font(.caption)

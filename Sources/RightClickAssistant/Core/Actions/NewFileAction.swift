@@ -45,6 +45,44 @@ public enum SupportedFileType: String, CaseIterable, Codable, Identifiable {
             return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
         case .pptx:
             return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
+        case .html:
+            return """
+            <!doctype html>
+            <html lang="zh-CN">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>未命名</title>
+            </head>
+            <body>
+            </body>
+            </html>
+            """.data(using: .utf8) ?? Data()
+        case .pdf:
+            var pdf = "%PDF-1.4\n"
+            let objects = [
+                "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+                "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+                "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n"
+            ]
+            var offsets: [Int] = []
+            for object in objects {
+                offsets.append(pdf.utf8.count)
+                pdf += object
+            }
+            let xrefOffset = pdf.utf8.count
+            pdf += "xref\n0 \(objects.count + 1)\n0000000000 65535 f \n"
+            for offset in offsets {
+                pdf += String(format: "%010d 00000 n \n", offset)
+            }
+            pdf += """
+            trailer
+            << /Size \(objects.count + 1) /Root 1 0 R >>
+            startxref
+            \(xrefOffset)
+            %%EOF
+            """
+            return pdf.data(using: .ascii) ?? Data()
         default:
             return Data() // 文本类、JSON 等可直接生成 0 字节文件
         }

@@ -46,16 +46,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             defer: false
         )
         
+        window.delegate = self // 【关键修复】：指定 Window 代理，使 windowShouldClose 方法能被正确触发
         window.title = "开源右键助手 (RightClickAssistant)"
         window.center()
         window.setFrameAutosaveName("MainWindow")
         window.contentView = NSHostingView(rootView: contentView)
-        window.delegate = self
-        window.makeKeyAndOrderFront(nil)
+        window.orderOut(nil) // 【关键体验优化】：确保主设置窗口初始状态绝对不可见
         
-        // 保证应用图标显示在 Dock 栏并启动系统顶栏托盘助手
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // 【关键体验优化】：主程序启动时，默认保持极其安静的托盘挂载状态 (.accessory)
+        // 只有在需要显示 UI 的模态或用户双击图标重开时，才将策略调为 .regular，彻底根治触发右键菜单时强弹出主配置窗口的流氓体验。
+        NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
         
         print("[App] 右键助手宿主程序启动并初始化完成 (双保险中介链路就绪)")
@@ -135,9 +135,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         dispatcher.register(action: NewFileAction(fileType: .md))
         dispatcher.register(action: NewFileAction(fileType: .json))
         dispatcher.register(action: NewFileAction(fileType: .csv))
+        dispatcher.register(action: NewFileAction(fileType: .html))
         dispatcher.register(action: NewFileAction(fileType: .docx))
         dispatcher.register(action: NewFileAction(fileType: .xlsx))
         dispatcher.register(action: NewFileAction(fileType: .pptx))
+        dispatcher.register(action: NewFileAction(fileType: .pdf))
         
         // B. 文件管理类
         dispatcher.register(action: FileManageAction(type: .cut))
@@ -293,6 +295,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 3. 返回 false 拦截窗口的实际销毁与主程序自动退出
         return false
     }
+    
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettingsWindow()
+        return true
+    }
 }
 
 // MARK: - 纯代码 AppKit 生命周期终极托管入口
@@ -308,4 +315,3 @@ struct AppMain {
         app.run()
     }
 }
-

@@ -17,7 +17,7 @@
 
 ## 🌟 Overview
 
-**MacRightClick** is an elegant, ultra-fast, and modern open-source **Right-Click Context Menu Enhancement Assistant** designed specifically for macOS. It supports 26 daily high-frequency right-click actions (such as one-click creation of various file formats, opening current folders in Terminal/iTerm/VSCode/Cursor, physical file hash checksum extraction, toggle display of system hidden files, text-to-QR Code generation, etc.).
+**MacRightClick** is an elegant, ultra-fast, and modern open-source **Right-Click Context Menu Enhancement Assistant** designed specifically for macOS. It supports 28 daily high-frequency right-click actions (such as one-click creation of various file formats, opening current folders in Terminal/iTerm/VSCode/Cursor, physical file hash checksum extraction, toggle display of system hidden files, text-to-QR Code generation, etc.).
 
 More importantly, it incorporates a cutting-edge **"Distributed Signal + Kernel-level BSD kqueue (DispatchSource)" Dual-Channel Sandbox-Penetrating Distribution Mechanism**. This ensures **100% absolute physical stability, 0 ms response latency, and 0 packet loss** even under strict sandbox isolation and local Ad-Hoc code signatures!
 
@@ -35,11 +35,11 @@ More importantly, it incorporates a cutting-edge **"Distributed Signal + Kernel-
 
 ---
 
-## 🛠️ Action Matrix (26 Core Actions)
+## 🛠️ Action Matrix (28 Core Actions)
 
 | 📂 File Creation | 📝 File Management | 💻 Editor & Terminal | 🧰 Utility & Tools |
 | :--- | :--- | :--- | :--- |
-| - New `.txt` Text File<br>- New `.md` Markdown<br>- New `.json` Data File<br>- New `.csv` Spreadsheet<br>- New `.docx` Word Document<br>- New `.xlsx` Excel Sheet<br>- New `.pptx` PowerPoint | - Cut selected items<br>- Paste clipboard items<br>- Permanent force delete<br>- Copy absolute file paths<br>- Copy file name only<br>- Fast "Copy To..."<br>- Fast "Move To..." | - Open in Terminal<br>- Open in iTerm2<br>- Open in Warp<br>- Open in VSCode<br>- Open in Sublime Text<br>- Open in Cursor | - Compute file MD5 hash<br>- Compute file SHA256 hash<br>- Toggle show hidden files<br>- Text-to-QR Code window<br>- Convert image to PNG<br>- Convert image to JPEG |
+| - New `.txt` Text File<br>- New `.md` Markdown<br>- New `.json` Data File<br>- New `.csv` Spreadsheet<br>- New `.html` Web Page<br>- New `.docx` Word Document<br>- New `.xlsx` Excel Sheet<br>- New `.pptx` PowerPoint<br>- New `.pdf` PDF Document | - Cut selected items<br>- Paste clipboard items<br>- Permanent force delete<br>- Copy absolute file paths<br>- Copy file name only<br>- Fast "Copy To..."<br>- Fast "Move To..." | - Open in Terminal<br>- Open in iTerm2<br>- Open in Warp<br>- Open in VSCode<br>- Open in Sublime Text<br>- Open in Cursor | - Compute file MD5 hash<br>- Compute file SHA256 hash<br>- Toggle show hidden files<br>- Text-to-QR Code window<br>- Convert image to PNG<br>- Convert image to JPEG |
 
 ---
 
@@ -110,8 +110,8 @@ The codebase integrates automated verification tools. You can run the following 
 ```text
 ==============================================================================
 📊 [Verifier] 📊 Physical Self-Check Ended!
-🟢 Passed: 8 / 8
-🔴 Failed: 0 / 8
+🟢 Passed: 10 / 10
+🔴 Failed: 0 / 10
 ==============================================================================
 🎉 [Verifier] 🎉 All Green! Seamless multi-process messaging loop & actions validated!
 ```

@@ -7,7 +7,7 @@ import AppKit
 struct ActionVerifier {
     static func main() {
         print("==============================================================================")
-        print("🧪 [Verifier] 开始执行 26 个 Action 全自动机器端物理仿真校验与断言测试...")
+        print("🧪 [Verifier] 开始执行 28 个 Action 全自动机器端物理仿真校验与断言测试...")
         print("==============================================================================")
         
         // 1. 初始化测试专属物理大本营
@@ -103,6 +103,18 @@ struct ActionVerifier {
             // 必须是我们精简包的 base64 骨架，大小不为 0
             return !data.isEmpty
         }
+
+        runTest(name: "新建 HTML 基础文档", actionId: "guyue.action.newfile.html", targets: [testDirURL]) {
+            let fileURL = testDirURL.appendingPathComponent("未命名.html")
+            guard let html = try? String(contentsOf: fileURL, encoding: .utf8) else { return false }
+            return html.contains("<!doctype html>") && html.contains("<title>未命名</title>")
+        }
+
+        runTest(name: "新建 PDF 空白骨架", actionId: "guyue.action.newfile.pdf", targets: [testDirURL]) {
+            let fileURL = testDirURL.appendingPathComponent("未命名.pdf")
+            guard let data = try? Data(contentsOf: fileURL) else { return false }
+            return data.starts(with: Data("%PDF-".utf8)) && data.contains(Data("%%EOF".utf8))
+        }
         
         // ==========================================
         // 【第二分类：文件管理类物理自检】
@@ -166,8 +178,8 @@ struct ActionVerifier {
         
         print("==============================================================================")
         print("📊 [Verifier] 物理自检结束！")
-        print("🟢 通过项: \(passCount) / 8")
-        print("🔴 失败项: \(failCount) / 8")
+        print("🟢 通过项: \(passCount) / 10")
+        print("🔴 失败项: \(failCount) / 10")
         print("==============================================================================")
         
         if failCount > 0 {

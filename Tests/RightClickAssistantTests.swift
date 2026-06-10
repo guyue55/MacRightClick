@@ -76,4 +76,38 @@ final class RightClickAssistantTests: XCTestCase {
             XCTFail("无法读取生成的文件内容")
         }
     }
+
+    /// 4. 测试新建 PDF 时写入最小合法 PDF 骨架，避免生成 0 字节损坏文件
+    func testPDFFileTemplateBytes() {
+        let action = NewFileAction(fileType: .pdf)
+
+        let success = action.execute(targetURLs: [tempDirectory])
+        XCTAssertTrue(success)
+
+        let expectedURL = tempDirectory.appendingPathComponent("未命名.pdf")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expectedURL.path))
+
+        guard let fileData = try? Data(contentsOf: expectedURL) else {
+            XCTFail("无法读取生成的 PDF 文件内容")
+            return
+        }
+
+        XCTAssertTrue(fileData.starts(with: Data("%PDF-".utf8)), "PDF 文件应该以标准 PDF 魔数开头")
+        XCTAssertTrue(fileData.contains(Data("%%EOF".utf8)), "PDF 文件应该包含 EOF 结束标记")
+    }
+
+    /// 5. 测试新建 HTML 时写入基础文档骨架，便于双击后直接编辑和预览
+    func testHTMLFileTemplateBytes() {
+        let action = NewFileAction(fileType: .html)
+
+        let success = action.execute(targetURLs: [tempDirectory])
+        XCTAssertTrue(success)
+
+        let expectedURL = tempDirectory.appendingPathComponent("未命名.html")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expectedURL.path))
+
+        let html = (try? String(contentsOf: expectedURL, encoding: .utf8)) ?? ""
+        XCTAssertTrue(html.contains("<!doctype html>"), "HTML 文件应该包含基础 doctype")
+        XCTAssertTrue(html.contains("<title>未命名</title>"), "HTML 文件应该包含默认标题")
+    }
 }
