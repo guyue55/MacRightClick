@@ -222,6 +222,31 @@ cat <<EOF > "$BUILD_DIR/RightClickAssistantExtension.entitlements"
 <dict>
     <key>com.apple.security.app-sandbox</key>
     <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.guyue.RightClickAssistant</string>
+    </array>
+</dict>
+</plist>
+EOF
+
+cat <<EOF > "$BUILD_DIR/RightClickAssistant.entitlements"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.guyue.RightClickAssistant</string>
+    </array>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
 </dict>
 </plist>
 EOF
@@ -229,13 +254,13 @@ EOF
 echo "🔐 [Build] 自动进行嵌套沙盒签名 (Ad-Hoc Nested Codesign)..."
 # A. 先签名最内层插件的二进制与整个 XPC 插件 bundle
 codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE/Contents/MacOS/RightClickAssistantExtension"
-codesign --force --sign - "$EXT_BUNDLE"
+codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE"
 
 # B. 再签名主程序二进制
-codesign --force --sign - "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
+codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
 
 # C. 最后整体签名宿主主 App Bundle (至关重要！解决 launchd spawn 162 崩溃)
-codesign --force --sign - "$APP_BUNDLE"
+codesign --force --sign - --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE"
 
 # D. 签名自检程序
 codesign --force --sign - "ActionVerifier_bin"
