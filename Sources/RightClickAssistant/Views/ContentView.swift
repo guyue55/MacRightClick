@@ -339,6 +339,8 @@ struct PermissionsSettingsView: View {
 struct DiagnosticsSettingsView: View {
     @State private var isExtensionEnabled = false
     @State private var isDebugLoggingEnabled = false
+    @State private var pendingCount = 0
+    @State private var failedCount = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -352,6 +354,14 @@ struct DiagnosticsSettingsView: View {
                             refresh()
                         }
                     }
+
+                    HStack(spacing: 16) {
+                        Label("待处理: \(pendingCount)", systemImage: "tray")
+                            .foregroundColor(pendingCount > 0 ? .accentColor : .secondary)
+                        Label("失败: \(failedCount)", systemImage: "tray.and.arrow.down")
+                            .foregroundColor(failedCount > 0 ? .red : .secondary)
+                    }
+                    .font(.callout)
 
                     Button("打开扩展设置") {
                         FIFinderSyncController.showExtensionManagementInterface()
@@ -403,6 +413,8 @@ struct DiagnosticsSettingsView: View {
     private func refresh() {
         isExtensionEnabled = FIFinderSyncController.isExtensionEnabled
         isDebugLoggingEnabled = SharedStorageManager.shared.isDebugLoggingEnabled
+        pendingCount = SharedStorageManager.shared.pendingActionCount
+        failedCount = SharedStorageManager.shared.failedActionCount
     }
 }
 

@@ -202,30 +202,19 @@ public final class UtilityAction: MenuAction {
         }
     }
     
-    // MARK: - 1. 哈希计算
+    // MARK: - 1. 流式哈希计算
     private func calculateHash(for url: URL) -> Bool {
+        let algorithm: HashAlgorithm = utilityType == .calculateSHA256 ? .sha256 : .md5
+        let label = utilityType == .calculateSHA256 ? "SHA256" : "MD5"
         do {
-            let fileData = try Data(contentsOf: url)
-            let hashString: String
-            
-            if utilityType == .calculateMD5 {
-                let digest = Insecure.MD5.hash(data: fileData)
-                hashString = digest.map { String(format: "%02hhx", $0) }.joined()
-            } else {
-                let digest = SHA256.hash(data: fileData)
-                hashString = digest.map { String(format: "%02hhx", $0) }.joined()
-            }
-            
-            // 写入系统剪切板并弹窗显示
+            let hashString = try FileHashCalculator.hashFile(at: url, algorithm: algorithm)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(hashString, forType: .string)
-            
-            SharedHUDManager.show(title: "哈希计算成功", content: "已将校验码拷贝至剪贴板：\(hashString)", isSuccess: true)
+            SharedHUDManager.show(title: "\(label) 计算完成", content: "已复制到剪贴板", isSuccess: true)
             return true
         } catch {
-            let errorMsg = error.localizedDescription
-            print("[UtilityAction] 读取文件计算 Hash 失败: \(errorMsg)")
-            SharedHUDManager.show(title: "哈希计算失败", content: "无法读取文件数据：\(errorMsg)", isSuccess: false)
+            print("[UtilityAction] 流式计算 \(label) 失败: \(error.localizedDescription)")
+            SharedHUDManager.show(title: "\(label) 计算失败", content: error.localizedDescription, isSuccess: false)
             return false
         }
     }

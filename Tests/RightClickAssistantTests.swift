@@ -225,4 +225,29 @@ final class RightClickAssistantTests: XCTestCase {
         ])
         XCTAssertFalse(paths.contains("/Users/example/GitProject"))
     }
+
+    /// 14. 哈希计算应支持流式读取并给出稳定结果
+    func testFileHashCalculatorProducesExpectedHashes() throws {
+        let fileURL = tempDirectory.appendingPathComponent("hash.txt")
+        try Data("abc".utf8).write(to: fileURL)
+
+        XCTAssertEqual(try FileHashCalculator.hashFile(at: fileURL, algorithm: .md5), "900150983cd24fb0d6963f7d28e17f72")
+        XCTAssertEqual(try FileHashCalculator.hashFile(at: fileURL, algorithm: .sha256), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    /// 15. 无法解析的队列事件应隔离到 FailedActions，便于诊断而不是静默丢弃
+    func testMalformedQueueEventsAreQuarantined() throws {
+        let storage = SharedStorageManager.shared
+        try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
+        try? FileManager.default.removeItem(at: storage.failedActionsDirectoryURL)
+
+        let malformedURL = storage.pendingActionsDirectoryURL.appendingPathComponent("malformed.json")
+        try Data("{ invalid json".utf8).write(to: malformedURL)
+
+        let events = storage.consumePendingActionEvents()
+
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertEqual(storage.pendingActionCount, 0)
+        XCTAssertEqual(storage.failedActionCount, 1)
+    }
 }

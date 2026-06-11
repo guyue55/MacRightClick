@@ -29,6 +29,7 @@ public final class SharedStorageManager {
     
     private let appGroupIdentifier = "group.guyue.RightClickAssistant"
     private let extensionBundleIdentifier = "guyue.RightClickAssistant.Extension"
+    private let configQueue = DispatchQueue(label: "guyue.RightClickAssistant.config")
     
     private init() {}
     
@@ -100,11 +101,28 @@ public final class SharedStorageManager {
         return url
     }
     
+    /// 无法解析的失败队列事件隔离目录，便于诊断不丢数据。
+    public var failedActionsDirectoryURL: URL {
+        let url = sharedContainerURL.appendingPathComponent("FailedActions", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
+        return url
+    }
+
     /// 共享的 config.json 配置交换文件 URL。
     public var configURL: URL {
         return sharedContainerURL.appendingPathComponent("config.json")
     }
     
+    public var pendingActionCount: Int {
+        return (try? FileManager.default.contentsOfDirectory(atPath: pendingActionsDirectoryURL.path))?
+            .filter { $0.hasSuffix(".json") }.count ?? 0
+    }
+
+    public var failedActionCount: Int {
+        return (try? FileManager.default.contentsOfDirectory(atPath: failedActionsDirectoryURL.path))?
+            .filter { $0.hasSuffix(".json") }.count ?? 0
+    }
+
     /// 共享日志文件 URL。
     public var logFileURL: URL {
         let logsDir = sharedContainerURL.appendingPathComponent("Library/Logs", isDirectory: true)
@@ -214,7 +232,9 @@ public final class SharedStorageManager {
                 let event = try JSONDecoder().decode(SharedActionEvent.self, from: data)
                 events.append(event)
             } catch {
-                writeLog("[SharedStorage] 无法解析队列动作文件，已丢弃: \(url.lastPathComponent), error: \(error.localizedDescription)")
+                writeLog("[SharedStorage] 无法解析队列动作文件，已隔离至 FailedActions: \(url.lastPathComponent), error: \(error.localizedDescription)")
+                let failedURL = failedActionsDirectoryURL.appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.moveItem(at: url, to: failedURL)
             }
         }
 
@@ -265,10 +285,12 @@ public final class SharedStorageManager {
         return json
     }
     
-    /// 写入共享的 JSON 配置文件
+    /// 写入共享的 JSON 配置文件。通过串行队列保护并发写入，避免 load-modify-save 竞态。
     private func saveConfig(_ config: [String: Any]) {
-        if let data = try? JSONSerialization.data(withJSONObject: config, options: .prettyPrinted) {
-            try? data.write(to: configURL, options: .atomic)
+        configQueue.sync {
+            if let data = try? JSONSerialization.data(withJSONObject: config, options: .prettyPrinted) {
+                try? data.write(to: configURL, options: .atomic)
+            }
         }
     }
     
