@@ -102,7 +102,7 @@ NOTARY_PROFILE="your-notarytool-profile" \
 
 这条路线会启用 Developer ID 签名、Hardened Runtime、notarytool 提交、公证完成后对 `.app` 与 `.dmg` 执行 `stapler staple`。
 
-Mac App Store 不是当前默认路线。若未来切换到 Mac App Store，需要先恢复主 App sandbox、正式 App Group、security-scoped access/bookmarks，并重新评估永久删除、重启 Finder、跨目录移动等高级动作的审核与权限边界。
+Mac App Store 不是当前默认路线。若未来切换到 Mac App Store，请先阅读 [Mac App Store 架构迁移文档](docs/distribution/mac-app-store-architecture.md)，其中详细列出了 App Sandbox、App Group、security-scoped bookmarks 等必备前提。
 
 ### 🛠️ 1. 本地自动化编译
 根目录下配备了标准的 Universal 2 多架构极速编译打包工具：

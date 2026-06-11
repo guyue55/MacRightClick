@@ -104,7 +104,7 @@ NOTARY_PROFILE="your-notarytool-profile" \
 
 This route enables Developer ID signing, Hardened Runtime, notarytool submission, and `stapler staple` for both the `.app` bundle and `.dmg`.
 
-Mac App Store is not the default route. If the project later targets the Mac App Store, the main app must restore App Sandbox, formal App Groups, security-scoped access/bookmarks, and re-review advanced actions such as permanent deletion, Finder restart, and cross-directory movement.
+Mac App Store is not the default route. If the project later targets the Mac App Store, start with the [Mac App Store Architecture Migration Guide](docs/distribution/mac-app-store-architecture.md), which covers App Sandbox, formal App Groups, security-scoped bookmarks, and review considerations.
 
 ### 🛠️ 1. Local Automated Compilation
 The repository is fully equipped with a modern Universal 2 build script:
