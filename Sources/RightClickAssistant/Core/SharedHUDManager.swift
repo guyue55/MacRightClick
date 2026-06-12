@@ -30,12 +30,15 @@ public final class SharedHUDManager {
                 activePanel = nil
             }
             
-            // 3. 紧凑型胶囊几何尺寸 (260x48)
-            let width: CGFloat = 260
-            let height: CGFloat = 48
-            
-            // 4. 定位屏幕正中央挂在菜单栏（Mac Top Menu Bar）正下方的优雅安全区
             let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
+            // 3. 胶囊几何尺寸，长内容自适应加宽。
+            let baseWidth: CGFloat = 260
+            let maxWidth: CGFloat = min(520, screenRect.size.width * 0.66)
+            let contentWidth = CGFloat((content as NSString).size(withAttributes: [
+                .font: NSFont.systemFont(ofSize: 10, weight: .regular)
+            ]).width)
+            let width: CGFloat = max(baseWidth, min(baseWidth + contentWidth * 0.6, maxWidth))
+            let height: CGFloat = 48
             let x = screenRect.origin.x + (screenRect.size.width - width) / 2
             let y = screenRect.origin.y + screenRect.size.height - height - 30 // 位于菜单栏下方
             

@@ -133,7 +133,6 @@ public final class FileManageAction: MenuAction {
             alert.alertStyle = .warning
             alert.addButton(withTitle: confirmTitle)
             alert.addButton(withTitle: "取消")
-            NSApp.activate(ignoringOtherApps: true)
             alert.window.level = .modalPanel
             alert.window.orderFrontRegardless()
             return alert.runModal() == .alertFirstButtonReturn
@@ -322,7 +321,6 @@ public final class FileManageAction: MenuAction {
                     openPanel.allowsMultipleSelection = false
                     openPanel.prompt = "选择目标文件夹"
                     
-                    NSApp.activate(ignoringOtherApps: true)
                     openPanel.level = .modalPanel
                     openPanel.orderFrontRegardless()
                     if openPanel.runModal() == .OK {

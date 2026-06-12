@@ -71,29 +71,14 @@ class FinderSync: FIFinderSync {
         
         logToSharedContainer("[FinderSync] [actionMenuItemSelected] 已发出动作触发信号", level: .debug)
         
-        // 3. 智能拉起并有针对性地前台激活/静默唤醒宿主主程序
-        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "guyue.RightClickAssistant") {
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.addsToRecentItems = false
-            
-            // 如果此动作涉及弹窗、选择框或警示框，必须强制唤醒至前台（Bring to Front）并赋予系统物理焦点，否则会导致后台弹窗卡死或被覆盖
-            let needsUI = [
-                "guyue.action.filemanage.delete",
-                "guyue.action.filemanage.moveTo",
-                "guyue.action.filemanage.copyTo",
-                "guyue.action.utility.calculateMD5",
-                "guyue.action.utility.calculateSHA256",
-                "guyue.action.utility.textToQRCode"
-            ].contains(actionId)
-            
-            configuration.activates = needsUI
-            
-            NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
-                if let error = error {
-                    self.logToSharedContainer("[FinderSync] [actionMenuItemSelected] 激活宿主 App 失败: \(error.localizedDescription), needsUI: \(needsUI)")
-                } else {
-                    self.logToSharedContainer("[FinderSync] [actionMenuItemSelected] 宿主 App 状态更新成功, needsUI: \(needsUI)", level: .debug)
-                }
+        // 3. 仅在宿主 App 未运行时才拉起；已运行时 DistributedNotification 已足够唤醒消费队列。
+        let hostBundleID = "guyue.RightClickAssistant"
+        let isHostRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == hostBundleID }
+        if !isHostRunning {
+            if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: hostBundleID) {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.addsToRecentItems = false
+                NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
             }
         }
     }

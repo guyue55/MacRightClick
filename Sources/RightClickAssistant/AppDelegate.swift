@@ -234,8 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     }
     
     @objc private func showSettingsWindow() {
-        // 先恢复 Regular 模式，重新将图标带回 Dock 栏并获取物理焦点
-        NSApp.setActivationPolicy(.regular)
+        // 保持在 accessory 模式（无 Dock 图标），仅将窗口前置。
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
@@ -247,7 +246,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     }
     
     @objc private func showAboutDialog() {
-        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "关于右键助手"
         
@@ -276,8 +274,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         // 1. 物理隐藏偏好设置窗口，避免被彻底销毁
         window.orderOut(nil)
         
-        // 2. 动态下调激活策略为 .accessory，从系统的 Dock 栏里干净地隐藏应用图标
-        NSApp.setActivationPolicy(.accessory)
+        // 2. 保持 .accessory 模式，仅隐藏窗口。
         
         SharedStorageManager.shared.writeLog("[App] 偏好设置窗口已被关闭，宿主程序自动降级为 .accessory 常驻后台静默运行中...")
         

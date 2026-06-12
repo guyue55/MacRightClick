@@ -195,7 +195,6 @@ public final class UtilityAction: MenuAction {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "确认切换并重启 Finder")
             alert.addButton(withTitle: "取消")
-            NSApp.activate(ignoringOtherApps: true)
             alert.window.level = .modalPanel
             alert.window.orderFrontRegardless()
             return alert.runModal() == .alertFirstButtonReturn
@@ -316,35 +315,34 @@ public final class UtilityAction: MenuAction {
         let nsImage = NSImage(size: rep.size)
         nsImage.addRepresentation(rep)
         
-        // 显示生成的二维码
+        // 以浮动面板展示二维码，不抢焦点。
         DispatchQueue.main.async {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 320, height: 350),
-                styleMask: [.titled, .closable, .fullSizeContentView],
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 300, height: 340),
+                styleMask: [.titled, .closable, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "文本二维码"
-            window.center()
-            
-            let imageView = NSImageView(frame: NSRect(x: 20, y: 50, width: 280, height: 280))
+            panel.title = "文本二维码"
+            panel.center()
+            panel.isFloatingPanel = true
+            panel.hidesOnDeactivate = false
+
+            let imageView = NSImageView(frame: NSRect(x: 10, y: 40, width: 280, height: 280))
             imageView.image = nsImage
-            
+
             let label = NSTextField(labelWithString: "内容: " + (text.count > 25 ? String(text.prefix(22)) + "..." : text))
-            label.frame = NSRect(x: 20, y: 15, width: 280, height: 25)
+            label.frame = NSRect(x: 10, y: 15, width: 280, height: 20)
             label.alignment = .center
-            
-            let contentView = NSView(frame: window.frame)
-            contentView.addSubview(imageView)
-            contentView.addSubview(label)
-            
-            window.contentView = contentView
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            
+
+            panel.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 340))
+            panel.contentView?.addSubview(imageView)
+            panel.contentView?.addSubview(label)
+            panel.makeKeyAndOrderFront(nil)
+
             SharedHUDManager.show(
-                title: "生成二维码成功",
-                content: "已成功解析剪贴板内容并展示二维码",
+                title: "二维码已生成",
+                content: "剪贴板内容已转为二维码",
                 isSuccess: true
             )
         }
