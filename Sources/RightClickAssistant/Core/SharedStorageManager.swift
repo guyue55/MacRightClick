@@ -48,31 +48,35 @@ public final class SharedStorageManager {
         return bid.contains("Extension")
     }
     
-    /// 是否强制使用 Extension 沙盒目录中介通道。
-    /// 当前主分发路线是官网/开源站外分发，为保证 Ad-hoc 与 Developer ID 环境路径一致，默认强制使用该稳定通道。
-    /// 若未来切换 Mac App Store，应改为正式 App Group + security-scoped access。
-    private let forceLocalSandboxExchange = true
-    
     /// 核心共享容器目录定位器。
+    /// 行为由 `Distribution` 编译期常量决定：
+    /// - MAS 路线：必须走 App Group 容器；若不可写视为配置错误，记 error 并兜底到主 App 自身 NSHomeDirectory
+    /// - website 路线：直接走 Extension Container（~/Library/Containers/<extBundle>/Data），主 App 非 sandbox 时可正常读写
     public var sharedContainerURL: URL {
-        // 1. 若未开启强制沙盒降级，尝试获取系统的 App Group 官方共享容器
-        if !forceLocalSandboxExchange {
+        if Distribution.usesAppGroup {
             if let appGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
-                // 进行额外的写可行性验证，防止 Ad-hoc 签名下 containerURL 虽然能返回路径但底层却因为安全权限被直接挂起或只读
                 let testDir = appGroupURL.appendingPathComponent(".test_write")
                 do {
                     try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true, attributes: nil)
                     try FileManager.default.removeItem(at: testDir)
                     return appGroupURL
                 } catch {
-                    // 如果写入测试失败，说明系统强制实行了沙盒安全隔离，我们将降级到 Extension 沙盒目录
+                    AppLog.error("App Group 容器不可写，分发路线 = \(Distribution.route.rawValue)", category: .storage)
+                    // 不静默降级到 Extension Container：MAS 沙盒下读不到，会再次失败。
+                    // 兜底到主 App 自身 home，至少避免空指针；此路径下队列与配置不会跨进程互通，调用方应通过日志发现配置错。
+                    return URL(fileURLWithPath: NSHomeDirectory())
                 }
             }
+            AppLog.error("App Group containerURL 返回 nil，分发路线 = \(Distribution.route.rawValue)", category: .storage)
+            return URL(fileURLWithPath: NSHomeDirectory())
         }
-        
-        // 2. 站外分发降级路径：Extension 的沙盒 Container 目录
-        // - 在 Extension 进程内部：NSHomeDirectory() 本身就是其沙盒 Container 目录（~/Library/Containers/.../Data）
-        // - 在主 App (非沙盒进程) 内部：我们可以通过真实 Home 目录拼接该 Extension 的沙盒物理路径
+
+        guard Distribution.allowsCrossContainerExchange else {
+            AppLog.error("当前分发路线既不允许 App Group 也不允许跨 Container 交换", category: .storage)
+            return URL(fileURLWithPath: NSHomeDirectory())
+        }
+
+        // website 路线：跨 Container 读 Extension 沙盒目录。
         let path: String
         if isRunningInExtension {
             path = NSHomeDirectory()
@@ -80,10 +84,8 @@ public final class SharedStorageManager {
             let realHome = getRealHomeDirectory()
             path = (realHome as NSString).appendingPathComponent("Library/Containers/\(extensionBundleIdentifier)/Data")
         }
-        
+
         let url = URL(fileURLWithPath: path)
-        
-        // 确保降级物理目录必定被成功创建，且具有完整读写权限
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
         return url
     }

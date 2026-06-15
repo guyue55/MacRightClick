@@ -201,7 +201,8 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
     Sources/RightClickAssistant/Core/Actions/UtilityAction.swift \
     Sources/RightClickAssistant/Core/FileHashCalculator.swift \
-    Sources/RightClickAssistant/Core/Logging/AppLog.swift
+    Sources/RightClickAssistant/Core/Logging/AppLog.swift \
+    Sources/RightClickAssistant/Core/Distribution.swift
 "
 
 EXT_SOURCES="
@@ -215,11 +216,19 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
     Sources/RightClickAssistant/Core/Actions/UtilityAction.swift \
     Sources/RightClickAssistant/Core/FileHashCalculator.swift \
-    Sources/RightClickAssistant/Core/Logging/AppLog.swift
+    Sources/RightClickAssistant/Core/Logging/AppLog.swift \
+    Sources/RightClickAssistant/Core/Distribution.swift
 "
 
 SDK_PATH=$(xcrun --show-sdk-path)
 COMMON_FLAGS="-Onone -parse-as-library -sdk $SDK_PATH -vfsoverlay $BUILD_DIR/overlay.yaml"
+
+# 按分发路线注入编译期常量，供 Sources/RightClickAssistant/Core/Distribution.swift 读取
+case "$DISTRIBUTION_ROUTE" in
+    website-dev)     COMMON_FLAGS="$COMMON_FLAGS -D WEBSITE_DEV" ;;
+    website-release) COMMON_FLAGS="$COMMON_FLAGS -D WEBSITE_RELEASE" ;;
+    mac-app-store)   COMMON_FLAGS="$COMMON_FLAGS -D MAC_APP_STORE" ;;
+esac
 
 # 6. 编译宿主主程序 (arm64 与 x86_64)
 echo "🛠️ [Build] 编译宿主主程序 (arm64)..."
