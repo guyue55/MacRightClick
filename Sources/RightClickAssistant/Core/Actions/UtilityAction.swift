@@ -259,11 +259,22 @@ public final class UtilityAction: MenuAction {
             try writeProcess.run()
             writeProcess.waitUntilExit()
             
-            let killProcess = Process()
-            killProcess.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-            killProcess.arguments = ["Finder"]
-            try killProcess.run()
-            killProcess.waitUntilExit()
+            // 用 AppleScript 让 Finder 优雅退出，比 killall 安全：
+            // - 系统会保存 Finder 当前状态（拖拽中、复制进度框、未关窗口），不会粗暴打断
+            // - 退出后 launchd 会自动重新拉起 Finder
+            // 保险起见，500ms 后再用 `open -a Finder` 显式触发重启，覆盖某些不会自动复活的边角场景。
+            let osa = Process()
+            osa.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            osa.arguments = ["-e", "tell application \"Finder\" to quit"]
+            try osa.run()
+            osa.waitUntilExit()
+
+            Thread.sleep(forTimeInterval: 0.5)
+
+            let relaunch = Process()
+            relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            relaunch.arguments = ["-a", "Finder"]
+            try? relaunch.run()
             
             let stateStr = toggleVal == "YES" ? "显示" : "隐藏"
             SharedHUDManager.show(

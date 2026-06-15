@@ -222,13 +222,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let toggleHiddenAction = UtilityAction(type: .toggleHiddenFiles)
-        if SharedStorageManager.shared.isActionEnabled(toggleHiddenAction) {
-            let toggleHiddenItem = NSMenuItem(title: "切换 Finder 隐藏文件", action: #selector(toggleHiddenFilesFromMenu), keyEquivalent: "h")
-            toggleHiddenItem.target = self
-            menu.addItem(toggleHiddenItem)
-        }
-        
         menu.addItem(NSMenuItem.separator())
         
         let aboutItem = NSMenuItem(title: "关于右键助手", action: #selector(showAboutDialog), keyEquivalent: "")
@@ -244,12 +237,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         // 保持在 accessory 模式（无 Dock 图标），仅将窗口前置。
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-    }
-    
-    @objc private func toggleHiddenFilesFromMenu() {
-        SharedStorageManager.shared.writeLog("[App] [Tray] 收到菜单栏切换 Finder 隐藏文件请求...")
-        let success = ActionDispatcher.shared.dispatch(actionId: "guyue.action.utility.toggleHiddenFiles", targetURLs: [])
-        SharedStorageManager.shared.writeLog("[App] [Tray] 菜单栏切换隐藏文件执行结果: \(success ? "成功" : "失败")")
     }
     
     @objc private func showAboutDialog() {
