@@ -60,7 +60,7 @@
 | UtilityAction | `killall Finder` 改 osascript quit + 必要时 `open -a Finder`；二维码面板抽出为 fileprivate `QRCodePanelController`（与 UtilityAction 同文件，隔离生命周期与按钮回调），加保存/拷贝/滚动文本 | A3 / C2 |
 | NewFileAction | `defaultEmptyBytes` 的 docx/xlsx/pptx 改读 `Bundle.main` 下 `Templates/blank.docx|.xlsx|.pptx`；Resources 仓库直存最小可打开骨架 | A2 |
 | AppDelegate | 状态栏托盘去掉「切换 Finder 隐藏文件」菜单项 | A3 |
-| SharedHUDManager | `screenForMouseLocation()` + 点击手势 + Esc 监听淡出 | B2 |
+| SharedHUDManager | `screenFrame(screens:mouseLocation:fallback:)` + 点击手势 + Esc 监听淡出 | B2 |
 | FinderSync | `menu(for:)` 主路径走 `ActionConfigCache + InstalledAppRegistry`，所有 `logToSharedContainer(.debug)` 改 `AppLog.debug` | B3 / C1 |
 | ContentView | OverviewSettingsView 去重；AdvancedSettingsView 恢复默认拆两按钮；OnboardingStepsView 删 else；PermissionsSettingsView 移除 2s timer | B1 / B5 / C3 / C4 |
 | SharedStorageManager | 删 `forceLocalSandboxExchange = true`，改读 `Distribution.allowsCrossContainerExchange`；保留旧 `extension.log` 路径只读供导出 | A4 / C1 |
