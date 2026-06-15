@@ -109,6 +109,12 @@ class FinderSync: FIFinderSync {
         
         // 4. 在插件进程中也初始化默认动作集，以便直接在插件中分发执行
         registerDefaultActionsInExtension()
+
+        // 5. 预热进程内缓存：把启用/收藏配置一次性读入，避免菜单渲染主路径同步穿透到 UserDefaults / config.json。
+        //    同时把所有依赖 Launch Services 的 bundleId 一次性解析，避免 menu(for:) 阶段同步查询 NSWorkspace。
+        ActionConfigCache.shared.preheat()
+        let bundleIds = ActionDispatcher.shared.allActions.compactMap { $0.associatedBundleIdentifier }
+        InstalledAppRegistry.shared.preheat(bundleIds)
     }
     
     @objc private func configChanged() {
@@ -139,9 +145,13 @@ class FinderSync: FIFinderSync {
         return NSHomeDirectory()
     }
     
-    /// 将日志写入共享日志文件。调试日志默认关闭，避免生产环境记录菜单渲染细节。
+    /// 将日志写入统一 OSLog。调试日志默认不持久化，避免生产环境记录菜单渲染细节。
     private func logToSharedContainer(_ message: String, level: SharedLogLevel = .info) {
-        SharedStorageManager.shared.writeLog(message, level: level)
+        switch level {
+        case .info:  AppLog.info(message, category: .ext)
+        case .debug: AppLog.debug(message, category: .ext)
+        case .error: AppLog.error(message, category: .ext)
+        }
     }
     
     /// 动态探测并应用需要监控的访达路径。
@@ -214,8 +224,9 @@ class FinderSync: FIFinderSync {
         
         // 从共享存储中加载需要显示的动作列表
         let dispatcher = ActionDispatcher.shared
-        let storage = SharedStorageManager.shared
-        
+        // 注：menu(for:) 主热路径不再直接读 SharedStorageManager；启用/收藏判定全部走 ActionConfigCache，
+        // 已安装应用查询走 InstalledAppRegistry，避免在用户右键的瞬间触发同步 IO。
+
         // 打印当前 dispatcher 中注册的所有 actions，确保在当前进程内真的有注册动作
         let registeredAll = dispatcher.allActions
         logToSharedContainer("[FinderSync] 当前 ActionDispatcher 中注册的所有动作总数: \(registeredAll.count)", level: .debug)
@@ -223,10 +234,11 @@ class FinderSync: FIFinderSync {
             logToSharedContainer("[FinderSync] 已注册 Action: ID = \(action.actionId), Title = \(action.localizedTitle), Category = \(action.category.rawValue)", level: .debug)
         }
         
+        let cache = ActionConfigCache.shared
         let favoriteActions = dispatcher.allActions
             .filter { action in
-                storage.isFavoriteAction(action)
-                    && storage.isActionEnabled(action)
+                cache.isFavorite(action.actionId)
+                    && cache.isEnabled(action.actionId, default: action.isEnabledByDefault)
                     && action.isAvailable(for: targetURLs, isContainer: isContainer)
             }
             .sorted { $0.localizedTitle < $1.localizedTitle }
@@ -253,11 +265,11 @@ class FinderSync: FIFinderSync {
             logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] (\(category.rawValue)) 下共有 actions: \(actions.count) 个", level: .debug)
             
             let enabledActions = actions.filter { action in
-                // 检查用户是否在主 App 中启用了这个动作。
-                let isEnabled = storage.isActionEnabled(action)
+                // 启用状态从进程内缓存读，命中即 O(1)；isAvailable 仍走原 action 实现（含 InstalledAppRegistry）。
+                let isEnabled = cache.isEnabled(action.actionId, default: action.isEnabledByDefault)
                 let isAvail = action.isAvailable(for: targetURLs, isContainer: isContainer)
-                logToSharedContainer("[FinderSync] 过滤检查 Action [\(action.localizedTitle)] (\(action.actionId)): isEnabled(配置) = \(isEnabled), isAvailable(状态, isContainer: \(isContainer)) = \(isAvail)", level: .debug)
-                return isEnabled && isAvail && !storage.isFavoriteAction(action)
+                logToSharedContainer("[FinderSync] 过滤 Action [\(action.localizedTitle)] (\(action.actionId)): enabled=\(isEnabled), avail=\(isAvail)", level: .debug)
+                return isEnabled && isAvail && !cache.isFavorite(action.actionId)
             }
             logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] 过滤后生效的 actions 数量: \(enabledActions.count)", level: .debug)
             

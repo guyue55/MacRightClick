@@ -401,6 +401,20 @@ struct DiagnosticsSettingsView: View {
                         Button("打开日志文件夹") {
                             NSWorkspace.shared.open(SharedStorageManager.shared.logFileURL.deletingLastPathComponent())
                         }
+                        Button("导出旧日志（如有）") {
+                            // 旧版 1.0.x 把日志写在 extension.log；切到 OSLog 后该文件不再追加。
+                            // 这里仅做兼容：若文件还存在，定位到 Finder；若不存在，明示用户走 Console.app 看 OSLog。
+                            let url = SharedStorageManager.shared.logFileURL
+                            if FileManager.default.fileExists(atPath: url.path) {
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            } else {
+                                SharedHUDManager.show(
+                                    title: "无旧日志",
+                                    content: "OSLog 已生效，可在 Console.app 按 subsystem=guyue.RightClickAssistant 过滤",
+                                    isSuccess: true
+                                )
+                            }
+                        }
                         Button("显示共享目录") {
                             NSWorkspace.shared.open(SharedStorageManager.shared.sharedContainerURL)
                         }

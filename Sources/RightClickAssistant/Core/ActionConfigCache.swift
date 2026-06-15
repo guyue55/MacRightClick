@@ -29,7 +29,7 @@ public final class ActionConfigCache {
 
     /// 一次性预热：清空懒加载表，重读 favoriteActionIds。供进程启动时调用。
     public func preheat() {
-        queue.async(flags: .barrier) {
+        queue.sync(flags: .barrier) {
             self.enableMap.removeAll(keepingCapacity: true)
             self.favoriteSet = Set(SharedStorageManager.shared.favoriteActionIds)
         }
@@ -37,7 +37,7 @@ public final class ActionConfigCache {
 
     /// 失效全部缓存。下一次读取时按需重新从 SharedStorageManager 拉。
     public func invalidate() {
-        queue.async(flags: .barrier) {
+        queue.sync(flags: .barrier) {
             self.enableMap.removeAll(keepingCapacity: true)
             self.favoriteSet = Set(SharedStorageManager.shared.favoriteActionIds)
         }
@@ -49,7 +49,9 @@ public final class ActionConfigCache {
             return cached
         }
         let v = SharedStorageManager.shared.getBool(forKey: "enable_action_\(actionId)", defaultValue: defaultValue)
-        queue.async(flags: .barrier) { self.enableMap[actionId] = v }
+        // 必须 sync barrier：menu(for:) 主路径会在毫秒级内对同一 actionId 连续读多次，
+        // 异步 barrier 会让"第二次读"在 barrier 落库前看不到首次回源结果，从而再次穿透到底层 IO。
+        queue.sync(flags: .barrier) { self.enableMap[actionId] = v }
         return v
     }
 

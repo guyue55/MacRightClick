@@ -250,4 +250,30 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(storage.pendingActionCount, 0)
         XCTAssertEqual(storage.failedActionCount, 1)
     }
+
+    /// 16. ActionConfigCache 命中后不应再穿透到 SharedStorageManager.getBool
+    /// 这是 menu(for:) 主热路径的性能与同步 IO 抑制保障。
+    func testFinderSyncUsesCacheNoSyncIO() {
+        let cache = ActionConfigCache.shared
+        let storage = SharedStorageManager.shared
+        let actionId = "guyue.action.test.cache.no_sync_io"
+        let key = "enable_action_\(actionId)"
+
+        // 准备：清掉残留状态，让 cache 从空开始。
+        storage.setBool(true, forKey: key)
+        cache.invalidate()
+
+        // 装上观察钩子统计 getBool 命中次数。
+        var ioHits = 0
+        storage.observeGetBoolForTesting = { observedKey in
+            if observedKey == key { ioHits += 1 }
+        }
+        defer { storage.observeGetBoolForTesting = nil }
+
+        _ = cache.isEnabled(actionId, default: false) // miss → 回源一次
+        _ = cache.isEnabled(actionId, default: false) // 命中
+        _ = cache.isEnabled(actionId, default: false) // 命中
+
+        XCTAssertEqual(ioHits, 1, "首次 miss 后必须命中缓存，避免菜单渲染主路径反复同步读 UserDefaults/config.json")
+    }
 }

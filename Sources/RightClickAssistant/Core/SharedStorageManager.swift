@@ -30,7 +30,12 @@ public final class SharedStorageManager {
     private let appGroupIdentifier = "group.guyue.RightClickAssistant"
     private let extensionBundleIdentifier = "guyue.RightClickAssistant.Extension"
     private let configQueue = DispatchQueue(label: "guyue.RightClickAssistant.config")
-    
+
+    /// 仅供测试注入：每次 `getBool(forKey:)` 被调用都会先回调此 closure。
+    /// 用于验证菜单渲染主路径是否真的命中了 ActionConfigCache，没有穿透到底层 IO。
+    /// 生产代码不要依赖此属性。
+    public var observeGetBoolForTesting: ((String) -> Void)?
+
     private init() {}
     
     /// 获取真实的物理 Home 目录。
@@ -159,24 +164,12 @@ public final class SharedStorageManager {
         if level == .debug && !isDebugLoggingEnabled {
             return
         }
-
-        print(message)
-        let fileURL = logFileURL
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        let timestamp = formatter.string(from: Date())
-        let line = "[\(timestamp)] \(message)\n"
-        
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
-                    fileHandle.seekToEndOfFile()
-                    fileHandle.write(data)
-                    fileHandle.closeFile()
-                }
-            } else {
-                try? data.write(to: fileURL)
-            }
+        // 切换到 OSLog：subsystem=guyue.RightClickAssistant, category=storage。
+        // 旧的 extension.log 文件不再追加（logFileURL 仍保留，仅用于「导出旧日志」按钮的只读访问）。
+        switch level {
+        case .info:  AppLog.info(message, category: .storage)
+        case .debug: AppLog.debug(message, category: .storage)
+        case .error: AppLog.error(message, category: .storage)
         }
     }
 
@@ -299,6 +292,7 @@ public final class SharedStorageManager {
     /// 获取指定菜单项是否启用
     /// 优先从 App Group UserDefaults 中读取配置，当不可用时无缝降级读取 config.json 共享配置，最后回退至默认值
     public func getBool(forKey key: String, defaultValue: Bool = true) -> Bool {
+        observeGetBoolForTesting?(key)
         // A. 优先尝试从官方原生的 App Group UserDefaults 读取
         if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
            sharedDefaults.object(forKey: key) != nil {
