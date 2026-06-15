@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import RightClickAssistantCore
 
 final class RightClickAssistantTests: XCTestCase {
@@ -275,5 +276,49 @@ final class RightClickAssistantTests: XCTestCase {
         _ = cache.isEnabled(actionId, default: false) // 命中
 
         XCTAssertEqual(ioHits, 1, "首次 miss 后必须命中缓存，避免菜单渲染主路径反复同步读 UserDefaults/config.json")
+    }
+
+    // MARK: - QR 二维码面板「保存为 PNG / 拷贝图片」纯逻辑
+
+    /// 17. QRCodeImageRenderer 应能把任意 NSImage 编码为 PNG Data 并以 89 50 4E 47 起头
+    /// 这是「保存为 PNG」按钮成功落盘的前置纯逻辑，独立于 NSPanel 单测。
+    func testQRCodeImageRendererProducesPNG() {
+        // 用一张 1x1 红色 NSImage 作为最小可重现样本。
+        let size = NSSize(width: 1, height: 1)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.red.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+        image.unlockFocus()
+
+        guard let data = QRCodeImageRenderer.encodePNG(from: image) else {
+            XCTFail("QRCodeImageRenderer.encodePNG 必须能把 NSImage 转成 PNG Data，避免「保存为 PNG」按钮静默失败")
+            return
+        }
+
+        XCTAssertGreaterThan(data.count, 0)
+        // PNG 文件签名前 4 字节固定为 89 50 4E 47
+        XCTAssertEqual(Array(data.prefix(4)), [0x89, 0x50, 0x4E, 0x47])
+    }
+
+    /// 18. QRCodePasteboardWriter 必须把 NSImage 真正写入指定 NSPasteboard
+    /// 这是「拷贝图片」按钮的核心承诺，注入测试用 NSPasteboard 隔离剪贴板副作用。
+    func testQRCodePasteboardWriterPlacesImage() {
+        let size = NSSize(width: 2, height: 2)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.green.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+        image.unlockFocus()
+
+        // 使用 withUniqueName 拿到一个独立 pasteboard，避免污染系统 .general 板。
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("guyue.RightClickAssistant.test.qr"))
+        pasteboard.clearContents()
+
+        QRCodePasteboardWriter.copy(image: image, to: pasteboard)
+
+        let readBack = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage]
+        XCTAssertEqual(readBack?.count, 1, "拷贝图片后，pasteboard 应能 readObjects 出 1 张 NSImage")
+        XCTAssertEqual(readBack?.first?.size, size, "回读图像的尺寸需与写入图像一致")
     }
 }

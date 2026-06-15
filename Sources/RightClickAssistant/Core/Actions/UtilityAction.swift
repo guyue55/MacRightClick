@@ -3,6 +3,12 @@ import AppKit
 import CryptoKit
 import CoreImage
 
+// MARK: - 二维码面板生命周期持有者
+/// 文件作用域强引用：QRCodePanelController 内部的 NSPanel 不会被 UI 框架自动持有，
+/// 一旦控制器随 dispatch closure 退栈即析构，面板会瞬间消失。这里用 fileprivate 单
+/// 变量持有最近一次打开的控制器，再次生成时旧实例自动被替换并随面板关闭一起释放。
+fileprivate var activeQRController: QRCodePanelController?
+
 /// 实用小工具类型
 public enum UtilityType: String, Codable {
     case calculateMD5 = "calculateMD5"
@@ -339,32 +345,12 @@ public final class UtilityAction: MenuAction {
         
         // 以浮动面板展示二维码，不抢焦点。
         DispatchQueue.main.async {
-            let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 300, height: 340),
-                styleMask: [.titled, .closable, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
-            panel.title = "文本二维码"
-            panel.center()
-            panel.isFloatingPanel = true
-            panel.hidesOnDeactivate = false
-
-            let imageView = NSImageView(frame: NSRect(x: 10, y: 40, width: 280, height: 280))
-            imageView.image = nsImage
-            // 确保二维码在深色模式下也有白色背景，避免黑码+暗底不可读
-            imageView.wantsLayer = true
-            imageView.layer?.backgroundColor = NSColor.white.cgColor
-            imageView.layer?.cornerRadius = 4
-
-            let label = NSTextField(labelWithString: "内容: " + (text.count > 25 ? String(text.prefix(22)) + "..." : text))
-            label.frame = NSRect(x: 10, y: 15, width: 280, height: 20)
-            label.alignment = .center
-
-            panel.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 340))
-            panel.contentView?.addSubview(imageView)
-            panel.contentView?.addSubview(label)
-            panel.orderFront(nil)
+            // 把 NSPanel 装配 / 保存 PNG / 拷贝图片三件事交给 QRCodePanelController，
+            // UtilityAction 这里只负责"剪贴板取文本 → 生成二维码 NSImage → 交给控制器"。
+            // controller 必须由文件作用域强引用，否则面板会被立即释放。
+            let controller = QRCodePanelController(image: nsImage, text: text)
+            activeQRController = controller
+            controller.show()
 
             SharedHUDManager.show(
                 title: "二维码已生成",

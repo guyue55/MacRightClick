@@ -211,7 +211,8 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/Logging/AppLog.swift \
     Sources/RightClickAssistant/Core/Distribution.swift \
     Sources/RightClickAssistant/Core/ActionConfigCache.swift \
-    Sources/RightClickAssistant/Core/InstalledAppRegistry.swift
+    Sources/RightClickAssistant/Core/InstalledAppRegistry.swift \
+    Sources/RightClickAssistant/Core/Actions/QRCodePanel.swift
 "
 
 EXT_SOURCES="
@@ -228,7 +229,8 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/Logging/AppLog.swift \
     Sources/RightClickAssistant/Core/Distribution.swift \
     Sources/RightClickAssistant/Core/ActionConfigCache.swift \
-    Sources/RightClickAssistant/Core/InstalledAppRegistry.swift
+    Sources/RightClickAssistant/Core/InstalledAppRegistry.swift \
+    Sources/RightClickAssistant/Core/Actions/QRCodePanel.swift
 "
 
 SDK_PATH=$(xcrun --show-sdk-path)
