@@ -6,6 +6,18 @@ import AppKit
 /// 实现了高内聚低耦合、接口隔离与完全双写配置感知（注2、注4）。
 public final class SharedHUDManager {
     private static weak var activePanel: NSPanel?
+    /// HUD 启用 Esc 关闭时，记录当前的 NSEvent 监听 token，便于关闭时移除避免泄漏。
+    private static var activeKeyMonitor: Any?
+
+    /// 纯函数：从给定屏幕集合里挑出包含 mouseLocation 的 visibleFrame；都不命中时返回 fallback。
+    /// 抽出便于单测，不依赖 NSScreen / NSEvent。
+    public static func screenFrame(
+        screens: [NSRect],
+        mouseLocation: NSPoint,
+        fallback: NSRect
+    ) -> NSRect {
+        return screens.first { $0.contains(mouseLocation) } ?? fallback
+    }
     
     /// 显示一个全局悬浮 HUD 通知
     /// - Parameters:
@@ -29,8 +41,19 @@ public final class SharedHUDManager {
                 existing.close()
                 activePanel = nil
             }
-            
-            let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
+            if let m = activeKeyMonitor {
+                NSEvent.removeMonitor(m)
+                activeKeyMonitor = nil
+            }
+
+            // 跟随鼠标所在屏幕：双屏/外接屏环境下让 HUD 出现在用户当前注视位置，避免跑到主屏。
+            let primary = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
+            let allFrames = NSScreen.screens.map { $0.visibleFrame }
+            let screenRect = screenFrame(
+                screens: allFrames,
+                mouseLocation: NSEvent.mouseLocation,
+                fallback: primary
+            )
             // 3. 胶囊几何尺寸，长内容自适应加宽。
             let baseWidth: CGFloat = 260
             let maxWidth: CGFloat = min(520, screenRect.size.width * 0.66)
@@ -99,7 +122,32 @@ public final class SharedHUDManager {
             visualEffectView.addSubview(contentLabel)
             
             panel.contentView = visualEffectView
-            
+
+            // 10. 用户主动关闭通道：点击 HUD 任意位置或按 Esc 都立刻淡出
+            let dismiss: () -> Void = {
+                if let m = activeKeyMonitor {
+                    NSEvent.removeMonitor(m)
+                    activeKeyMonitor = nil
+                }
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.2
+                    panel.animator().alphaValue = 0
+                }, completionHandler: {
+                    panel.close()
+                    if activePanel === panel { activePanel = nil }
+                })
+            }
+            let clickRecognizer = HUDClickRecognizer(target: nil, action: nil, dismiss: dismiss)
+            visualEffectView.addGestureRecognizer(clickRecognizer)
+
+            activeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.keyCode == 53 { // Esc
+                    dismiss()
+                    return nil
+                }
+                return event
+            }
+
             // 9. 模拟物理回弹的阻尼弹簧入场动画 (Damped Spring/Overshoot Physics)
             // 初始状态 y + 15，alpha 0。弹性滑落至最终位置 y 轴，在 0.4s 内完成。
             panel.setFrame(NSRect(x: x, y: y + 15, width: width, height: height), display: true)
@@ -123,9 +171,34 @@ public final class SharedHUDManager {
                         if activePanel === panel {
                             activePanel = nil
                         }
+                        if let m = activeKeyMonitor {
+                            NSEvent.removeMonitor(m)
+                            activeKeyMonitor = nil
+                        }
                     })
                 }
             })
         }
+    }
+}
+
+// MARK: - HUD 点击关闭手势
+/// `NSClickGestureRecognizer` 的 closure 版本，专给 HUD 用：
+/// 不绑定 target/action，命中即触发 `dismiss` 闭包。封装在此避免污染 NSView 扩展。
+private final class HUDClickRecognizer: NSClickGestureRecognizer {
+    private let dismiss: () -> Void
+
+    init(target: Any?, action: Selector?, dismiss: @escaping () -> Void) {
+        self.dismiss = dismiss
+        super.init(target: target, action: action)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        dismiss()
     }
 }
