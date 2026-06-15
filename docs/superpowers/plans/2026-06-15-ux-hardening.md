@@ -1155,9 +1155,9 @@ let favoriteActions = dispatcher.allActions.filter { action in
 // FinderSync.logToSharedContainer 改为：
 private func logToSharedContainer(_ message: String, level: SharedLogLevel = .info) {
     switch level {
-    case .info: AppLog.info(message, category: .extension)
-    case .debug: AppLog.debug(message, category: .extension)
-    case .error: AppLog.error(message, category: .extension)
+    case .info: AppLog.info(message, category: .ext)
+    case .debug: AppLog.debug(message, category: .ext)
+    case .error: AppLog.error(message, category: .ext)
     }
 }
 
@@ -1562,4 +1562,3 @@ git commit -m "docs: 同步 OSLog 诊断指引，补充 Distribution 常量映�
 | C4 Permissions 事件驱动 | Task 11 | 同 commit |
 
 每个 spec 编号都有 Task 落点，无遗漏。
-

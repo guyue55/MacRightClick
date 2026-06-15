@@ -60,7 +60,7 @@ sequenceDiagram
     User->>FS: User clicks "New Text File (.txt)"
     Note over FS: actionMenuItemSelected Callback
     FS->>SC: 1. Write PendingActions/{timestamp}-{uuid}.json
-    FS->>SC: 2. Append execution logs to extension.log
+    FS->>SC: 2. Write to OSLog under subsystem=guyue.RightClickAssistant (category=ext / storage)
     FS->>Host: 3. Post DistributedNotification (empty payload) - Backup 1
     SC-->>Host: 4. Trigger BSD kqueue event (Backup 2)
     
@@ -179,6 +179,17 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 * **Fix**:
   * The main app requests an execution activity (`ProcessInfo.beginActivity`) at startup to reduce the chance of App Nap interrupting queue consumption.
   * It supports hiding into the menu bar when the settings window closes, and supports "Start on Launch" via the macOS `SMAppService` API.
+
+### Q4: How do I view runtime logs?
+* **Current (recommended)**: Logs now go through OSLog instead of files. In Terminal:
+
+  ```bash
+  log show --predicate 'subsystem == "guyue.RightClickAssistant"' --last 5m --info
+  ```
+
+  Or open `Console.app` and filter by `subsystem == "guyue.RightClickAssistant"`. Available categories: `host` / `ext` / `storage` / `action` / `ui`.
+* **Legacy compatibility**: Older builds used to append to `~/Library/Containers/<extBundle>/Data/Library/Logs/extension.log`. This file is no longer written; if it still exists on your machine, the Settings → Diagnostics page provides an "Export legacy log (if any)" button that reveals it in Finder.
+* **Verbose debug logging**: Off by default. Enable it in Settings → Diagnostics → "Enable verbose debug logging" to make `.debug` entries (menu rendering, path monitoring, action filtering) flow into OSLog.
 
 ### Privacy And Security
 
