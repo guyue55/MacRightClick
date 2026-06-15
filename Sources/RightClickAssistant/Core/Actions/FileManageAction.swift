@@ -1,6 +1,56 @@
 import Foundation
 import AppKit
 
+// MARK: - DestructiveActionConfirmer
+/// 破坏性动作的确认弹窗封装，集中处理：
+/// - .critical 警示样式（macOS HIG 要求不可撤销操作必须使用）
+/// - 默认按钮为「取消」（按 Return 不会误删）
+/// - 列出最多 5 个文件名摘要 + 总数
+/// - 提供「移到废纸篓」中间档作为可恢复选项
+fileprivate enum DestructiveChoice {
+    case cancel
+    case recoverable
+    case destructive
+}
+
+fileprivate enum DestructiveActionConfirmer {
+    /// 仅构造 NSAlert，便于单测断言配置。生产路径走 `confirm(...)`。
+    static func makeAlert(targets: [URL]) -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "确认永久删除？"
+
+        let names = targets.prefix(5).map { $0.lastPathComponent }
+        var summary = names.joined(separator: "、")
+        if targets.count > 5 {
+            summary += " 等共 \(targets.count) 项"
+        } else if names.isEmpty {
+            summary = "（无目标）"
+        }
+        alert.informativeText = "将处理：\(summary)\n永久删除会绕过废纸篓且无法撤销，建议优先选择「移到废纸篓」。"
+
+        // NSAlert 的第一个按钮是默认按钮（keyEquivalent = "\r"），让「取消」承接 Return 键。
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "移到废纸篓")
+        alert.addButton(withTitle: "永久删除")
+        // 清空「永久删除」按钮的 keyEquivalent，避免任何快捷键意外命中。
+        alert.buttons[2].keyEquivalent = ""
+        return alert
+    }
+
+    static func confirm(targets: [URL]) -> DestructiveChoice {
+        let alert = makeAlert(targets: targets)
+        alert.window.level = .modalPanel
+        alert.window.orderFrontRegardless()
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:  return .cancel
+        case .alertSecondButtonReturn: return .recoverable
+        case .alertThirdButtonReturn:  return .destructive
+        default: return .cancel
+        }
+    }
+}
+
 /// 文件剪切板单例，用于在进程内存中管理“剪切”状态
 public final class FileCutClipboard {
     public static let shared = FileCutClipboard()
@@ -251,38 +301,46 @@ public final class FileManageAction: MenuAction {
             return successCount > 0
             
         case .permanentDelete:
-            let confirmed = confirmHighRiskOperation(
-                title: "确认永久删除？",
-                message: "将绕过废纸篓直接删除 \(targetURLs.count) 个项目，且无法撤销。",
-                confirmTitle: "确认并永久删除"
-            )
-
-            if confirmed {
+            let choice = runOnMainThread {
+                DestructiveActionConfirmer.confirm(targets: targetURLs)
+            }
+            switch choice {
+            case .cancel:
+                return false
+            case .recoverable:
+                var successCount = 0
+                for fileURL in targetURLs {
+                    do {
+                        var resultingURL: NSURL?
+                        try FileManager.default.trashItem(at: fileURL, resultingItemURL: &resultingURL)
+                        successCount += 1
+                    } catch {
+                        AppLog.error("移到废纸篓失败: \(fileURL.path) -> \(error.localizedDescription)", category: .action)
+                    }
+                }
+                SharedHUDManager.show(
+                    title: successCount > 0 ? "已移到废纸篓" : "操作失败",
+                    content: successCount > 0 ? "已处理 \(successCount) 项，可在废纸篓中恢复" : "请检查系统权限或文件是否被锁定",
+                    isSuccess: successCount > 0
+                )
+                return successCount > 0
+            case .destructive:
                 var successCount = 0
                 for fileURL in targetURLs {
                     do {
                         try FileManager.default.removeItem(at: fileURL)
                         successCount += 1
                     } catch {
-                        print("[FileManage] 彻底删除失败: \(fileURL.path) -> \(error.localizedDescription)")
+                        AppLog.error("彻底删除失败: \(fileURL.path) -> \(error.localizedDescription)", category: .action)
                     }
                 }
-                if successCount > 0 {
-                    SharedHUDManager.show(
-                        title: "删除成功",
-                        content: "已彻底从磁盘抹除 \(successCount) 个项目",
-                        isSuccess: true
-                    )
-                } else {
-                    SharedHUDManager.show(
-                        title: "删除失败",
-                        content: "请检查系统权限或文件是否被锁定",
-                        isSuccess: false
-                    )
-                }
+                SharedHUDManager.show(
+                    title: successCount > 0 ? "已彻底删除" : "删除失败",
+                    content: successCount > 0 ? "已彻底从磁盘抹除 \(successCount) 项，无法恢复" : "请检查系统权限或文件是否被锁定",
+                    isSuccess: successCount > 0
+                )
                 return successCount > 0
             }
-            return false
             
         case .copyPath:
             let paths = targetURLs.map { $0.path }.joined(separator: "\n")
