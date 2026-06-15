@@ -321,10 +321,13 @@ codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --en
 codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE"
 
 # B. 再签名主程序二进制。官网分发路线保持主 App 非沙盒，并在 website-release 下启用 hardened runtime。
-codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
-
-# C. 最后整体签名宿主主 App Bundle
-codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" "$APP_BUNDLE"
+# B. 主 App 二进制 + 整个 .app Bundle 都用 host entitlements 模板。
+#    历史上这两行都漏了 --entitlements，导致主 App 实际是 adhoc 无 entitlements；
+#    本轮 build.sh 重构后必须显式传入，否则 application-groups 不生效，
+#    SharedStorageManager 与 FinderSync 之间的 cross-container 物理路径访问会被
+#    macOS 13+ Hidden Subsystem Block 拦截。
+codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
+codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE"
 
 # D. 签名自检程序
 codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" "ActionVerifier_bin"

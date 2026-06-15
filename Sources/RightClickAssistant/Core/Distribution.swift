@@ -24,11 +24,11 @@ public enum Distribution {
 
     /// 是否走 App Group 共享容器。MAS 路线必须为 true。
     ///
-    /// website 路线当前返回 false：c4a37e3 修复后主 App 仍签 sandbox + App Group 模板，
-    /// 但 SharedStorageManager 实际走的是「cross-container 物理路径」分支
-    /// （allowsCrossContainerExchange=true），保持与历史用户数据兼容。
-    /// 切换到 `usesAppGroup=true` 物理路径会变（Library/Group Containers/...），
-    /// 属于运行时行为变更，需要单独的数据迁移评估，不在本轮 scope 内。
+    /// website 路线当前返回 false：主 App 是非 sandbox（仅声明 application-groups
+    /// 用于建立同 AppGroup 信任域），SharedStorageManager 直接走 cross-container
+    /// 物理路径访问 ~/Library/Containers/<extBundle>/Data，与 1.0.x 历史用户数据兼容。
+    /// 切到 `usesAppGroup=true`（即数据迁移到 ~/Library/Group Containers/...）属于
+    /// 运行时行为变更，需要单独的数据迁移评估与双系统真机回归，不在本轮 scope。
     public static var usesAppGroup: Bool {
         #if MAC_APP_STORE
         return true
