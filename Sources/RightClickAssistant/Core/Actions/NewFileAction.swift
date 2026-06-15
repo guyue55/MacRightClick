@@ -63,7 +63,8 @@ public enum SupportedFileType: String, CaseIterable, Codable, Identifiable {
             let objects = [
                 "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
                 "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-                "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n"
+                "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n",
+                "4 0 obj\n<< /Length 0 >>\nstream\nendstream\nendobj\n"
             ]
             var offsets: [Int] = []
             for object in objects {
@@ -121,9 +122,9 @@ public final class NewFileAction: MenuAction {
         case .csv: self.iconName = "tablecells"
         case .html: self.iconName = "globe"
         case .docx: self.iconName = "doc.richtext"
-        case .xlsx: self.iconName = "table"
+        case .xlsx: self.iconName = "tablecells.fill"
         case .pptx: self.iconName = "play.rectangle"
-        case .pdf: self.iconName = "doc.zipper"
+        case .pdf: self.iconName = "doc.fill"
         }
     }
     

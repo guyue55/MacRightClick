@@ -132,8 +132,18 @@ public final class UtilityAction: MenuAction {
             var successCount = 0
             var failureCount = 0
             var lastErrorMsg = "未知错误"
+            let totalCount = targetURLs.count
             
-            for url in targetURLs {
+            for (index, url) in targetURLs.enumerated() {
+                // 批量转换进度反馈：每处理一张图片更新 HUD，避免用户无感知等待
+                if totalCount > 1 {
+                    SharedHUDManager.show(
+                        title: "正在转换图片",
+                        content: "进度: \(index + 1) / \(totalCount)",
+                        isSuccess: true
+                    )
+                }
+                
                 let result = imageConverter.convert(url: url, toFormat: formatStr)
                 switch result {
                 case .success(let destURL):
@@ -146,7 +156,6 @@ public final class UtilityAction: MenuAction {
                 }
             }
             
-            let totalCount = targetURLs.count
             if totalCount > 0 {
                 if failureCount == 0 {
                     SharedHUDManager.show(
@@ -205,6 +214,8 @@ public final class UtilityAction: MenuAction {
     private func calculateHash(for url: URL) -> Bool {
         let algorithm: HashAlgorithm = utilityType == .calculateSHA256 ? .sha256 : .md5
         let label = utilityType == .calculateSHA256 ? "SHA256" : "MD5"
+        // 大文件哈希可能耗时较长，提前展示"正在计算"让用户感知进度
+        SharedHUDManager.show(title: "正在计算 \(label)", content: url.lastPathComponent, isSuccess: true)
         do {
             let hashString = try FileHashCalculator.hashFile(at: url, algorithm: algorithm)
             NSPasteboard.general.clearContents()
@@ -330,6 +341,10 @@ public final class UtilityAction: MenuAction {
 
             let imageView = NSImageView(frame: NSRect(x: 10, y: 40, width: 280, height: 280))
             imageView.image = nsImage
+            // 确保二维码在深色模式下也有白色背景，避免黑码+暗底不可读
+            imageView.wantsLayer = true
+            imageView.layer?.backgroundColor = NSColor.white.cgColor
+            imageView.layer?.cornerRadius = 4
 
             let label = NSTextField(labelWithString: "内容: " + (text.count > 25 ? String(text.prefix(22)) + "..." : text))
             label.frame = NSRect(x: 10, y: 15, width: 280, height: 20)
@@ -338,7 +353,7 @@ public final class UtilityAction: MenuAction {
             panel.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 340))
             panel.contentView?.addSubview(imageView)
             panel.contentView?.addSubview(label)
-            panel.makeKeyAndOrderFront(nil)
+            panel.orderFront(nil)
 
             SharedHUDManager.show(
                 title: "二维码已生成",

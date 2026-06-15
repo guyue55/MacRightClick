@@ -289,9 +289,15 @@ public final class FileManageAction: MenuAction {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(paths, forType: .string)
             print("[FileManage] 已成功拷贝 \(targetURLs.count) 个路径到系统剪贴板。")
+            let pathContent: String
+            if targetURLs.count == 1, let first = targetURLs.first {
+                pathContent = first.path
+            } else {
+                pathContent = "已拷贝 \(targetURLs.count) 个路径"
+            }
             SharedHUDManager.show(
                 title: "路径已拷贝",
-                content: "已成功将物理路径写入剪切板",
+                content: pathContent,
                 isSuccess: true
             )
             return true
@@ -301,9 +307,15 @@ public final class FileManageAction: MenuAction {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(names, forType: .string)
             print("[FileManage] 已成功拷贝 \(targetURLs.count) 个文件名到系统剪贴板。")
+            let nameContent: String
+            if targetURLs.count == 1, let first = targetURLs.first {
+                nameContent = first.lastPathComponent
+            } else {
+                nameContent = "已拷贝 \(targetURLs.count) 个文件名"
+            }
             SharedHUDManager.show(
                 title: "名称已拷贝",
-                content: "已成功将文件名写入剪切板",
+                content: nameContent,
                 isSuccess: true
             )
             return true
@@ -330,6 +342,11 @@ public final class FileManageAction: MenuAction {
                 }
                 
                 guard let url = selectedURL else {
+                    SharedHUDManager.show(
+                        title: "已取消",
+                        content: "目录选择已取消",
+                        isSuccess: true
+                    )
                     return false
                 }
                 destinationDir = url

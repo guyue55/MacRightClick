@@ -88,10 +88,9 @@ public final class TerminalOpenAction: MenuAction {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = [pathURL.path]
         
-        let group = DispatchGroup()
-        group.enter()
-        var success = false
         
+        // 异步拉起目标应用，避免 DispatchGroup.wait() 阻塞调用线程（尤其是主线程）导致 UI 卡死。
+        // NSWorkspace.open 回调在后台队列执行，HUD 展示内部已切换到主线程。
         NSWorkspace.shared.open([pathURL], withApplicationAt: appURL, configuration: configuration) { _, error in
             if let error = error {
                 print("[TerminalAction] 拉起 \(self.appType.displayName) 失败: \(error.localizedDescription)")
@@ -101,18 +100,17 @@ public final class TerminalOpenAction: MenuAction {
                     isSuccess: false
                 )
             } else {
-                success = true
                 SharedHUDManager.show(
                     title: "拉起成功",
                     content: "已在 \(self.appType.displayName) 中打开目录",
                     isSuccess: true
                 )
             }
-            group.leave()
         }
         
-        _ = group.wait(timeout: .now() + 3.0)
-        return success
+        // 立即返回，不等待异步结果。HUD 会在回调中展示成功/失败。
+        // 调用方 ActionDispatcher 不依赖返回值做关键路径决策。
+        return true
     }
     
     private func getDirectoryURL(for url: URL) -> URL {

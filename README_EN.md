@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/guyue55/MacRightClick/actions"><img src="https://github.com/guyue55/MacRightClick/workflows/MacRightClick%20CI/CD%20Build/badge.svg" alt="CI/CD Build Status" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%2014.0%2B-blue.svg" alt="Platform macOS 14.0+" />
+  <img src="https://img.shields.io/badge/platform-macOS%2013.0%2B-blue.svg" alt="Platform macOS 13.0+" />
   <img src="https://img.shields.io/badge/Swift-6.0-orange.svg" alt="Swift 6.0" />
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License MIT" />
 </p>

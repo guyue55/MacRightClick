@@ -192,8 +192,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem?.button else { return }
         
-        // 采用 SF Symbols 原生 "contextualmenu" 渲染
-        if let image = NSImage(systemSymbolName: "contextualmenu", accessibilityDescription: "开源右键助手") {
+        // 采用 SF Symbols 原生图标渲染，带 macOS 版本兼容降级。
+        // contextualmenu 需要 macOS 14+，旧版本回退到 line.3.horizontal。
+        let symbolName: String
+        if #available(macOS 14.0, *) {
+            symbolName = "contextualmenu"
+        } else {
+            symbolName = "line.3.horizontal"
+        }
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "开源右键助手") {
             image.isTemplate = true // 跟随系统深/浅色菜单栏渲染
             button.image = image
         }

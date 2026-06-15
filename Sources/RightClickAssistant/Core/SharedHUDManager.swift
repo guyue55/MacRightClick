@@ -51,7 +51,7 @@ public final class SharedHUDManager {
             
             activePanel = panel
             
-            panel.level = .statusBar
+            panel.level = .floating
             panel.backgroundColor = .clear
             panel.isOpaque = false
             panel.hasShadow = true
@@ -104,7 +104,7 @@ public final class SharedHUDManager {
             // 初始状态 y + 15，alpha 0。弹性滑落至最终位置 y 轴，在 0.4s 内完成。
             panel.setFrame(NSRect(x: x, y: y + 15, width: width, height: height), display: true)
             panel.alphaValue = 0
-            panel.makeKeyAndOrderFront(nil)
+            panel.orderFront(nil)
             
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.4
@@ -114,7 +114,7 @@ public final class SharedHUDManager {
                 panel.animator().alphaValue = 1.0
             }, completionHandler: {
                 // 停留 2.0 秒后自动淡出并回收销毁
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     NSAnimationContext.runAnimationGroup({ context in
                         context.duration = 0.3
                         panel.animator().alphaValue = 0

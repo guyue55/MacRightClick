@@ -133,6 +133,9 @@ struct OverviewSettingsView: View {
                 .padding(.horizontal, -16)
                 .padding(.top, -16)
 
+            // 扩展注册入口——始终可见，不受 isExtensionEnabled 检测影响
+            ExtensionRegistrationBox()
+
             GroupBox(label: Label("常用", systemImage: "slider.horizontal.3")) {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("登录时启动右键助手", isOn: launchEnabledBinding)
@@ -167,7 +170,7 @@ struct OverviewSettingsView: View {
                         .foregroundColor(.secondary)
 
                     Button("访问 GitHub 源码仓库") {
-                        if let url = URL(string: "https://github.com/guyue/MacRightClick") {
+                        if let url = URL(string: "https://github.com/guyue55/MacRightClick") {
                             NSWorkspace.shared.open(url)
                         }
                     }
@@ -326,9 +329,12 @@ struct PermissionsSettingsView: View {
     }
 
     private func checkFullDiskAccess() {
-        let path = "/Library/Application Support/com.apple.TCC"
+        // 通过尝试访问用户 Safari 目录来检测完全磁盘访问权限。
+        // /Library/Application Support/com.apple.TCC 受 SIP 保护，即使授予 FDA 也无法读取。
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let testPath = home.appendingPathComponent("Library/Safari").path
         do {
-            _ = try FileManager.default.contentsOfDirectory(atPath: path)
+            _ = try FileManager.default.contentsOfDirectory(atPath: testPath)
             hasFullDiskAccess = true
         } catch {
             hasFullDiskAccess = false
@@ -364,7 +370,12 @@ struct DiagnosticsSettingsView: View {
                     .font(.callout)
 
                     Button("打开扩展设置") {
-                        FIFinderSyncController.showExtensionManagementInterface()
+                        if #available(macOS 13.0, *),
+                           let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
+                            NSWorkspace.shared.open(url)
+                        } else {
+                            FIFinderSyncController.showExtensionManagementInterface()
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -419,6 +430,8 @@ struct DiagnosticsSettingsView: View {
 }
 
 struct AdvancedSettingsView: View {
+    @State private var refreshID = UUID()
+
     private var advancedItems: [ActionItem] {
         ActionDispatcher.shared.allActions
             .filter { $0.settingsGroup == .advanced }
@@ -438,6 +451,7 @@ struct AdvancedSettingsView: View {
                 items: advancedItems,
                 footer: "包含永久删除、跨目录复制/移动、重启 Finder 等动作。"
             )
+            .id(refreshID)
 
             GroupBox(label: Label("恢复", systemImage: "arrow.counterclockwise")) {
                 HStack {
@@ -464,6 +478,7 @@ struct AdvancedSettingsView: View {
             SharedStorageManager.shared.removeValue(forKey: "enable_action_\(action.actionId)")
         }
         postConfigChanged()
+        refreshID = UUID()
         SharedHUDManager.show(title: "已恢复默认", content: "右键动作将按内置默认值显示", isSuccess: true)
     }
 }
@@ -690,6 +705,88 @@ struct ActionItem: Identifiable {
     let action: MenuAction
 }
 
+// MARK: - C2. 扩展注册入口（始终可见，不依赖检测状态）
+/// 始终显示的扩展注册组件，不受 isExtensionEnabled 检测结果影响。
+/// 即使用户看到"已启用"绿色横幅，下方仍可主动重新注册扩展。
+struct ExtensionRegistrationBox: View {
+    @State private var isRegistering = false
+
+    var body: some View {
+        GroupBox(label: Label("扩展注册", systemImage: "bolt.shield")) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("若右键菜单未出现，点击下方按钮自动注册 Finder 扩展。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        isRegistering = true
+                        autoRegisterExtension()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            isRegistering = false
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            if isRegistering {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 16, height: 16)
+                            }
+                            Text(isRegistering ? "注册中…" : "一键注册扩展")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(minWidth: 120)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(isRegistering)
+
+                    Button("打开系统设置") {
+                        if #available(macOS 13.0, *),
+                           let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
+                            NSWorkspace.shared.open(url)
+                        } else {
+                            FIFinderSyncController.showExtensionManagementInterface()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.system(size: 12))
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func autoRegisterExtension() {
+        guard let appPath = Bundle.main.bundleURL.path as String? else {
+            SharedHUDManager.show(title: "注册失败", content: "无法定位 App 路径", isSuccess: false)
+            return
+        }
+        let extPath = (appPath as NSString).appendingPathComponent("Contents/PlugIns/RightClickAssistantExtension.appex")
+
+        guard FileManager.default.fileExists(atPath: extPath) else {
+            SharedHUDManager.show(title: "注册失败", content: "未找到扩展组件", isSuccess: false)
+            return
+        }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
+        proc.arguments = ["-a", extPath]
+
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            if proc.terminationStatus == 0 {
+                SharedHUDManager.show(title: "注册成功", content: "扩展已注册，重启 Finder 后生效", isSuccess: true)
+            } else {
+                SharedHUDManager.show(title: "注册失败", content: "pluginkit 返回码: \(proc.terminationStatus)", isSuccess: false)
+            }
+        } catch {
+            SharedHUDManager.show(title: "注册失败", content: error.localizedDescription, isSuccess: false)
+        }
+    }
+}
+
 // MARK: - C. 访达右键扩展集成状态自检 Banner
 struct ExtensionStatusBanner: View {
     @State private var isEnabled = false
@@ -781,7 +878,7 @@ struct ExtensionStatusBanner: View {
                         Spacer()
                         
                         Button(action: {
-                            FIFinderSyncController.showExtensionManagementInterface()
+                            openExtensionSettings()
                         }) {
                             HStack(spacing: 5) {
                                 Text("打开扩展设置")
@@ -791,6 +888,22 @@ struct ExtensionStatusBanner: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.orange)
+                    }
+
+                    // 一键注册扩展独立成行，避免与上方按钮挤在同一 HStack 中被截断
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            autoRegisterExtension()
+                        }) {
+                            HStack(spacing: 5) {
+                                Text("一键注册扩展")
+                                Image(systemName: "bolt.fill")
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
                     }
                     
                     Divider()
@@ -831,6 +944,69 @@ struct ExtensionStatusBanner: View {
     private func checkStatus() {
         isEnabled = FIFinderSyncController.isExtensionEnabled
     }
+
+    /// 智能打开扩展管理面板：优先用 URL Scheme 直达，失败回退到系统 API。
+    private func openExtensionSettings() {
+        // macOS 13+ 推荐使用 URL Scheme 定位扩展面板，避免跳转到通用设置页。
+        if #available(macOS 13.0, *) {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
+                NSWorkspace.shared.open(url)
+                return
+            }
+        }
+        FIFinderSyncController.showExtensionManagementInterface()
+    }
+
+    /// 通过 pluginkit 命令行自动注册 Finder 扩展，无需用户手动在系统设置中翻找。
+    private func autoRegisterExtension() {
+        guard let appBundle = Bundle.main.bundleURL.path as String? else {
+            SharedHUDManager.show(title: "注册失败", content: "无法定位 App Bundle 路径", isSuccess: false)
+            return
+        }
+        let extPath = (appBundle as NSString).appendingPathComponent("Contents/PlugIns/RightClickAssistantExtension.appex")
+        
+        guard FileManager.default.fileExists(atPath: extPath) else {
+            SharedHUDManager.show(
+                title: "注册失败",
+                content: "未找到扩展组件，请确认 App 未被移动或损坏",
+                isSuccess: false
+            )
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
+        process.arguments = ["-a", extPath]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 {
+                SharedHUDManager.show(
+                    title: "注册成功",
+                    content: "扩展已注册，请重启 Finder 或稍候生效",
+                    isSuccess: true
+                )
+                // 注册后延迟刷新状态
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    self.checkStatus()
+                }
+            } else {
+                SharedHUDManager.show(
+                    title: "注册失败",
+                    content: "pluginkit 返回错误码 \(process.terminationStatus)",
+                    isSuccess: false
+                )
+            }
+        } catch {
+            SharedHUDManager.show(
+                title: "注册失败",
+                content: "无法执行 pluginkit: \(error.localizedDescription)",
+                isSuccess: false
+            )
+        }
+    }
 }
 
 // MARK: - Onboarding Walkthrough Views
@@ -863,59 +1039,57 @@ struct OnboardingStepsView: View {
             .padding(.bottom, 4)
             
             if isVenturaOrNewer {
-                // macOS 13+ 新版“系统设置”引导路径
+                // macOS 13+ 新版"系统设置"引导路径
                 VStack(alignment: .leading, spacing: 10) {
                     StepRow(
                         step: 1,
-                        iconName: "macwindow.and.cursorarrow",
-                        title: "打开扩展管理窗口",
-                        desc: "点击上方的「打开扩展设置」按钮，系统将打开扩展管理面板。"
+                        iconName: "bolt.fill",
+                        title: "推荐：点击「一键注册扩展」",
+                        desc: "点击上方橙色的「一键注册扩展」按钮，应用将通过 pluginkit 自动注册扩展，无需手动翻找系统设置。注册后可能需要重启 Finder。"
                     )
-                    
+
                     StepRow(
                         step: 2,
-                        iconName: "scroll.fill",
-                        title: "滚动到底部，点击「访达」右侧的 ⓘ (信息) 按钮",
-                        desc: "在弹出的窗口中向下滚动至最底部，找到「访达」一栏，点击最右侧的 ⓘ 信息图标。\n(⚠️ 请务必点击最右侧的 ⓘ 图标，而不是旁边的开关)",
-                        isCrucial: true
+                        iconName: "macwindow.and.cursorarrow",
+                        title: "或手动：打开扩展管理面板",
+                        desc: "点击「打开扩展设置」按钮，在系统设置中找到「扩展」→「访达扩展」，勾选「右键助手扩展」。"
                     )
                     
                     StepRow(
                         step: 3,
                         iconName: "checkmark.square.fill",
-                        title: "勾选「右键助手扩展」并完成",
-                        desc: "在弹出的浮层中，勾选「右键助手扩展」，然后点击「完成」。"
+                        title: "确认扩展已启用",
+                        desc: "勾选后回到本页面，上方状态应变为「已启用」绿色标识。如仍未显示，请尝试重启 Finder。"
                     )
                 }
             } else {
-                // macOS 12 及以下旧版“系统偏好设置”引导路径
+                // macOS 12 及以下旧版"系统偏好设置"引导路径
                 VStack(alignment: .leading, spacing: 10) {
                     StepRow(
                         step: 1,
-                        iconName: "macwindow.and.cursorarrow",
-                        title: "打开扩展管理面板",
-                        desc: "点击上方的「打开扩展设置」按钮，系统将打开「系统偏好设置 -> 扩展」。"
+                        iconName: "bolt.fill",
+                        title: "推荐：点击「一键注册扩展」",
+                        desc: "应用将自动执行 pluginkit 注册，无需手动操作系统偏好设置。"
                     )
-                    
+
                     StepRow(
                         step: 2,
-                        iconName: "sidebar.left",
-                        title: "点击左侧边栏的「访达」",
-                        desc: "在弹出的窗口中，于左侧边栏的各个大分类列表中，点击选择「访达 (Finder)」分类。"
+                        iconName: "macwindow.and.cursorarrow",
+                        title: "或手动：打开扩展管理面板",
+                        desc: "点击「打开扩展设置」按钮，系统将打开「系统偏好设置 -> 扩展」，在左侧选择「访达」后勾选「右键助手扩展」。"
                     )
                     
                     StepRow(
                         step: 3,
                         iconName: "checkmark.square.fill",
-                        title: "勾选启用「右键助手扩展」",
-                        desc: "在右侧展开的内容列表中，勾选「右键助手扩展」旁边的复选框，使其处于激活状态。"
+                        title: "确认扩展已启用",
+                        desc: "勾选后回到本页面确认状态变绿。"
                     )
                 }
             }
         }
     }
 }
-
 /// 每一行步骤卡片，集成 SF Symbols 与醒目数字徽章
 struct StepRow: View {
     let step: Int
