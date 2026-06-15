@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Mac App Store 路线占位模板：本轮不构建，build.sh 在 DISTRIBUTION_ROUTE=mac-app-store
+         时会直接 exit 2 拦截。这里仅描述未来开启 MAS 路线时的最小 entitlements 集合。 -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.guyue.RightClickAssistant</string>
+    </array>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

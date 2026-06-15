@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- website 路线主 App。
+
+         安全姿态：
+         - 启用 sandbox：与 c4a37e3 修复保持一致（macOS 13+ 在主 App 非 sandbox 时会触发
+           Ad-Hoc 扩展的 "Hidden Subsystem Block" 内核防御，已在真机上验证过 fix）
+         - App Group：与扩展共享 group.guyue.RightClickAssistant container
+         - 用户文件读写、Downloads 读写、客户端网络（更新 / 文档链接）
+
+         Hardened runtime 在 website-release 时通过 codesign --options runtime 额外注入。
+
+         注：spec/plan 里曾考虑"主 App 非 sandbox"以简化跨 Container 交换。该切换未在
+         真机上回归，等下一轮真机验证（macOS 13 / 14 双系统）后再决定是否落地，避免
+         再次踩 c4a37e3 已经修过的坑。 -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.guyue.RightClickAssistant</string>
+    </array>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>

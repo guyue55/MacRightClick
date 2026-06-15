@@ -243,6 +243,14 @@ case "$DISTRIBUTION_ROUTE" in
     mac-app-store)   COMMON_FLAGS="$COMMON_FLAGS -D MAC_APP_STORE" ;;
 esac
 
+# 优化级：dev 默认保留 -Onone，便于回放崩溃栈与排查；release / MAS 改用 -O。
+# 用 ${VAR/old/new} 替换而非追加，避免 swiftc 同时收到 -Onone 与 -O 两档。
+case "$DISTRIBUTION_ROUTE" in
+    website-release|mac-app-store)
+        COMMON_FLAGS="${COMMON_FLAGS/-Onone/-O}"
+        ;;
+esac
+
 # 6. 编译宿主主程序 (arm64 与 x86_64)
 echo "🛠️ [Build] 编译宿主主程序 (arm64)..."
 swiftc $COMMON_FLAGS -target arm64-apple-macosx13.0 $HOST_SOURCES -o "$BUILD_DIR/RightClickAssistant_arm64"
@@ -277,42 +285,35 @@ lipo -create -output "ActionVerifier_bin" "$BUILD_DIR/ActionVerifier_arm64" "$BU
 
 
 # 9. 对生成的程序和扩展进行签名
-echo "🔐 [Build] 动态生成 Entitlements 签名配置文件..."
-cat <<EOF > "$BUILD_DIR/RightClickAssistantExtension.entitlements"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>group.guyue.RightClickAssistant</string>
-    </array>
-</dict>
-</plist>
-EOF
+echo "🔐 [Build] 选取 Entitlements 模板（按 DISTRIBUTION_ROUTE）..."
+# 模板外置在 entitlements/ 目录下，便于审计与版本对比；不再走 here-doc 动态生成。
+# 三个文件 source-of-truth：
+#   entitlements/website.host.entitlements  → website-dev / website-release
+#   entitlements/mas.host.entitlements      → mac-app-store（本轮 build.sh 未启用，仅占位）
+#   entitlements/extension.entitlements     → 三条路线共用（FinderSync 必须 sandbox + AppGroup）
+case "$DISTRIBUTION_ROUTE" in
+    website-dev|website-release)
+        HOST_ENTITLEMENTS="entitlements/website.host.entitlements"
+        ;;
+    mac-app-store)
+        HOST_ENTITLEMENTS="entitlements/mas.host.entitlements"
+        ;;
+    *)
+        echo "❌ [Build] 未识别的 DISTRIBUTION_ROUTE=$DISTRIBUTION_ROUTE，无法定位 host entitlements 模板"
+        exit 2
+        ;;
+esac
+EXT_ENTITLEMENTS="entitlements/extension.entitlements"
 
-cat <<EOF > "$BUILD_DIR/RightClickAssistant.entitlements"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>group.guyue.RightClickAssistant</string>
-    </array>
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-    <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-    <key>com.apple.security.network.client</key>
-    <true/>
-</dict>
-</plist>
-EOF
+for f in "$HOST_ENTITLEMENTS" "$EXT_ENTITLEMENTS"; do
+    if [ ! -f "$f" ]; then
+        echo "❌ [Build] 找不到 entitlements 模板: $f"
+        exit 2
+    fi
+done
+
+cp "$HOST_ENTITLEMENTS" "$BUILD_DIR/RightClickAssistant.entitlements"
+cp "$EXT_ENTITLEMENTS"  "$BUILD_DIR/RightClickAssistantExtension.entitlements"
 
 echo "🔐 [Build] 自动进行嵌套签名..."
 # A. 先签名最内层插件的二进制与整个 XPC 插件 bundle
