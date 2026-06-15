@@ -133,7 +133,8 @@ struct OverviewSettingsView: View {
                 .padding(.horizontal, -16)
                 .padding(.top, -16)
 
-            // 扩展注册入口——始终可见，不受 isExtensionEnabled 检测影响
+            // 注：扩展未启用时，引导入口由 ExtensionStatusBanner 内部的「一键注册扩展」承担；
+            // 已启用后，下方的 ExtensionRegistrationBox 才作为「修复入口」出现，避免双入口造成 UX 噪声。
             ExtensionRegistrationBox()
 
             GroupBox(label: Label("常用", systemImage: "slider.horizontal.3")) {
@@ -194,7 +195,9 @@ struct PermissionsSettingsView: View {
     @State private var hasFullDiskAccess = false
     @State private var shouldEnableiCloudMenu = false
     @State private var watchedDirectoryPaths: [String] = []
-    let timer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
+    // 改事件驱动：不再用 2s 轮询，避免 App 在后台空跑 timer。
+    // 状态刷新由三处事件触发：onAppear、willBecomeActive（用户从系统设置切回时）、
+    // 以及 FDA HStack 内的「重新检测」按钮（用户已知刚授权完想立刻确认）。
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -222,6 +225,18 @@ struct PermissionsSettingsView: View {
                             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
                                 NSWorkspace.shared.open(url)
                             }
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("重新检测") {
+                            refresh()
+                            SharedHUDManager.show(
+                                title: hasFullDiskAccess ? "已授权" : "尚未授权",
+                                content: hasFullDiskAccess
+                                    ? "完全磁盘访问权限已生效"
+                                    : "请在系统设置中勾选「右键助手」，再次点击重新检测",
+                                isSuccess: hasFullDiskAccess
+                            )
                         }
                         .buttonStyle(.bordered)
                     }
@@ -286,7 +301,6 @@ struct PermissionsSettingsView: View {
             }
         }
         .onAppear(perform: refresh)
-        .onReceive(timer) { _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in refresh() }
     }
 
@@ -468,19 +482,35 @@ struct AdvancedSettingsView: View {
             .id(refreshID)
 
             GroupBox(label: Label("恢复", systemImage: "arrow.counterclockwise")) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("恢复动作默认设置")
-                            .font(.body)
-                        Text("移除所有动作启用状态配置，重新使用内置默认值。")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("仅恢复动作启用状态")
+                                .font(.body)
+                            Text("移除所有动作启用状态配置，恢复为内置默认值。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("恢复") { resetActionDefaults() }
+                            .buttonStyle(.bordered)
                     }
-                    Spacer()
-                    Button("恢复默认") {
-                        resetActionDefaults()
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("恢复全部默认设置")
+                                .font(.body)
+                            Text("除动作启用状态外，同时清空收藏、监听目录、提示开关与调试日志开关。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("全部恢复") { resetAllDefaults() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
                     }
-                    .buttonStyle(.bordered)
                 }
                 .padding(.vertical, 8)
             }
@@ -494,6 +524,35 @@ struct AdvancedSettingsView: View {
         postConfigChanged()
         refreshID = UUID()
         SharedHUDManager.show(title: "已恢复默认", content: "右键动作将按内置默认值显示", isSuccess: true)
+    }
+
+    /// 全量恢复：在 resetActionDefaults 基础上，再清空收藏、提示开关、监听目录、调试日志开关。
+    /// 与 resetActionDefaults 分两档的原因：用户最常见诉求是"我把某个动作关错了，给我退回默认"，
+    /// 不该顺带把收藏列表和监听目录一起清掉。
+    private func resetAllDefaults() {
+        // 1. 复用单档逻辑清动作启用状态
+        for action in ActionDispatcher.shared.allActions {
+            SharedStorageManager.shared.removeValue(forKey: "enable_action_\(action.actionId)")
+        }
+        // 2. 清空收藏
+        SharedStorageManager.shared.setStringArray([], forKey: SharedStorageManager.Keys.favoriteActionIds)
+        // 3. 监听目录回到默认（基于真实 Home 探测）
+        SharedStorageManager.shared.setStringArray(
+            SharedStorageManager.defaultWatchedDirectoryPaths(homePath: NSHomeDirectory()),
+            forKey: SharedStorageManager.Keys.watchedDirectoryPaths
+        )
+        // 4. 清掉一组用户偏好开关，让下一次读回默认值
+        SharedStorageManager.shared.removeValue(forKey: "shouldEnableiCloudMenu")
+        SharedStorageManager.shared.removeValue(forKey: "enable_success_hud")
+        SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.enableDebugLogging)
+
+        postConfigChanged()
+        refreshID = UUID()
+        SharedHUDManager.show(
+            title: "已恢复全部默认",
+            content: "动作、收藏、监听目录、提示开关均已重置",
+            isSuccess: true
+        )
     }
 }
 
@@ -720,15 +779,35 @@ struct ActionItem: Identifiable {
 }
 
 // MARK: - C2. 扩展注册入口（始终可见，不依赖检测状态）
-/// 始终显示的扩展注册组件，不受 isExtensionEnabled 检测结果影响。
-/// 即使用户看到"已启用"绿色横幅，下方仍可主动重新注册扩展。
+/// 仅在扩展已启用时显示的「修复入口」。未启用时由 ExtensionStatusBanner 内部承担引导职责，
+/// 此组件保持隐藏，避免双入口冲淡新用户的引导路径。
 struct ExtensionRegistrationBox: View {
     @State private var isRegistering = false
+    @State private var isExtensionEnabled = FIFinderSyncController.isExtensionEnabled
 
     var body: some View {
-        GroupBox(label: Label("扩展注册", systemImage: "bolt.shield")) {
+        // 仅在扩展已启用时作为「修复入口」出现：
+        // - 未启用：上方 ExtensionStatusBanner 已经承担引导职责，再叠加一个 GroupBox 会让用户被双入口分心
+        // - 已启用：右键菜单偶发失灵时（比如重装 macOS、冷启动 Finder 异常），用户在这里点一下即可重注册
+        Group {
+            if isExtensionEnabled {
+                registrationGroupBox
+            } else {
+                EmptyView()
+            }
+        }
+        .onAppear { refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in refresh() }
+    }
+
+    private func refresh() {
+        isExtensionEnabled = FIFinderSyncController.isExtensionEnabled
+    }
+
+    private var registrationGroupBox: some View {
+        GroupBox(label: Label("扩展修复", systemImage: "bolt.shield")) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("若右键菜单未出现，点击下方按钮自动注册 Finder 扩展。")
+                Text("如果右键菜单出现异常，可点击下方按钮重新注册 Finder 扩展。")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
@@ -1027,17 +1106,13 @@ struct ExtensionStatusBanner: View {
 
 /// 智能适配 macOS 系统版本的扩展激活步骤面板
 struct OnboardingStepsView: View {
-    // 识别当前操作系统大/小版本号
+    // 项目最低 deployment target = macOS 13.0 (build.sh: arm64-apple-macosx13.0)，
+    // 因此引导文案统一指向 Ventura+ 的「系统设置」单列样式，不再保留 macOS 12 兜底分支。
     private var systemVersion: (major: Int, minor: Int) {
         let os = ProcessInfo.processInfo.operatingSystemVersion
         return (os.majorVersion, os.minorVersion)
     }
-    
-    // 是否为 macOS 13 (Ventura) 及更高版本（该版本后苹果全面改版为“系统设置”单列样式）
-    private var isVenturaOrNewer: Bool {
-        systemVersion.major >= 13
-    }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // 系统版本提示条
@@ -1051,55 +1126,28 @@ struct OnboardingStepsView: View {
                 Spacer()
             }
             .padding(.bottom, 4)
-            
-            if isVenturaOrNewer {
-                // macOS 13+ 新版"系统设置"引导路径
-                VStack(alignment: .leading, spacing: 10) {
-                    StepRow(
-                        step: 1,
-                        iconName: "bolt.fill",
-                        title: "推荐：点击「一键注册扩展」",
-                        desc: "点击上方橙色的「一键注册扩展」按钮，应用将通过 pluginkit 自动注册扩展，无需手动翻找系统设置。注册后可能需要重启 Finder。"
-                    )
 
-                    StepRow(
-                        step: 2,
-                        iconName: "macwindow.and.cursorarrow",
-                        title: "或手动：打开扩展管理面板",
-                        desc: "点击「打开扩展设置」按钮，在系统设置中找到「扩展」→「访达扩展」，勾选「右键助手扩展」。"
-                    )
-                    
-                    StepRow(
-                        step: 3,
-                        iconName: "checkmark.square.fill",
-                        title: "确认扩展已启用",
-                        desc: "勾选后回到本页面，上方状态应变为「已启用」绿色标识。如仍未显示，请尝试重启 Finder。"
-                    )
-                }
-            } else {
-                // macOS 12 及以下旧版"系统偏好设置"引导路径
-                VStack(alignment: .leading, spacing: 10) {
-                    StepRow(
-                        step: 1,
-                        iconName: "bolt.fill",
-                        title: "推荐：点击「一键注册扩展」",
-                        desc: "应用将自动执行 pluginkit 注册，无需手动操作系统偏好设置。"
-                    )
+            VStack(alignment: .leading, spacing: 10) {
+                StepRow(
+                    step: 1,
+                    iconName: "bolt.fill",
+                    title: "推荐：点击「一键注册扩展」",
+                    desc: "点击上方橙色的「一键注册扩展」按钮，应用将通过 pluginkit 自动注册扩展，无需手动翻找系统设置。注册后可能需要重启 Finder。"
+                )
 
-                    StepRow(
-                        step: 2,
-                        iconName: "macwindow.and.cursorarrow",
-                        title: "或手动：打开扩展管理面板",
-                        desc: "点击「打开扩展设置」按钮，系统将打开「系统偏好设置 -> 扩展」，在左侧选择「访达」后勾选「右键助手扩展」。"
-                    )
-                    
-                    StepRow(
-                        step: 3,
-                        iconName: "checkmark.square.fill",
-                        title: "确认扩展已启用",
-                        desc: "勾选后回到本页面确认状态变绿。"
-                    )
-                }
+                StepRow(
+                    step: 2,
+                    iconName: "macwindow.and.cursorarrow",
+                    title: "或手动：打开扩展管理面板",
+                    desc: "点击「打开扩展设置」按钮，在系统设置中找到「扩展」→「访达扩展」，勾选「右键助手扩展」。"
+                )
+
+                StepRow(
+                    step: 3,
+                    iconName: "checkmark.square.fill",
+                    title: "确认扩展已启用",
+                    desc: "勾选后回到本页面，上方状态应变为「已启用」绿色标识。如仍未显示，请尝试重启 Finder。"
+                )
             }
         }
     }
