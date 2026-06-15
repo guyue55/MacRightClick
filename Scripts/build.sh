@@ -200,7 +200,8 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
     Sources/RightClickAssistant/Core/Actions/UtilityAction.swift \
-    Sources/RightClickAssistant/Core/FileHashCalculator.swift
+    Sources/RightClickAssistant/Core/FileHashCalculator.swift \
+    Sources/RightClickAssistant/Core/Logging/AppLog.swift
 "
 
 EXT_SOURCES="
@@ -213,7 +214,8 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
     Sources/RightClickAssistant/Core/Actions/UtilityAction.swift \
-    Sources/RightClickAssistant/Core/FileHashCalculator.swift
+    Sources/RightClickAssistant/Core/FileHashCalculator.swift \
+    Sources/RightClickAssistant/Core/Logging/AppLog.swift
 "
 
 SDK_PATH=$(xcrun --show-sdk-path)
