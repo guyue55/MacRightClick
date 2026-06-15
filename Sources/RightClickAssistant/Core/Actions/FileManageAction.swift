@@ -258,21 +258,9 @@ public final class FileManageAction: MenuAction {
                     try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
                     successCount += 1
                 } catch {
-                    print("[FileManage] 移动文件直接失败（可能由于跨磁盘卷），启动 Copy-Then-Delete 降级处理: \(error.localizedDescription)")
-                    do {
-                        // A. 先安全复制
-                        try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
-                        // B. 物理校验目的文件确实成功且完整生成
-                        if FileManager.default.fileExists(atPath: finalDestURL.path) {
-                            // C. 彻底且安全地删除原磁盘上的源文件
-                            try FileManager.default.removeItem(at: fileURL)
-                            successCount += 1
-                            print("[FileManage] 跨卷降级兜底转移成功: \(fileURL.lastPathComponent)")
-                        } else {
-                            throw NSError(domain: "guyue.FileManage", code: 500, userInfo: [NSLocalizedDescriptionKey: "复制文件后，检验目的文件存在性失败"])
-                        }
-                    } catch let fallbackError {
-                        print("[FileManage] 跨卷降级兜底也宣告失败: \(fileURL.lastPathComponent) -> \(fallbackError.localizedDescription)")
+                    AppLog.error("moveItem 直接失败，触发跨卷事务化降级: \(error.localizedDescription)", category: .action)
+                    if FileManageAction.crossVolumeMove(from: fileURL, to: finalDestURL) {
+                        successCount += 1
                     }
                 }
             }
@@ -438,24 +426,20 @@ public final class FileManageAction: MenuAction {
                 do {
                     if manageType == .copyTo {
                         try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
+                        successCount += 1
                     } else {
-                        // 针对移动 (moveTo) 动作在直接调用 moveItem 出错时启动安全 Copy-Then-Delete 降级兜底
                         do {
                             try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
+                            successCount += 1
                         } catch {
-                            print("[FileManage] 移动到直接失败（跨盘卷），触发 Copy-Then-Delete 降级防护: \(error.localizedDescription)")
-                            try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
-                            if FileManager.default.fileExists(atPath: finalDestURL.path) {
-                                try FileManager.default.removeItem(at: fileURL)
-                                print("[FileManage] 跨磁盘卷 moveTo 降级复制后删除原件成功")
-                            } else {
-                                throw error
+                            AppLog.error("moveItem 直接失败（跨卷），触发事务化降级: \(error.localizedDescription)", category: .action)
+                            if FileManageAction.crossVolumeMove(from: fileURL, to: finalDestURL) {
+                                successCount += 1
                             }
                         }
                     }
-                    successCount += 1
                 } catch {
-                    print("[FileManage] \(manageType == .copyTo ? "复制" : "移动")操作彻底失败: \(error.localizedDescription)")
+                    AppLog.error("\(manageType == .copyTo ? "复制" : "移动") 操作彻底失败: \(error.localizedDescription)", category: .action)
                 }
             }
             if successCount > 0 {
@@ -481,5 +465,53 @@ public final class FileManageAction: MenuAction {
             return url
         }
         return url.deletingLastPathComponent()
+    }
+}
+
+// MARK: - 跨卷移动事务化
+public extension FileManageAction {
+    /// 跨卷 Copy-Then-Delete 的事务化封装。
+    /// - 任一步骤失败立即 cleanup 残留 dest，不再让用户看到「半个文件 + 完整原件」
+    /// - 成功返回 true；失败返回 false 并在 AppLog 留痕
+    static func crossVolumeMove(from src: URL, to dest: URL) -> Bool {
+        return crossVolumeMove(
+            from: src,
+            to: dest,
+            copy: { from, to in try FileManager.default.copyItem(at: from, to: to) },
+            sanityCheck: { url in try defaultSanityCheck(url) }
+        )
+    }
+
+    /// 注入式版本，仅供单测。生产路径不要直接调用。
+    static func crossVolumeMove(
+        from src: URL,
+        to dest: URL,
+        copy: (URL, URL) throws -> Void,
+        sanityCheck: (URL) throws -> Void
+    ) -> Bool {
+        do {
+            try copy(src, dest)
+            try sanityCheck(dest)
+            try FileManager.default.removeItem(at: src)
+            return true
+        } catch {
+            // 关键：cleanup 残留 dest，避免「目标半个 + 源完整」并存
+            try? FileManager.default.removeItem(at: dest)
+            AppLog.error("跨卷移动失败已 cleanup: \(src.path) -> \(error.localizedDescription)", category: .action)
+            return false
+        }
+    }
+
+    private static func defaultSanityCheck(_ dest: URL) throws {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dest.path, isDirectory: &isDir) else {
+            throw NSError(domain: "guyue.FileManage", code: 510, userInfo: [NSLocalizedDescriptionKey: "目标文件不存在"])
+        }
+        if !isDir.boolValue {
+            let attrs = try FileManager.default.attributesOfItem(atPath: dest.path)
+            if let size = attrs[.size] as? Int, size <= 0 {
+                throw NSError(domain: "guyue.FileManage", code: 511, userInfo: [NSLocalizedDescriptionKey: "目标文件 size 为 0"])
+            }
+        }
     }
 }
