@@ -65,8 +65,9 @@ public final class TerminalOpenAction: MenuAction {
     }
     
     public func isAvailable(for targetURLs: [URL]) -> Bool {
-        // 只有当安装了对应的软件，此右键菜单项才应该被启用并显示给用户
-        guard let _ = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appType.bundleIdentifier) else {
+        // 只有当安装了对应的软件，此右键菜单项才应该被启用并显示给用户。
+        // 走进程内缓存，避免 menu(for:) 渲染时重复触发 Launch Services 同步查询。
+        guard InstalledAppRegistry.shared.isInstalled(appType.bundleIdentifier) else {
             return false
         }
         return !targetURLs.isEmpty
@@ -80,8 +81,8 @@ public final class TerminalOpenAction: MenuAction {
         
         // VS Code、Cursor、Sublime、Warp、Terminal 和 iTerm2 均通过 NSWorkspace 传递目录 URL 打开。
         // 该方式避免额外的 AppleScript 自动化权限请求。
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appType.bundleIdentifier) else {
-            print("[TerminalAction] 错误: 找不到应用: \(appType.displayName)")
+        guard let appURL = InstalledAppRegistry.shared.url(for: appType.bundleIdentifier) else {
+            AppLog.error("找不到应用: \(self.appType.displayName)", category: .action)
             return false
         }
         

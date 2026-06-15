@@ -621,7 +621,7 @@ struct ActionRowView: View {
                         .fontWeight(.medium)
                     
                     if let bundleId = action.associatedBundleIdentifier {
-                        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) == nil {
+                        if !InstalledAppRegistry.shared.isInstalled(bundleId) {
                             Text("未检测到应用")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(.secondary)
