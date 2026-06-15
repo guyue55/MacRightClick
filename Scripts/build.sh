@@ -186,6 +186,13 @@ else
     echo "⚠️ [Build] 未找到 Resources/AppIcon.png 资源，跳过图标打包。"
 fi
 
+# 拷贝 Office 三件套最小骨架到 .app/Contents/Resources/Templates/
+if [ -d "Resources/Templates" ]; then
+    mkdir -p "$APP_BUNDLE/Contents/Resources/Templates"
+    cp -R Resources/Templates/. "$APP_BUNDLE/Contents/Resources/Templates/"
+    echo "📄 [Build] 已拷贝 Office 模板到 .app/Contents/Resources/Templates/"
+fi
+
 # 5. 源码列表定义
 HOST_SOURCES="
     Sources/RightClickAssistant/AppDelegate.swift \

@@ -36,14 +36,17 @@ public enum SupportedFileType: String, CaseIterable, Codable, Identifiable {
     /// 获取每种类型的空白默认字节，确保 Office 等软件能够正常打开而非提示损坏
     public var defaultEmptyBytes: Data {
         switch self {
-        // Office 三件套等复杂格式需要基础 XML 骨架或 ZIP 压缩结构，若直接写 0 字节文件双击打开会提示文件损坏
-        // 这里采用标准最小化二进制结构，或简单的空文件（在后续自定义中也可以读取本地的空模板文件）
-        case .docx:
-            // 这是一个最简 Office Word 2007 容器字节流的十六进制字符串（通常是个小 ZIP 压缩包）
-            return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
-        case .xlsx:
-            return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
-        case .pptx:
+        // Office 三件套需要完整的最小骨架（[Content_Types].xml + _rels + 主体 part），
+        // 否则 Word/Excel/PowerPoint/Pages 双击会提示「文件已损坏」。
+        // 实际骨架以二进制方式打包到 .app/Contents/Resources/Templates/blank.<ext>，运行时读取。
+        case .docx, .xlsx, .pptx:
+            if let url = Bundle.main.url(forResource: "blank", withExtension: rawValue, subdirectory: "Templates"),
+               let data = try? Data(contentsOf: url) {
+                return data
+            }
+            // 兜底：即使没拿到模板也不返回完全空字节，至少给出 PK 头让 Finder 不报「未知二进制」。
+            // 但应用打开会报错。这条分支表示打包流程出错，AppLog 留痕方便排查。
+            AppLog.error("缺少 Templates/blank.\(rawValue)，回退空 ZIP 头", category: .action)
             return Data(base64Encoded: "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==") ?? Data()
         case .html:
             return """
