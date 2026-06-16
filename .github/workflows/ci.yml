@@ -9,11 +9,51 @@ on:
     tags: [ "v*" ]
   pull_request:
     branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
+  test:
+    name: Swift Tests + Stress Harness Sanity
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup macOS SDK and Toolchain
+      run: |
+        xcrun --show-sdk-path
+        swift --version
+
+    - name: Run Swift unit + stress tests (PendingAction lease/ack/reclaim, BackgroundActionRunner, InteractiveActionRunner, WatchScope, ...)
+      run: |
+        # SwiftPM tests cover the contract layer in isolation; the GUI App is not needed.
+        # PendingActionStressTests in particular replays the same invariants the
+        # python harness exercises end-to-end on a real machine.
+        #
+        # Note: tests share `SharedStorageManager.shared` and write to the same
+        # ~/Library/Containers/<extBundle>/Data tree, so we run XCTest serially
+        # (default) to avoid cross-test directory races. Each testCase still
+        # cleans Pending/InFlight/Failed in setUp().
+        swift test
+
+    - name: Stress harness syntax sanity (no rot, no missing imports)
+      run: |
+        # We do NOT actually run the .py stress against a packaged .app on CI:
+        # GitHub macos-latest runners are headless (no WindowServer) and the host
+        # App relies on SwiftUI / NSStatusItem / NSPanel registration paths that
+        # only behave correctly in a real GUI session. The python harness stays
+        # as a real-machine regression tool; CI just verifies it parses cleanly
+        # so that test/agent edits never silently break the harness.
+        python3 -m py_compile Scripts/stress/run_stress.py
+        python3 -m py_compile Scripts/stress/run_reclaim_stress.py
+
   build:
     name: Build Universal 2 App Bundle
     runs-on: macos-latest
+    needs: test
     permissions:
       contents: write
 
@@ -65,5 +105,3 @@ jobs:
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-

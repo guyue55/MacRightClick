@@ -35,3 +35,7 @@ xcuserdata/
 
 # Compiled test binaries
 ActionVerifier_bin
+
+# Python bytecode (压测 harness 用 python3 -m py_compile 时产出)
+__pycache__/
+*.pyc
