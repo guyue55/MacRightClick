@@ -906,7 +906,13 @@ struct ExtensionRegistrationBox: View {
             try proc.run()
             proc.waitUntilExit()
             if proc.terminationStatus == 0 {
-                SharedHUDManager.show(title: "注册成功", content: "扩展已注册，重启 Finder 后生效", isSuccess: true)
+                SharedHUDManager.show(title: "注册成功", content: "正在重启 Finder 使扩展生效…", isSuccess: true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    let killProc = Process()
+                    killProc.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+                    killProc.arguments = ["Finder"]
+                    try? killProc.run()
+                }
             } else {
                 SharedHUDManager.show(title: "注册失败", content: "pluginkit 返回码: \(proc.terminationStatus)", isSuccess: false)
             }
@@ -1032,7 +1038,7 @@ struct ExtensionStatusBanner: View {
                             .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.green)
+                        .tint(.orange)
                     }
                     
                     Divider()
@@ -1114,11 +1120,18 @@ struct ExtensionStatusBanner: View {
             if process.terminationStatus == 0 {
                 SharedHUDManager.show(
                     title: "注册成功",
-                    content: "扩展已注册，请重启 Finder 或稍候生效",
+                    content: "正在重启 Finder 使扩展生效…",
                     isSuccess: true
                 )
-                // 注册后延迟刷新状态
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                // 注册后自动重启 Finder，避免用户「等半天没生效」误以为失败
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    let killProc = Process()
+                    killProc.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+                    killProc.arguments = ["Finder"]
+                    try? killProc.run()
+                }
+                // Finder 重启需要时间，2 秒后刷新 banner 状态
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     self.checkStatus()
                 }
             } else {
