@@ -42,26 +42,44 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
     }
 
     func testReclaimAbandonedInFlightRestoresOrphans() throws {
-        // 模拟「上一次进程崩在 dispatcher 中」：lease 拿走但没 ack。
-        _ = try manager.enqueueAction(actionId: "test.lease.crash", paths: ["/tmp/b"])
-        let leases = manager.consumePendingActionLeases()
-        XCTAssertEqual(leases.count, 1)
-        // 故意不 ack。文件留在 InFlight/<pid>/ 里。
+        // 模拟「上一次进程崩在 dispatcher 中」：往别的 PID 子目录写孤儿文件。
+        // reclaim 会跳过当前 PID 目录，所以必须用 bogus PID。
+        let bogusPID = 99999
+        let bogusDir = manager.inFlightActionsDirectoryURL
+            .appendingPathComponent("\(bogusPID)", isDirectory: true)
+        try FileManager.default.createDirectory(at: bogusDir, withIntermediateDirectories: true)
 
-        // 模拟下一次启动：reclaim 应当把 InFlight/<pid>/ 文件搬回 PendingActions。
+        let event = SharedActionEvent(
+            id: UUID().uuidString,
+            createdAt: Date().timeIntervalSince1970,
+            actionId: "test.lease.crash",
+            paths: ["/tmp/b"]
+        )
+        let data = try JSONEncoder().encode(event)
+        let orphanURL = bogusDir.appendingPathComponent("\(Int64(event.createdAt*1000))-\(event.id).json")
+        try data.write(to: orphanURL)
+
+        // reclaim 应当把孤儿搬回 PendingActions。
         manager.reclaimAbandonedInFlightActions()
 
         let recovered = manager.consumePendingActionLeases()
         XCTAssertEqual(recovered.count, 1)
         XCTAssertEqual(recovered[0].event.actionId, "test.lease.crash")
         manager.acknowledge(recovered[0])
+
+        // bogus PID 子目录被清理。
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bogusDir.path))
     }
 
     func testAckPreventsReclaim() throws {
-        _ = try manager.enqueueAction(actionId: "test.lease.normal", paths: ["/tmp/c"])
+        // 正常 ack 后，reclaim 不应复活已确认的事件。
+        let url = try manager.enqueueAction(actionId: "test.lease.normal", paths: ["/tmp/c"])
         let leases = manager.consumePendingActionLeases()
         XCTAssertEqual(leases.count, 1)
+        XCTAssertNotNil(leases[0].inFlightURL)
         manager.acknowledge(leases[0])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leases[0].inFlightURL!.path))
 
         manager.reclaimAbandonedInFlightActions()
         let again = manager.consumePendingActionLeases()
