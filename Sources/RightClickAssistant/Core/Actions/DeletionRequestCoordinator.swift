@@ -17,7 +17,7 @@ import os.lock
 /// - `FileManageAction.permanentDelete` 不再自己跑 modal，只把 targets 交给本类。
 /// - 本类负责出弹窗、出 HUD、做 IO、写日志。`FileManageAction` 调完即 return，
 ///   高内聚低耦合，方便测试。
-public final class DeletionRequestCoordinator {
+public final class DeletionRequestCoordinator: @unchecked Sendable {
     public nonisolated(unsafe) static let shared = DeletionRequestCoordinator(
         presenter: MainThreadAlertPresenter()
     )

@@ -21,7 +21,7 @@ import os.lock
 /// 与 `DeletionRequestCoordinator` 的关系：
 /// 后者是本骨架的早期特化版本，保留它以维持当前接口稳定；
 /// 新增 Action（moveTo/copyTo/toggleHidden 等）一律走本类。
-public final class InteractiveActionRunner {
+public final class InteractiveActionRunner: @unchecked Sendable {
     /// 标识本次交互所属的动作，用于 HUD 提示与日志归类。
     public let actionLabel: String
 
@@ -44,7 +44,7 @@ public final class InteractiveActionRunner {
     @discardableResult
     public func run<Prompt: Sendable>(
         prompt: @escaping @MainActor () -> Prompt?,
-        perform: @escaping (Prompt) -> Void
+        perform: @escaping @Sendable (Prompt) -> Void
     ) -> Outcome {
         guard InteractiveActionGate.shared.tryAcquire(label: actionLabel) else {
             // 拒绝路径：HUD 必须切主线程。
