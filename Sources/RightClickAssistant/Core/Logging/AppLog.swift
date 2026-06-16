@@ -20,7 +20,7 @@ public enum AppLog {
     public static let subsystem = "guyue.RightClickAssistant"
 
     private static let registryQueue = DispatchQueue(label: "guyue.AppLog.registry")
-    private static var loggers: [String: Logger] = [:]
+    private nonisolated(unsafe) static var loggers: [String: Logger] = [:] 
 
     /// 取得指定 category 的 Logger 实例。同 category 的多次调用返回同一个 Logger。
     public static func logger(for category: AppLogCategory) -> Logger {

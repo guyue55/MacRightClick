@@ -11,7 +11,7 @@ public enum HashAlgorithm: String, Codable {
 public enum FileHashCalculator {
 
     /// 默认分块大小：4 MB。
-    public static var chunkSize: Int = 4 * 1024 * 1024
+    public nonisolated(unsafe) static var chunkSize: Int = 4 * 1024 * 1024
 
     /// 对指定文件计算哈希值，返回小写十六进制字符串。
     public static func hashFile(at url: URL, algorithm: HashAlgorithm) throws -> String {

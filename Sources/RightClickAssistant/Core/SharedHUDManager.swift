@@ -5,9 +5,9 @@ import AppKit
 /// 提供带微动画、支持毛玻璃特效的屏幕顶部中央紧凑型通知。
 /// 实现了高内聚低耦合、接口隔离与完全双写配置感知（注2、注4）。
 public final class SharedHUDManager {
-    private static weak var activePanel: NSPanel?
+    private nonisolated(unsafe) static weak var activePanel: NSPanel?
     /// HUD 启用 Esc 关闭时，记录当前的 NSEvent 监听 token，便于关闭时移除避免泄漏。
-    private static var activeKeyMonitor: Any?
+    private nonisolated(unsafe) static var activeKeyMonitor: Any?
 
     /// 纯函数：从给定屏幕集合里挑出包含 mouseLocation 的 visibleFrame；都不命中时返回 fallback。
     /// 抽出便于单测，不依赖 NSScreen / NSEvent。

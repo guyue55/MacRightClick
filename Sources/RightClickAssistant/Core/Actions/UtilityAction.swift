@@ -296,8 +296,8 @@ public final class UtilityAction: MenuAction {
     
 
 }
- public extension Data {
-    struct HexEncodingOptions: OptionSet {
+public extension Data {
+    struct HexEncodingOptions: OptionSet, Sendable {
         public let rawValue: Int
         public static let upperCase = HexEncodingOptions(rawValue: 1 << 0)
         public init(rawValue: Int) {

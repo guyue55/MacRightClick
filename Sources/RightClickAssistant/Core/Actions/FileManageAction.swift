@@ -296,7 +296,7 @@ extension FileManageAction {
     /// paste 没有自身弹窗，但跨盘大文件会让 moveItem/crossVolumeMove 长期阻塞队列。
     /// 用 BackgroundActionRunner 把 IO 投到私有串行队列，folder-monitor 队列立刻返回。
     /// 不抢 InteractiveActionGate：paste 与 modal 互斥不在同一层面，不该相互阻塞。
-    static let pasteRunner = BackgroundActionRunner(
+    nonisolated(unsafe) static let pasteRunner = BackgroundActionRunner(
         actionLabel: "fileManage.paste",
         ioQueueLabel: "guyue.RightClickAssistant.filemanage-paste-io"
     )
