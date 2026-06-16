@@ -225,7 +225,7 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 - **build**: Entitlements externalized; templates picked by `DISTRIBUTION_ROUTE`; release/MAS routes enable `-O`.
 - **core**: Full Swift 6.1 concurrency conformance (`@MainActor` / `nonisolated(unsafe)` / `Sendable`).
 
-Full commit history: [GitHub Releases v1.0.1](https://github.com/guyue55/MacRightClick/releases/tag/v1.0.1).
+Full changelog: [CHANGELOG.md](CHANGELOG.md). Release notes: [GitHub Releases v1.0.1](https://github.com/guyue55/MacRightClick/releases/tag/v1.0.1).
 
 ---
 
