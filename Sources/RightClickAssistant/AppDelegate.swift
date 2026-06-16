@@ -16,6 +16,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     /// - os_unfair_lock 是 Apple 推荐的纯互斥，不参与 runloop，
     ///   语义只覆盖"PendingActions 消费循环的 critical section"。
     private var pendingActionLock = os_unfair_lock()
+
+    /// 专用串行队列：所有 processPendingAction 的真实工作都跑在这里。
+    /// 必须用串行队列（不是 .global）：
+    /// - 与 pendingActionLock 配合保证消费循环的 critical section 串行；
+    /// - 同名右键动作短时间内突发 N 次时，按 FIFO 顺序消费，避免 ActionConfigCache /
+    ///   NSPasteboard / HUD 在并发 dispatch 路径上互相踩踏；
+    /// - 不挂主线程：避免 applicationDidFinishLaunching 阶段第一笔 dispatch
+    ///   触发 cfprefsd XPC 同步等待时把 main runloop 锁死（压测捕获的 P0 死锁）。
+    private let pendingActionDispatchQueue = DispatchQueue(
+        label: "guyue.RightClickAssistant.pending-dispatch",
+        qos: .userInitiated
+    )
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 1. 初始化并注册系统自带的右键菜单动作
@@ -87,12 +99,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         processPendingAction()
     }
     
-    /// 原子消费处理 PendingActions 队列动作数据包（双保险统一消费入口，多重互斥锁保护）
+    /// PendingActions 消费的对外入口。任何线程都可以调用，立即返回，
+    /// 不会阻塞调用者（applicationDidFinishLaunching、kqueue 回调、分布式通知都是合法入口）。
+    ///
+    /// 设计原因（压测捕获的 P0 死锁复盘）：
+    /// - 旧实现：在 applicationDidFinishLaunching 主线程上同步消费 PendingActions；
+    ///   reclaim 把孤儿搬回 Pending 后，第一笔 dispatch 一旦走到 SharedHUDManager.show
+    ///   → SharedStorageManager.getBool → cfprefsd XPC 同步等待，main runloop 还没起来，
+    ///   cfprefsd 的回应没人接，进程永久 __ulock_wait 死锁；
+    /// - 修复：消费循环全部下沉到 pendingActionDispatchQueue，主线程 0 阻塞。
     private func processPendingAction() {
-        // 防止分布式通知与 kqueue 在毫秒内同时调用造成事件重复消费。
-        // try_lock 而非 lock：若已经有一个消费循环在跑，新的回调直接退出，
-        // 因为 consumePendingActionLeases 内部自带原子文件 rename（Pending → InFlight/<pid>/），
-        // 跑完一轮后任何遗漏事件都会在下一次 kqueue write 事件里再次进入这里。
+        pendingActionDispatchQueue.async { [weak self] in
+            self?.drainPendingActions()
+        }
+    }
+
+    /// 真正的消费循环（pendingActionDispatchQueue 上跑）。
+    /// 用 trylock 防止两条 async 任务同时进入；新到的回调若发现已有循环在跑直接返回，
+    /// 因为 consumePendingActionLeases 内部自带原子 rename，下一次 FSEvents/通知会自然回来。
+    private func drainPendingActions() {
         guard os_unfair_lock_trylock(&pendingActionLock) else { return }
         defer { os_unfair_lock_unlock(&pendingActionLock) }
         

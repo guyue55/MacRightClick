@@ -461,16 +461,19 @@ public final class SharedStorageManager {
     }
     
     /// 获取指定菜单项是否启用
-    /// 优先从 App Group UserDefaults 中读取配置，当不可用时无缝降级读取 config.json 共享配置，最后回退至默认值
+    /// 路由：仅在 App Group 路线（MAS）下尝试读 group UserDefaults；website 路线下直接走
+    /// config.json，避免触发 cfprefsd 的 "kCFPreferencesAnyUser with a container is only allowed
+    /// for System Containers, detaching from cfprefsd" 错误链——一旦 detach，后续任何 CFPreferences
+    /// 同步 XPC（含 NSWorkspace.accessibility 探测）会变成无人接的 mach_msg 等待，启动期最早被
+    /// SwiftUI 的 NSHostingView.viewDidMoveToWindow 触发，进程死锁（压测捕获）。
     public func getBool(forKey key: String, defaultValue: Bool = true) -> Bool {
         observeGetBoolForTesting?(key)
-        // A. 优先尝试从官方原生的 App Group UserDefaults 读取
-        if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
+        if Distribution.usesAppGroup,
+           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
            sharedDefaults.object(forKey: key) != nil {
             return sharedDefaults.bool(forKey: key)
         }
-        
-        // B. 降级：从 config.json 文件中读取
+
         let config = loadConfig()
         if let val = config[key] as? Bool {
             return val
@@ -479,7 +482,8 @@ public final class SharedStorageManager {
     }
 
     public func getStringArray(forKey key: String, defaultValue: [String] = []) -> [String] {
-        if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
+        if Distribution.usesAppGroup,
+           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
            let values = sharedDefaults.stringArray(forKey: key) {
             return values
         }
@@ -505,15 +509,15 @@ public final class SharedStorageManager {
     }
     
     /// 写入指定菜单项的启用状态（在宿主设置界面变更配置时调用）
-    /// 同时双写到 App Group UserDefaults 以及 config.json，确保在任何签名沙盒策略下都必定穿透
+    /// 仅在 App Group 路线下双写到 group UserDefaults；website 路线只写 config.json，
+    /// 见 getBool 注释——避免触发 cfprefsd detach 死锁链。
     public func setBool(_ value: Bool, forKey key: String) {
-        // A. 写入 App Group UserDefaults
-        if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
+        if Distribution.usesAppGroup,
+           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
             sharedDefaults.set(value, forKey: key)
             sharedDefaults.synchronize()
         }
-        
-        // B. 双写至 config.json 文件中
+
         var config = loadConfig()
         config[key] = value
         saveConfig(config)
@@ -522,7 +526,8 @@ public final class SharedStorageManager {
     public func setStringArray(_ values: [String], forKey key: String) {
         let uniqueValues = Array(NSOrderedSet(array: values)).compactMap { $0 as? String }
 
-        if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
+        if Distribution.usesAppGroup,
+           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
             sharedDefaults.set(uniqueValues, forKey: key)
             sharedDefaults.synchronize()
         }
@@ -546,7 +551,8 @@ public final class SharedStorageManager {
 
     /// 移除指定配置值，让后续读取回到默认值。用于恢复默认设置和测试隔离。
     public func removeValue(forKey key: String) {
-        if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
+        if Distribution.usesAppGroup,
+           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
             sharedDefaults.removeObject(forKey: key)
             sharedDefaults.synchronize()
         }

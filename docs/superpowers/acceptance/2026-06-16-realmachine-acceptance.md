@@ -271,3 +271,85 @@ open /Applications/RightClickAssistant.app + killall Finder + osascript open Hom
    自定义记录未丢
 4. `killall Finder` 后等 5-10 秒，新 Finder 进程上仍然能在所有目录看到菜单
    （Extension 的 [/] 注册在 Finder 重启后由 FinderSync.init 重新写入）
+
+## 12. 2026-06-16 真机压测 + 启动期 P0 死锁修复
+
+用户要求"加大真机测试强度"。本轮新增 `Scripts/stress/` 压测 harness，把
+扩展 → 主 App 的整条 PendingAction 通路逼到极限，结果**捕获到一个新的 P0
+死锁**，并完整修复 + 验收闭环。
+
+### 压测 harness（高内聚低耦合）
+
+- [`run_stress.py`](/Users/guyue/GitProject/mac右键/Scripts/stress/run_stress.py)：
+  burst（高并发 enqueue）+ malformed（垃圾 JSON 隔离）+ 残余检查；
+- [`run_reclaim_stress.py`](/Users/guyue/GitProject/mac右键/Scripts/stress/run_reclaim_stress.py)：
+  模拟"主 App dispatch 中途崩溃"——往 `InFlightActions/<bogus_pid>/` 灌 N 个
+  孤儿事件，重启主 App，断言 reclaim 回 Pending → 全部消费 → InFlight 清空；
+- 两个脚本都直接对**真实磁盘上的共享容器**写文件，wire format 与扩展端
+  `enqueueAction` 完全一致；不依赖 Swift / XCTest，CI 上等价可重放。
+
+### 压测捕获到的 P0：启动期 cfprefsd 死锁
+
+在 `--orphans 100` 跑 `run_reclaim_stress.py` 时，主 App 启动后 100 个孤儿
+被 reclaim 进 Pending，但 InFlightActions/<host_pid>/ 永远停留在 100 个文件。
+`sample <host_pid>` 看到主线程卡在：
+
+```
+applicationDidFinishLaunching
+  → processPendingAction()              ← 同步调用
+    → ActionDispatcher.dispatch
+      → FileManageAction.execute (.copyName)
+        → SharedHUDManager.show
+          → SharedStorageManager.getBool("enable_success_hud")
+            → UserDefaults(suiteName: appGroupIdentifier)   ← website 路线非 sandbox 主 App
+              → cfprefsd: "Using kCFPreferencesAnyUser with a container is only allowed
+                           for System Containers, detaching from cfprefsd"
+                → CFPreferences synchronouslySendSystemMessage
+                  → mach_msg2_trap (永久 __ulock_wait)
+```
+
+根因双重耦合：
+1. **AppDelegate.processPendingAction 在主线程同步消费**：
+   reclaim 让 applicationDidFinishLaunching 第一次拿到 N 个 lease，第一笔 dispatch
+   走到 NSWorkspace / cfprefsd 同步 XPC 时主 runloop 还没起来，cfprefsd 的回应
+   没人接，进程永久挂住；
+2. **website 路线下主 App 不带 App Group entitlement**：
+   `UserDefaults(suiteName: "group.guyue.RightClickAssistant")` 让 cfprefsd
+   "detaching"，后续任何 CFPreferences 同步链路（含系统侧 NSWorkspace.accessibility
+   调用）都受影响，把死锁概率推到 100%。
+
+### 修复（高内聚低耦合）
+
+- [AppDelegate.swift](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/AppDelegate.swift)
+  新增 `pendingActionDispatchQueue`（专用串行 queue, qos=.userInitiated）；
+  `processPendingAction()` 现在只做"async 投递"，真实工作搬到 `drainPendingActions()`
+  在该队列上跑，主线程 0 阻塞；
+- 串行队列保证 N 个 lease 的 dispatch 仍 FIFO 顺序消费，不会并发踩 NSPasteboard /
+  HUD / cfprefsd；
+- [SharedStorageManager.swift](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/Core/SharedStorageManager.swift)
+  getBool / getStringArray / setBool / setStringArray / removeValue 全部加上
+  `Distribution.usesAppGroup` 守卫，website 路线下完全跳过 group UserDefaults，
+  直接走 config.json，从根上消除 cfprefsd detach 链路。
+
+### 自动回归证据（命令实测，evidence-before-claim）
+
+| 项目 | 规模 | drain pending | drain inflight | host 崩溃 | 结果 |
+| --- | --- | --- | --- | --- | --- |
+| reclaim 100 orphan | 100 | 0.10s | 0.10s | 否 | PASS |
+| reclaim 500 orphan | 500 | 0.15s | 0.21s | 否 | PASS |
+| reclaim 1000 orphan | 1000 | 0.38s | 0.48s | 否 | PASS |
+| burst 2000 + malformed 50 | 2050 | 0.40s + 0.05s | 0.18s | 否 | PASS |
+| 连续 3 轮 reclaim 200 + burst 500 + malformed 5 | 3×705 | 全 < 0.2s | 全 < 0.2s | 否 | PASS |
+
+OSLog 印证：每轮 reclaim 100 = 100 条 "成功解析动作" + 100 条 "代理执行结果"；
+malformed 全部精准 quarantine 到 FailedActions（条数 = 灌入数）；host PID 在所有
+回合前后保持一致。
+
+对应 commit：
+- `feat(stress): 新增 run_stress.py / run_reclaim_stress.py 真机压测 harness`
+- `fix(host): processPendingAction 异步化 + Distribution 路线感知 UserDefaults 路由，斩断启动期 cfprefsd 死锁`
+
+不变量（与既有修复保持兼容）：
+- folder-monitor 串行队列依然不在调用线程做重 IO（P1-1 paste 走 BackgroundActionRunner 路径未变）；
+- lease/ack/reclaim 三件套（P1-2）路径未变，只是消费线程从主线程换到专用串行队列；
+- InteractiveActionRunner / DeletionRequestCoordinator 闸门语义未变。
