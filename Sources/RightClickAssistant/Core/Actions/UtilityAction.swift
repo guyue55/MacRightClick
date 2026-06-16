@@ -193,28 +193,9 @@ public final class UtilityAction: MenuAction {
         }
     }
 
-    private func runOnMainThread<T>(_ block: () -> T) -> T {
-        if Thread.isMainThread {
-            return block()
-        }
-        return DispatchQueue.main.sync {
-            block()
-        }
-    }
-
-    private func confirmToggleHiddenFiles() -> Bool {
-        return runOnMainThread {
-            let alert = NSAlert()
-            alert.messageText = "确认切换 Finder 隐藏文件显示？"
-            alert.informativeText = "此操作会修改 Finder 系统偏好并重启 Finder，当前 Finder 窗口可能短暂关闭或刷新。"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "确认切换并重启 Finder")
-            alert.addButton(withTitle: "取消")
-            alert.window.level = .modalPanel
-            alert.window.orderFrontRegardless()
-            return alert.runModal() == .alertFirstButtonReturn
-        }
-    }
+    // runOnMainThread/confirmToggleHiddenFiles 已退役：
+    // 全部走 InteractiveActionRunner（toggleHiddenRunner），
+    // 主线程负责 prompt，后台负责 perform。
     
     // MARK: - 1. 流式哈希计算
     private func calculateHash(for url: URL) -> Bool {
@@ -236,70 +217,22 @@ public final class UtilityAction: MenuAction {
     }
     
     // MARK: - 2. 显示/隐藏隐藏文件
+    /// 进通用 InteractiveActionRunner：
+    /// - prompt 主线程弹 critical 确认；
+    /// - perform 后台跑 defaults + osascript + sleep + open -a Finder。
+    /// folder-monitor 串行队列不再被 Process.waitUntilExit / Thread.sleep 阻塞。
     private func toggleHiddenSystemFiles() -> Bool {
-        guard confirmToggleHiddenFiles() else {
-            return false
-        }
-
-        // 读取当前状态
-        let readProcess = Process()
-        readProcess.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        readProcess.arguments = ["read", "com.apple.finder", "AppleShowAllFiles"]
-        
-        let pipe = Pipe()
-        readProcess.standardOutput = pipe
-        
-        do {
-            try readProcess.run()
-            readProcess.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let currentVal = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "NO"
-            
-            let toggleVal = (currentVal == "YES" || currentVal == "1" || currentVal == "true") ? "NO" : "YES"
-            
-            // 写入新状态并重启 Finder
-            let writeProcess = Process()
-            writeProcess.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-            writeProcess.arguments = ["write", "com.apple.finder", "AppleShowAllFiles", toggleVal]
-            try writeProcess.run()
-            writeProcess.waitUntilExit()
-            
-            // 用 AppleScript 让 Finder 优雅退出，比 killall 安全：
-            // - 系统会保存 Finder 当前状态（拖拽中、复制进度框、未关窗口），不会粗暴打断
-            // - 退出后 launchd 会自动重新拉起 Finder
-            // 保险起见，500ms 后再用 `open -a Finder` 显式触发重启，覆盖某些不会自动复活的边角场景。
-            let osa = Process()
-            osa.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            osa.arguments = ["-e", "tell application \"Finder\" to quit"]
-            try osa.run()
-            osa.waitUntilExit()
-
-            Thread.sleep(forTimeInterval: 0.5)
-
-            let relaunch = Process()
-            relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            relaunch.arguments = ["-a", "Finder"]
-            try? relaunch.run()
-            
-            let stateStr = toggleVal == "YES" ? "显示" : "隐藏"
-            SharedHUDManager.show(
-                title: "系统配置更新成功",
-                content: "已成功切换系统隐藏文件状态为：【\(stateStr)】",
-                isSuccess: true
-            )
-            return true
-        } catch {
-            print("[UtilityAction] 切换显示隐藏文件失败: \(error.localizedDescription)")
-            SharedHUDManager.show(
-                title: "切换状态失败",
-                content: "在调用系统指令 defaults 或重启 Finder 时发生错误：\(error.localizedDescription)",
-                isSuccess: false
-            )
-            return false
-        }
+        let outcome = UtilityAction.toggleHiddenRunner.run(
+            prompt: { () -> Bool? in
+                UtilityAction.confirmToggleHiddenAlert() ? true : nil
+            },
+            perform: { _ in
+                UtilityAction.performToggleHiddenFiles()
+            }
+        )
+        return outcome == .accepted
     }
-    
+
     // MARK: - 3. 生成二维码
     private func generateQRCodeFromClipboard() -> Bool {
         let text = NSPasteboard.general.string(forType: .string) ?? ""
@@ -427,6 +360,86 @@ public final class DefaultImageConverter: ImageConverterProtocol {
             return .success(finalDestURL)
         } catch {
             return .failure(error)
+        }
+    }
+}
+
+// MARK: - toggleHiddenFiles 公共支持（InteractiveActionRunner 拆出的纯函数）
+extension UtilityAction {
+
+    /// 与 transferRunner 通过 InteractiveActionGate 共享 modal 互斥。
+    /// toggleHiddenRunner 自带串行 IO 队列：多次切换不会并发抢 Finder。
+    static let toggleHiddenRunner = InteractiveActionRunner(
+        actionLabel: "utility.toggleHidden",
+        ioQueueLabel: "guyue.RightClickAssistant.utility-toggle-hidden-io"
+    )
+
+    /// 主线程：弹 critical 确认。`true` 表示用户同意，`false` 取消。
+    static func confirmToggleHiddenAlert() -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let alert = NSAlert()
+        alert.messageText = "确认切换 Finder 隐藏文件显示？"
+        alert.informativeText = "此操作会修改 Finder 系统偏好并重启 Finder，当前 Finder 窗口可能短暂关闭或刷新。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "确认切换并重启 Finder")
+        alert.addButton(withTitle: "取消")
+        alert.window.level = .modalPanel
+        alert.window.orderFrontRegardless()
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// 后台串行队列：执行 defaults + osascript + sleep + open -a Finder。
+    /// 任何 Process.waitUntilExit / Thread.sleep 都不再阻塞 folder-monitor 队列。
+    static func performToggleHiddenFiles() {
+        do {
+            // 1. 读取当前值（默认 NO）。
+            let read = Process()
+            read.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+            read.arguments = ["read", "com.apple.finder", "AppleShowAllFiles"]
+            let pipe = Pipe()
+            read.standardOutput = pipe
+            try read.run()
+            read.waitUntilExit()
+            let raw = pipe.fileHandleForReading.readDataToEndOfFile()
+            let current = String(data: raw, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "NO"
+            let next = (current == "YES" || current == "1" || current == "true") ? "NO" : "YES"
+
+            // 2. 写入翻转值。
+            let write = Process()
+            write.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+            write.arguments = ["write", "com.apple.finder", "AppleShowAllFiles", next]
+            try write.run()
+            write.waitUntilExit()
+
+            // 3. 优雅退出 Finder（osascript），launchd 会自动拉回。
+            //    保险起见再 500ms 后显式 `open -a Finder`，覆盖某些不会自动复活的边角场景。
+            let osa = Process()
+            osa.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            osa.arguments = ["-e", "tell application \"Finder\" to quit"]
+            try osa.run()
+            osa.waitUntilExit()
+
+            Thread.sleep(forTimeInterval: 0.5)
+
+            let relaunch = Process()
+            relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            relaunch.arguments = ["-a", "Finder"]
+            try? relaunch.run()
+
+            let stateText = next == "YES" ? "显示" : "隐藏"
+            SharedHUDManager.show(
+                title: "系统配置更新成功",
+                content: "已成功切换系统隐藏文件状态为：【\(stateText)】",
+                isSuccess: true
+            )
+        } catch {
+            AppLog.error("切换显示隐藏文件失败: \(error.localizedDescription)", category: .action)
+            SharedHUDManager.show(
+                title: "切换状态失败",
+                content: "在调用系统指令 defaults 或重启 Finder 时发生错误：\(error.localizedDescription)",
+                isSuccess: false
+            )
         }
     }
 }

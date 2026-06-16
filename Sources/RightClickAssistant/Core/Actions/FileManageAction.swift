@@ -121,29 +121,9 @@ public final class FileManageAction: MenuAction {
         }
     }
     
-    private func runOnMainThread<T>(_ block: () -> T) -> T {
-        if Thread.isMainThread {
-            return block()
-        } else {
-            return DispatchQueue.main.sync {
-                return block()
-            }
-        }
-    }
-
-    private func confirmHighRiskOperation(title: String, message: String, confirmTitle: String) -> Bool {
-        return runOnMainThread {
-            let alert = NSAlert()
-            alert.messageText = title
-            alert.informativeText = message
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: confirmTitle)
-            alert.addButton(withTitle: "取消")
-            alert.window.level = .modalPanel
-            alert.window.orderFrontRegardless()
-            return alert.runModal() == .alertFirstButtonReturn
-        }
-    }
+    // 旧的 runOnMainThread/confirmHighRiskOperation 已经移除：
+    // moveTo/copyTo 走 transferRunner，permanentDelete 走 DeletionRequestCoordinator，
+    // 任何后台 → 主线程同步的死锁路径都不再保留。
     
     public func isAvailable(for targetURLs: [URL]) -> Bool {
         return isAvailable(for: targetURLs, isContainer: false)
@@ -289,95 +269,37 @@ public final class FileManageAction: MenuAction {
             return true
             
         case .moveTo, .copyTo:
-            // 如果预设了自定义路径直接操作，否则弹出 NSOpenPanel 让用户自由选择目标文件夹
-            let destinationDir: URL
-            if let customPath = customTargetPath {
-                destinationDir = customPath
-            } else {
-                let selectedURL = runOnMainThread { () -> URL? in
-                    let openPanel = NSOpenPanel()
-                    openPanel.canChooseFiles = false
-                    openPanel.canChooseDirectories = true
-                    openPanel.allowsMultipleSelection = false
-                    openPanel.prompt = "选择目标文件夹"
-                    
-                    openPanel.level = .modalPanel
-                    openPanel.orderFrontRegardless()
-                    if openPanel.runModal() == .OK {
-                        return openPanel.url
-                    }
-                    return nil
-                }
-                
-                guard let url = selectedURL else {
-                    SharedHUDManager.show(
-                        title: "已取消",
-                        content: "目录选择已取消",
-                        isSuccess: true
-                    )
-                    return false
-                }
-                destinationDir = url
-            }
-
-            let operationName = manageType == .copyTo ? "复制" : "移动"
-            guard confirmHighRiskOperation(
-                title: "确认\(operationName)到其他目录？",
-                message: "将\(operationName) \(targetURLs.count) 个项目到：\n\(destinationDir.path)",
-                confirmTitle: "确认\(operationName)"
-            ) else {
-                return false
-            }
-            
-            var successCount = 0
-            for fileURL in targetURLs {
-                let destURL = destinationDir.appendingPathComponent(fileURL.lastPathComponent)
-                
-                // 冲突命名解决
-                var finalDestURL = destURL
-                var counter = 1
-                let nameWithoutExtension = fileURL.deletingPathExtension().lastPathComponent
-                let fileExtension = fileURL.pathExtension
-                
-                while FileManager.default.fileExists(atPath: finalDestURL.path) {
-                    let newName = "\(nameWithoutExtension) \(counter).\(fileExtension)"
-                    finalDestURL = destinationDir.appendingPathComponent(newName)
-                    counter += 1
-                }
-                
-                do {
-                    if manageType == .copyTo {
-                        try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
-                        successCount += 1
-                    } else {
-                        do {
-                            try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
-                            successCount += 1
-                        } catch {
-                            AppLog.error("moveItem 直接失败（跨卷），触发事务化降级: \(error.localizedDescription)", category: .action)
-                            if FileManageAction.crossVolumeMove(from: fileURL, to: finalDestURL) {
-                                successCount += 1
-                            }
+            // moveTo / copyTo 走通用 InteractiveActionRunner：
+            // - prompt 在主线程：选目录 + 二次确认。
+            // - perform 在后台串行队列：跨卷 copy-then-delete 这种重 IO 不再阻塞 folder-monitor 队列。
+            // - 全局闸门保证 modal 期间再触发任何交互动作都被合并丢弃，
+            //   与上一轮 DeletionRequestCoordinator 同款斩断死锁链。
+            let op: TransferOp = (manageType == .copyTo) ? .copy : .move
+            let snapshotTargets = targetURLs  // 闭包安全：捕获快照
+            let preset = customTargetPath
+            let outcome = FileManageAction.transferRunner.run(
+                prompt: { () -> URL? in
+                    if let preset = preset { return preset }
+                    return FileManageAction.chooseDestinationDirectory()
+                        .flatMap { url in
+                            // 与旧逻辑一致：选完目录还要做一次「确认 X 操作」的二次确认。
+                            let ok = FileManageAction.confirmTransfer(
+                                op: op,
+                                count: snapshotTargets.count,
+                                destination: url
+                            )
+                            return ok ? url : nil
                         }
-                    }
-                } catch {
-                    AppLog.error("\(manageType == .copyTo ? "复制" : "移动") 操作彻底失败: \(error.localizedDescription)", category: .action)
+                },
+                perform: { destinationDir in
+                    FileManageAction.executeTransfer(
+                        op: op,
+                        targets: snapshotTargets,
+                        destination: destinationDir
+                    )
                 }
-            }
-            if successCount > 0 {
-                SharedHUDManager.show(
-                    title: manageType == .copyTo ? "复制成功" : "移动成功",
-                    content: "已成功\(manageType == .copyTo ? "复制" : "移动") \(successCount) 个项目到目标目录",
-                    isSuccess: true
-                )
-            } else {
-                SharedHUDManager.show(
-                    title: manageType == .copyTo ? "复制失败" : "移动失败",
-                    content: "项目转移过程中权限不足或被系统拦截",
-                    isSuccess: false
-                )
-            }
-            return successCount > 0
+            )
+            return outcome == .accepted
         }
     }
     
@@ -387,6 +309,111 @@ public final class FileManageAction: MenuAction {
             return url
         }
         return url.deletingLastPathComponent()
+    }
+}
+
+// MARK: - moveTo/copyTo 公共支持（InteractiveActionRunner 拆出的纯函数）
+extension FileManageAction {
+
+    /// 转移操作语义。把 if/else 都集中在这里，避免 case 分支再次散落。
+    enum TransferOp {
+        case copy
+        case move
+
+        var verb: String { self == .copy ? "复制" : "移动" }
+    }
+
+    /// 所有 moveTo/copyTo 共享一个 Runner，
+    /// 一来后台 IO 自然串行（前一次没跑完，下一次排队不抢卷头），
+    /// 二来与 toggleHidden Runner 通过 InteractiveActionGate 共享 modal 互斥。
+    static let transferRunner = InteractiveActionRunner(
+        actionLabel: "fileManage.transfer",
+        ioQueueLabel: "guyue.RightClickAssistant.filemanage-transfer-io"
+    )
+
+    /// 主线程：弹 NSOpenPanel 让用户选目标目录。
+    static func chooseDestinationDirectory() -> URL? {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择目标文件夹"
+        panel.level = .modalPanel
+        panel.orderFrontRegardless()
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// 主线程：操作前的"二次确认 + 路径预览"弹窗。
+    static func confirmTransfer(op: TransferOp, count: Int, destination: URL) -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let alert = NSAlert()
+        alert.messageText = "确认\(op.verb)到其他目录？"
+        alert.informativeText = "将\(op.verb) \(count) 个项目到:\n\(destination.path)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "确认\(op.verb)")
+        alert.addButton(withTitle: "取消")
+        alert.window.level = .modalPanel
+        alert.window.orderFrontRegardless()
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// 后台串行队列：真正搬运/复制 + HUD 反馈。
+    /// 跨卷 move 会自动降级走 `crossVolumeMove`。
+    static func executeTransfer(op: TransferOp, targets: [URL], destination destinationDir: URL) {
+        var successCount = 0
+        for fileURL in targets {
+            let destURL = destinationDir.appendingPathComponent(fileURL.lastPathComponent)
+            var finalDestURL = destURL
+            var counter = 1
+            let nameWithoutExtension = fileURL.deletingPathExtension().lastPathComponent
+            let fileExtension = fileURL.pathExtension
+            while FileManager.default.fileExists(atPath: finalDestURL.path) {
+                let newName = "\(nameWithoutExtension) \(counter).\(fileExtension)"
+                finalDestURL = destinationDir.appendingPathComponent(newName)
+                counter += 1
+            }
+
+            do {
+                switch op {
+                case .copy:
+                    try FileManager.default.copyItem(at: fileURL, to: finalDestURL)
+                    successCount += 1
+                case .move:
+                    do {
+                        try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
+                        successCount += 1
+                    } catch {
+                        AppLog.error(
+                            "moveItem 直接失败（跨卷），触发事务化降级: \(error.localizedDescription)",
+                            category: .action
+                        )
+                        if FileManageAction.crossVolumeMove(from: fileURL, to: finalDestURL) {
+                            successCount += 1
+                        }
+                    }
+                }
+            } catch {
+                AppLog.error(
+                    "\(op.verb) 操作彻底失败: \(error.localizedDescription)",
+                    category: .action
+                )
+            }
+        }
+
+        if successCount > 0 {
+            SharedHUDManager.show(
+                title: op == .copy ? "复制成功" : "移动成功",
+                content: "已成功\(op.verb) \(successCount) 个项目到目标目录",
+                isSuccess: true
+            )
+        } else {
+            SharedHUDManager.show(
+                title: op == .copy ? "复制失败" : "移动失败",
+                content: "项目转移过程中权限不足或被系统拦截",
+                isSuccess: false
+            )
+        }
     }
 }
 
