@@ -906,6 +906,13 @@ struct ExtensionRegistrationBox: View {
             try proc.run()
             proc.waitUntilExit()
             if proc.terminationStatus == 0 {
+                // 注册后立即启用：pluginkit -a 只注册，不启用；需要 -e use 才能真正激活
+                let enableProc = Process()
+                enableProc.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
+                enableProc.arguments = ["-e", "use", "-i", "guyue.RightClickAssistant.Extension"]
+                try? enableProc.run()
+                enableProc.waitUntilExit()
+                
                 SharedHUDManager.show(title: "注册成功", content: "正在重启 Finder 使扩展生效…", isSuccess: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     let killProc = Process()
@@ -1118,6 +1125,13 @@ struct ExtensionStatusBanner: View {
             process.waitUntilExit()
 
             if process.terminationStatus == 0 {
+                // 注册后立即启用：pluginkit -a 只注册，不启用；需要 -e use 才能真正激活
+                let enableProc = Process()
+                enableProc.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
+                enableProc.arguments = ["-e", "use", "-i", "guyue.RightClickAssistant.Extension"]
+                try? enableProc.run()
+                enableProc.waitUntilExit()
+                
                 SharedHUDManager.show(
                     title: "注册成功",
                     content: "正在重启 Finder 使扩展生效…",
