@@ -367,8 +367,20 @@ ln -s /Applications "$DMG_TEMP_DIR/Applications"
 
 # B. 创建原始可写 DMG (UDRW 格式)
 RAW_DMG="$BUILD_DIR/RightClickAssistant_raw.dmg"
+echo "⚡ [Build] 清理前次 CI 残留的 DMG 挂载..."
+hdiutil detach "/Volumes/RightClickAssistant" >/dev/null 2>&1 || true
 rm -f "$RAW_DMG"
-hdiutil create -volname "RightClickAssistant" -srcfolder "$DMG_TEMP_DIR" -ov -format UDRW "$RAW_DMG" >/dev/null
+for attempt in 1 2 3; do
+    if hdiutil create -volname "RightClickAssistant" -srcfolder "$DMG_TEMP_DIR" -ov -format UDRW "$RAW_DMG" >/dev/null 2>&1; then
+        break
+    fi
+    echo "⚠️ [Build] hdiutil create 失败（attempt $attempt/3），重试..."
+    sleep 2
+done
+if [ ! -f "$RAW_DMG" ]; then
+    echo "❌ [Build] hdiutil create 三次重试均失败，退出。"
+    exit 1
+fi
 
 # C. 静默挂载原始 DMG 以便调用 AppleScript 写入 Finder 窗口对称排版元数据
 echo "🎨 [Build] 静默挂载临时磁盘映像并启动 Finder 视觉排版排布..."
