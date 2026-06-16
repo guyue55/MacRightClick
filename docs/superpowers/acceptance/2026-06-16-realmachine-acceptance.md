@@ -123,3 +123,48 @@ pgrep -fl RightClickAssistant   # 期望空输出
    - 期望：新弹窗正常出现，无任何卡顿
 3. 在菜单栏右键 → 退出 → 重启 Finder（`killall Finder`）
    - 期望：等 5-10 秒，菜单栏右上角自动出现「右键助手」图标，主 App 进程被自动拉回
+
+## 9. 2026-06-16 自审追加修复：P0-1 / P0-2
+
+本轮按 superpowers requesting-code-review 自审，发现两条与上一轮同源的死锁路径：
+
+| 编号 | 现象 | 根因 | 修复 |
+| --- | --- | --- | --- |
+| P0-1 | moveTo/copyTo 弹「选目录」面板时再触发任一交互动作 → 卡死 | `runOnMainThread { NSOpenPanel.runModal }` + `runOnMainThread { NSAlert.runModal }` 跑在 folder-monitor 串行队列；modal 期间二次同源事件即死锁；跨卷 IO 还会让队列长期持锁 | 新增 `InteractiveActionRunner` 通用骨架；moveTo/copyTo 改走 `transferRunner`，prompt 选目录 + 二次确认在主线程，executeTransfer 在后台 IO 串行队列 |
+| P0-2 | 切换显示隐藏文件确认后 500ms 内再点任何右键动作 → 卡死 | `runOnMainThread { NSAlert.runModal }` + `Process.waitUntilExit` + `Thread.sleep(0.5)` 都在 folder-monitor 队列同步等 | UtilityAction.toggleHiddenFiles 改走 `toggleHiddenRunner`；defaults/osascript/sleep/open -a Finder 全部移到后台 perform |
+
+新模块 / 改动：
+
+- 新增 [`InteractiveActionRunner.swift`](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/Core/Actions/InteractiveActionRunner.swift)：prompt 主线程 async / perform 后台串行队列；
+- 新增 `InteractiveActionGate`（同文件）：**全局** `os_unfair_lock` 闸门，跨 Runner 共享，保证任何时刻只有 1 个交互对话；第 2 个请求统一 HUD「请先处理上一个交互对话」并丢弃；
+- `DeletionRequestCoordinator` 与 InteractiveActionRunner 是同家族抽象，后续可统一；
+- 顺手把 `runOnMainThread / confirmHighRiskOperation / confirmToggleHiddenFiles` 老定义删除，防止误用回流。
+
+对应 commit：
+- `47e89f2 fix(interactive): moveTo/copyTo/toggleHidden 走 InteractiveActionRunner，斩断 P0-1/P0-2 死锁`
+- 同 commit 内 `build.sh` 已纳入新文件；归档 4 项 XCTest 在 `Tests/InteractiveActionRunnerTests.swift`
+
+自动回归验证（命令实测）：
+
+```text
+# 出包 + 安装 + 自动启动
+DISTRIBUTION_ROUTE=website-dev bash Scripts/build.sh → 成功
+codesign --verify --deep --strict /Applications/RightClickAssistant.app → valid + satisfies DR
+open /Applications/RightClickAssistant.app → PID 14025 主 App + PID 14026 Extension 均存活
+# OSLog 启动健康，无 error
+10:55:27.297 PID 14026 FinderSync 插件初始化启动...
+10:55:27.316 PID 14025 SharedFolderMonitor 内核级物理文件夹监控服务成功启动
+10:55:27.727 PID 14025 App 系统级保活机制启动
+10:55:29.270 PID 14026 FinderSync 监控目录注册成功，当前激活数量: 5
+```
+
+人手回归 checklist（P0-1 / P0-2 专项）：
+
+1. 右键「移动到…」弹出选目录面板时 → 不关闭，另开一个 Finder 窗口再点「移动到…」/「复制到…」/「彻底删除」/「切换显示隐藏文件」任意一个
+   - 期望：HUD 显示「请先处理上一个交互对话」；App 不卡死；第一个面板仍可正常关闭
+2. 选择目录后再弹出「确认移动/复制」二次确认弹窗时同样测一次第 1 步
+   - 期望：同上
+3. 触发「切换显示隐藏文件」→ 确认弹窗出现时再点任意右键动作
+   - 期望：HUD 拒绝；确认弹窗仍可正常关闭；关闭后 Finder 在 0.5-1s 内重启完成
+4. 跨卷大文件 moveTo：选一个 1 GB 以上文件到 U 盘 → 期间立刻在 Finder 另一处右键
+   - 期望：菜单照常弹出，IO 跑在后台不阻塞 folder-monitor 队列
