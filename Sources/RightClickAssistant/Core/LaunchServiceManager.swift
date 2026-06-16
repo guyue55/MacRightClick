@@ -5,10 +5,10 @@ import ServiceManagement
 /// 采用 macOS 13.0 (Ventura) 引入的现代 SMAppService API，
 /// 使用系统“登录项”能力注册或注销开机自启。
 public final class LaunchServiceManager {
-    public static let shared = LaunchServiceManager()
-    
+    public nonisolated(unsafe) static let shared = LaunchServiceManager()
+
     private init() {}
-    
+
     /// 获取当前自启动在系统中的真实注册状态
     public var isEnabled: Bool {
         if #available(macOS 13.0, *) {

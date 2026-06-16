@@ -3,7 +3,7 @@ import Foundation
 /// 动作派发器，用于解耦菜单显示和业务执行。
 /// 所有的右键增强操作必须在此注册，由派发器统一分发。
 public final class ActionDispatcher {
-    public static let shared = ActionDispatcher()
+    public nonisolated(unsafe) static let shared = ActionDispatcher()
     
     private let queue = DispatchQueue(label: "guyue.RightClickAssistant.dispatcher", qos: .userInitiated)
     private var registeredActions: [String: MenuAction] = [:]

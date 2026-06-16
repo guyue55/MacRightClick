@@ -18,7 +18,7 @@ import os.lock
 /// - 本类负责出弹窗、出 HUD、做 IO、写日志。`FileManageAction` 调完即 return，
 ///   高内聚低耦合，方便测试。
 public final class DeletionRequestCoordinator {
-    public static let shared = DeletionRequestCoordinator(
+    public nonisolated(unsafe) static let shared = DeletionRequestCoordinator(
         presenter: MainThreadAlertPresenter()
     )
 

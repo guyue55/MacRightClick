@@ -93,7 +93,7 @@ public final class InteractiveActionRunner {
 /// 全局闸门：跨 Runner 共享，确保任何时刻只有 1 个交互对话。
 /// 与 `DeletionRequestCoordinator` 的内部锁是并列关系，可以渐进迁移。
 public final class InteractiveActionGate {
-    public static let shared = InteractiveActionGate()
+    public nonisolated(unsafe) static let shared = InteractiveActionGate()
 
     private var lock = os_unfair_lock()
     private var inflightLabel: String?

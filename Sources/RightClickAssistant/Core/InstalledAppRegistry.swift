@@ -11,7 +11,7 @@ import AppKit
 /// - 监听 NSWorkspace.didLaunchApplication / didTerminateApplication 自动失效
 /// - `overrideResolverForTesting` 用于单测桩
 public final class InstalledAppRegistry {
-    public static let shared = InstalledAppRegistry()
+    public nonisolated(unsafe) static let shared = InstalledAppRegistry()
 
     private struct Entry {
         let url: URL?

@@ -48,7 +48,7 @@ public enum SharedLogLevel {
 /// 共享存储管理器，作为宿主主程序与插件扩展之间的数据交换与配置共享层。
 /// 集中处理宿主主程序与 FinderSync 扩展之间的配置、队列和诊断数据。
 public final class SharedStorageManager {
-    public static let shared = SharedStorageManager()
+    public nonisolated(unsafe) static let shared = SharedStorageManager()
 
     public enum Keys {
         public static let enableDebugLogging = "enable_debug_logging"

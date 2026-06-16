@@ -11,7 +11,7 @@ import Foundation
 /// - 收到 `configChanged` 分布式通知或主 App 写配置后，调用 `invalidate()`
 /// - 读路径全部 O(1) 内存查询
 public final class ActionConfigCache {
-    public static let shared = ActionConfigCache()
+    public nonisolated(unsafe) static let shared = ActionConfigCache()
 
     private let queue = DispatchQueue(label: "guyue.ActionConfigCache", attributes: .concurrent)
     private var enableMap: [String: Bool] = [:]

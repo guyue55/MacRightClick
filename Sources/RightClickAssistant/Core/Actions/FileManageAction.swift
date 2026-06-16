@@ -9,9 +9,9 @@ import AppKit
 
 /// 文件剪切板单例，用于在进程内存中管理“剪切”状态
 public final class FileCutClipboard {
-    public static let shared = FileCutClipboard()
+    public nonisolated(unsafe) static let shared = FileCutClipboard()
     private init() {}
-    
+
     private let queue = DispatchQueue(label: "guyue.cutboard")
     
     private var clipboardURL: URL {
@@ -288,7 +288,7 @@ extension FileManageAction {
     /// 所有 moveTo/copyTo 共享一个 Runner，
     /// 一来后台 IO 自然串行（前一次没跑完，下一次排队不抢卷头），
     /// 二来与 toggleHidden Runner 通过 InteractiveActionGate 共享 modal 互斥。
-    static let transferRunner = InteractiveActionRunner(
+    public nonisolated(unsafe) static let transferRunner = InteractiveActionRunner(
         actionLabel: "fileManage.transfer",
         ioQueueLabel: "guyue.RightClickAssistant.filemanage-transfer-io"
     )
