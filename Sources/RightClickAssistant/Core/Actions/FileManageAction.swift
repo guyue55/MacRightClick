@@ -170,59 +170,21 @@ public final class FileManageAction: MenuAction {
         case .paste:
             let cutFiles = FileCutClipboard.shared.cutURLs
             guard !cutFiles.isEmpty else { return false }
-            
-            // 确定粘贴的目的文件夹
+
+            // 确定粘贴的目的文件夹（在调用线程拍快照即可，FileManager.fileExists 是廉价 stat，
+            // 真正的重 IO（moveItem / crossVolumeMove）必须搬到 BackgroundActionRunner 的私有队列上跑，
+            // 否则跨盘大文件会让 folder-monitor 串行队列长期持锁，引发 P1-1 卡顿/死锁残余风险）。
             let destinationDir = getDestinationDirectory(from: targetURLs.first!)
-            
-            var successCount = 0
-            for fileURL in cutFiles {
-                let destURL = destinationDir.appendingPathComponent(fileURL.lastPathComponent)
-                
-                // 处理同名重命名或冲突覆盖（这里直接采用重命名策略防止覆盖用户重要数据）
-                var finalDestURL = destURL
-                var counter = 1
-                let nameWithoutExtension = fileURL.deletingPathExtension().lastPathComponent
-                let fileExtension = fileURL.pathExtension
-                
-                while FileManager.default.fileExists(atPath: finalDestURL.path) {
-                    let newName = "\(nameWithoutExtension) \(counter).\(fileExtension)"
-                    finalDestURL = destinationDir.appendingPathComponent(newName)
-                    counter += 1
-                }
-                
-                do {
-                    try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
-                    successCount += 1
-                } catch {
-                    AppLog.error("moveItem 直接失败，触发跨卷事务化降级: \(error.localizedDescription)", category: .action)
-                    if FileManageAction.crossVolumeMove(from: fileURL, to: finalDestURL) {
-                        successCount += 1
-                    }
-                }
-            }
-            
-            print("[FileManage] 成功粘贴/移动了 \(successCount) 个文件。")
-            FileCutClipboard.shared.clear() // 移动完成，清空剪切板
-            DistributedNotificationCenter.default().postNotificationName(
-                Notification.Name("guyue.RightClickAssistant.configChanged"),
-                object: nil,
-                userInfo: nil,
-                deliverImmediately: true
-            )
-            if successCount > 0 {
-                SharedHUDManager.show(
-                    title: "粘贴成功",
-                    content: "已成功移动并粘贴了 \(successCount) 个项目",
-                    isSuccess: true
-                )
-            } else {
-                SharedHUDManager.show(
-                    title: "粘贴失败",
-                    content: "请检查该目录是否有可写的系统或安全权限",
-                    isSuccess: false
+            let snapshotCutFiles = cutFiles
+            FileManageAction.pasteRunner.submit {
+                FileManageAction.executePaste(
+                    cutFiles: snapshotCutFiles,
+                    destinationDir: destinationDir
                 )
             }
-            return successCount > 0
+            // 事件已异步接管：folder-monitor 队列立刻返回，UI 不再卡。
+            // 真正的成功/失败计数通过 HUD 异步反馈给用户。
+            return true
             
         case .permanentDelete:
             // 真正的弹窗 + IO 全部委托给 DeletionRequestCoordinator，
@@ -330,6 +292,71 @@ extension FileManageAction {
         actionLabel: "fileManage.transfer",
         ioQueueLabel: "guyue.RightClickAssistant.filemanage-transfer-io"
     )
+
+    /// paste 没有自身弹窗，但跨盘大文件会让 moveItem/crossVolumeMove 长期阻塞队列。
+    /// 用 BackgroundActionRunner 把 IO 投到私有串行队列，folder-monitor 队列立刻返回。
+    /// 不抢 InteractiveActionGate：paste 与 modal 互斥不在同一层面，不该相互阻塞。
+    static let pasteRunner = BackgroundActionRunner(
+        actionLabel: "fileManage.paste",
+        ioQueueLabel: "guyue.RightClickAssistant.filemanage-paste-io"
+    )
+
+    /// 后台串行队列：批量执行粘贴 + HUD 反馈。
+    /// 跨卷 move 会自动降级走 `crossVolumeMove`（copy-then-delete 事务）。
+    static func executePaste(cutFiles: [URL], destinationDir: URL) {
+        var successCount = 0
+        for fileURL in cutFiles {
+            let destURL = destinationDir.appendingPathComponent(fileURL.lastPathComponent)
+
+            // 同名规避：用「Name N.ext」递增重命名，永不覆盖目标文件。
+            var finalDestURL = destURL
+            var counter = 1
+            let nameWithoutExtension = fileURL.deletingPathExtension().lastPathComponent
+            let fileExtension = fileURL.pathExtension
+            while FileManager.default.fileExists(atPath: finalDestURL.path) {
+                let newName = fileExtension.isEmpty
+                    ? "\(nameWithoutExtension) \(counter)"
+                    : "\(nameWithoutExtension) \(counter).\(fileExtension)"
+                finalDestURL = destinationDir.appendingPathComponent(newName)
+                counter += 1
+            }
+
+            do {
+                try FileManager.default.moveItem(at: fileURL, to: finalDestURL)
+                successCount += 1
+            } catch {
+                AppLog.error(
+                    "moveItem 直接失败，触发跨卷事务化降级: \(error.localizedDescription)",
+                    category: .action
+                )
+                if FileManageAction.crossVolumeMove(from: fileURL, to: finalDestURL) {
+                    successCount += 1
+                }
+            }
+        }
+
+        AppLog.info("[FileManage] 成功粘贴/移动了 \(successCount) 个文件。", category: .action)
+        FileCutClipboard.shared.clear()
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("guyue.RightClickAssistant.configChanged"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+        if successCount > 0 {
+            SharedHUDManager.show(
+                title: "粘贴成功",
+                content: "已成功移动并粘贴了 \(successCount) 个项目",
+                isSuccess: true
+            )
+        } else {
+            SharedHUDManager.show(
+                title: "粘贴失败",
+                content: "请检查该目录是否有可写的系统或安全权限",
+                isSuccess: false
+            )
+        }
+    }
 
     /// 主线程：弹 NSOpenPanel 让用户选目标目录。
     static func chooseDestinationDirectory() -> URL? {
