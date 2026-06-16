@@ -88,3 +88,38 @@ pgrep -fl RightClickAssistant   # 期望空输出
 - plan：[`docs/superpowers/plans/2026-06-15-ux-hardening.md`](/Users/guyue/GitProject/mac右键/docs/superpowers/plans/2026-06-15-ux-hardening.md)
 - 关键修复 commit：`acb7916`
 - PR：https://github.com/guyue55/MacRightClick/pull/1
+
+## 8. 2026-06-16 真机回归 Bug 修复（追加）
+
+用户在 §4 checklist 阶段实际把玩出 2 个真 Bug，已按 systematic-debugging 四阶段处理完毕：
+
+| Bug | 现象 | 根因 | 修复 |
+| --- | --- | --- | --- |
+| B1 死锁 | 第 1 次彻底删除后再点第 2 次 → 全局卡死，强退后弹"未完成的删除"弹窗 | `processPendingAction` 跑在 SharedFolderMonitor 串行队列，`runOnMainThread { NSAlert.runModal }` 同步等主线程；modal 期间第 2 次事件入队 + 任意 main.sync 反向调度即死锁 | 新增 `ConfirmationPresenter` 协议 + `DeletionRequestCoordinator` 模块；permanentDelete 退化为薄壳；in-flight 期间 modal 唯一、第 2 次请求 HUD 提示丢弃；`objc_sync_enter(self)` 换 `os_unfair_lock_trylock` |
+| B2 菜单栏无图标 | 强退主 App 后菜单栏不可见，需要去 Launchpad 重启 | 没有进程托管，主 App 不会被自动拉回；statusItem 缺 title 兜底 | FinderSync 抽 `ensureHostRunning()`，init + actionMenuItemSelected 都调；`setupStatusItem` 加 `button.title = "右"` 兜底 |
+
+真机回归验证（命令实测）：
+
+```text
+# B2 验证：杀掉主 App → killall Finder → Extension 重启 → 主 App 被 ensureHostRunning 自动拉回
+10:40:58.010 PID 74849 FinderSync 插件初始化启动...
+10:41:07.026 PID 74849 FinderSync 监控目录注册成功
+10:41:07.335 PID 75261 SharedFolderMonitor 启动 (主 App 自动起来了)
+10:41:07.485 PID 75261 App 系统级保活机制启动
+```
+
+对应 commit：
+- `d345681 fix(filemanage): 彻底删除走 DeletionRequestCoordinator，斩断 folder-monitor 死锁链`
+- `944a3c1 fix(host): processPendingAction 用 os_unfair_lock + trylock 替代 objc_sync_enter`
+- `0a3674c test(deletion): 归档 DeletionRequestCoordinator 并发裁决测试（待 CI 跑）`
+- `77272da fix(host+ext): statusItem 兜底 + FinderSync 启动时自愈拉起主 App`
+- build.sh 同步把 ConfirmationPresenter.swift / DeletionRequestCoordinator.swift 纳入 HOST_SOURCES / EXT_SOURCES
+
+人手回归 checklist（B1 / B2 专项，5 分钟）：
+
+1. 在 Desktop 选一个临时文件，右键「彻底删除」→ 弹窗出现时**保持不点**，去 Finder 另一个目录右键「彻底删除」第二个文件
+   - 期望：HUD 显示「请先处理上一个删除确认」；App 不卡死；第一个弹窗仍可正常关闭
+2. 关闭第一个弹窗（取消或确认任一） → 再次右键「彻底删除」其他文件
+   - 期望：新弹窗正常出现，无任何卡顿
+3. 在菜单栏右键 → 退出 → 重启 Finder（`killall Finder`）
+   - 期望：等 5-10 秒，菜单栏右上角自动出现「右键助手」图标，主 App 进程被自动拉回

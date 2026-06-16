@@ -205,6 +205,8 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/LaunchServiceManager.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
+    Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \
+    Sources/RightClickAssistant/Core/Actions/DeletionRequestCoordinator.swift \
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
     Sources/RightClickAssistant/Core/Actions/UtilityAction.swift \
     Sources/RightClickAssistant/Core/FileHashCalculator.swift \
@@ -223,6 +225,8 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/SharedHUDManager.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
+    Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \
+    Sources/RightClickAssistant/Core/Actions/DeletionRequestCoordinator.swift \
     Sources/RightClickAssistant/Core/Actions/TerminalOpenAction.swift \
     Sources/RightClickAssistant/Core/Actions/UtilityAction.swift \
     Sources/RightClickAssistant/Core/FileHashCalculator.swift \
