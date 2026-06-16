@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import os.lock
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     
@@ -9,6 +10,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     private var folderMonitor: SharedFolderMonitor?
     private var activityToken: NSObjectProtocol?
     private var statusItem: NSStatusItem?
+    /// 替换旧的 objc_sync_enter(self)：
+    /// - 旧实现把锁加在 NSObject self 上，和 AppKit 内部隐式锁高度耦合，
+    ///   debug 时一旦死锁，spindump 几乎看不到哪一处先持有；
+    /// - os_unfair_lock 是 Apple 推荐的纯互斥，不参与 runloop，
+    ///   语义只覆盖"PendingActions 消费循环的 critical section"。
+    private var pendingActionLock = os_unfair_lock()
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 1. 初始化并注册系统自带的右键菜单动作
@@ -78,9 +85,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     
     /// 原子消费处理 PendingActions 队列动作数据包（双保险统一消费入口，多重互斥锁保护）
     private func processPendingAction() {
-        // 使用同步保护，防止分布式通知与 BSD 目录监听在极短毫秒内并发调用引起的文件系统竞争
-        objc_sync_enter(self)
-        defer { objc_sync_exit(self) }
+        // 防止分布式通知与 kqueue 在毫秒内同时调用造成事件重复消费。
+        // try_lock 而非 lock：若已经有一个消费循环在跑，新的回调直接退出，
+        // 因为 consumePendingActionEvents 内部自带原子文件 rename，
+        // 跑完一轮后任何遗漏事件都会在下一次 kqueue write 事件里再次进入这里。
+        guard os_unfair_lock_trylock(&pendingActionLock) else { return }
+        defer { os_unfair_lock_unlock(&pendingActionLock) }
         
         let events = SharedStorageManager.shared.consumePendingActionEvents()
         guard !events.isEmpty else { return }
