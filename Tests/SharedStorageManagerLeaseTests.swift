@@ -34,10 +34,11 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
 
         // 拿到 lease 时：原 PendingActions 文件已搬到 InFlight。
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: lease.inFlightURL.path))
+        XCTAssertNotNil(lease.inFlightURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: lease.inFlightURL!.path))
 
         manager.acknowledge(lease)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lease.inFlightURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: lease.inFlightURL!.path))
     }
 
     func testReclaimAbandonedInFlightRestoresOrphans() throws {

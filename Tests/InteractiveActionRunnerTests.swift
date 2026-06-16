@@ -20,8 +20,8 @@ final class InteractiveActionRunnerTests: XCTestCase {
             ioQueueLabel: "test.A.io"
         )
         let exp = expectation(description: "prompt + perform 都被调到")
-        var promptHit = false
-        var performHit = false
+        nonisolated(unsafe) var promptHit = false
+        nonisolated(unsafe) var performHit = false
 
         let outcome = runner.run(
             prompt: { () -> String? in
