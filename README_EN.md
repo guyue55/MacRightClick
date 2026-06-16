@@ -155,18 +155,20 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 ### Q2: Right-click menu does not show up in Finder? Or can't find "RightClickAssistantExtension" in System Settings -> Extensions?
 * **Cause**: macOS does not register or enable third-party FinderSync extensions automatically. Especially for local builds, or apps downloaded but not moved to the `/Applications` directory, or due to Gatekeeper quarantine flags, the system's `pluginkit` daemon may refuse or skip registration.
 * **Fix**:
-  * **App Guide**: The main app detects your macOS version and shows the matching extension enablement steps with a System Settings shortcut.
+  * **App Guide**: The main app detects your macOS version and shows the matching extension enablement steps with a System Settings shortcut. Clicking the orange **"One-Click Register Extension"** button on the overview page runs `pluginkit -a` (announce) + `pluginkit -e use` (enable) + `killall Finder` automatically — no need to tick it manually in System Settings.
   * **Terminal Manual Registration**:
-    If you cannot find the extension in settings, open **Terminal.app** and run the following command:
+    If you cannot find the extension in settings, open **Terminal.app** and run both commands below in order (announce and enable are separate steps; you need both):
     * **Case A: If you installed the app in `/Applications`**:
       ```bash
       pluginkit -a /Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
+      pluginkit -e use -i guyue.RightClickAssistant.Extension
       ```
     * **Case B: If you are building locally in cloned repository directory**:
       ```bash
       pluginkit -a \$(pwd)/build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
+      pluginkit -e use -i guyue.RightClickAssistant.Extension
       ```
-    After registering, run `killall Finder` to restart Finder, then reopen the Extension panel to enable it.
+    After announce + enable, run `killall Finder` to restart Finder so the extension takes effect.
   * **Manual Fallback Steps**:
     1. Open your Mac's **System Settings**;
     2. Navigate to: **Privacy & Security -> Extensions**;
@@ -197,6 +199,33 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 - Detailed debug logging is off by default. When enabled, logs may include menu rendering, watched path, and action filtering details; use it only for troubleshooting.
 - High-risk actions such as permanent deletion, cross-directory copy/move, and hidden-file toggling are off by default and require confirmation before execution.
 - Website release builds should use Developer ID, Hardened Runtime, Apple notarization, and stapled tickets for both `.app` and `.dmg` artifacts.
+
+---
+
+## 📜 Changelog
+
+### v1.0.1 (2026-06-16)
+
+- **fix(ext)**: "One-Click Register Extension" now runs `pluginkit -a` (announce) + `pluginkit -e use` (enable) + `killall Finder` automatically — fixes the "registered but not active" issue.
+- **fix(ux)**: Unified the "One-Click Register Extension" button color to orange to match the warning banner and the on-screen guidance.
+- **fix(host)**: Async `processPendingAction` + Distribution-aware UserDefaults routing, eliminates the cfprefsd deadlock at startup.
+- **fix(storage)**: PendingAction now uses lease/ack/reclaim, no event loss on host crash.
+- **fix(filemanage)**: `paste` now runs on `BackgroundActionRunner`; permanent delete now uses `DeletionRequestCoordinator` to break the folder-monitor deadlock chain.
+- **fix(interactive)**: moveTo/copyTo/toggleHidden now run via `InteractiveActionRunner`, fixing P0-1/P0-2 deadlocks.
+- **fix(host+ext)**: statusItem fallback + FinderSync auto-relaunches the host app on startup.
+- **fix(ci)**: hdiutil create gains detach cleanup + retry, fixing the CI DMG packaging "Resource busy" race.
+- **feat(ux)**: Default right-click watch scope is now `.everywhere`; added WatchScope toggle, single onboarding entry, advanced/permission settings rework.
+- **feat(hud)**: HUD follows the active screen and supports click / Esc to dismiss.
+- **feat(safety)**: Removed the high-risk "toggle hidden files" entry from the status item; `killall Finder` switched to AppleScript-based graceful quit.
+- **feat(filemanage)**: Permanent delete uses HIG-style critical 3-button alert; added "Move to Trash" middle option; cross-volume Copy-Then-Delete is now transactional.
+- **feat(newfile)**: Office trio now reads minimal templates from Bundle, openable on double-click.
+- **feat(qr)**: QR window adds Save-as-PNG / Copy-image buttons and a scrollable preview for long content.
+- **feat(cache)**: New shared modules — `AppLog` / `Distribution` / `ActionConfigCache` / `InstalledAppRegistry`. Menu render hot path now goes through in-process cache.
+- **feat(stress)**: New `run_stress.py` / `run_reclaim_stress.py` real-machine harnesses, integrated into CI.
+- **build**: Entitlements externalized; templates picked by `DISTRIBUTION_ROUTE`; release/MAS routes enable `-O`.
+- **core**: Full Swift 6.1 concurrency conformance (`@MainActor` / `nonisolated(unsafe)` / `Sendable`).
+
+Full commit history: [GitHub Releases v1.0.1](https://github.com/guyue55/MacRightClick/releases/tag/v1.0.1).
 
 ---
 
