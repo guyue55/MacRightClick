@@ -99,6 +99,7 @@ final class QRCodePanelController: NSObject {
 
     func show() { panel.orderFront(nil) }
 
+    @MainActor
     @objc private func savePNG() {
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.png]

@@ -23,6 +23,7 @@ public protocol ConfirmationPresenter {
     /// - Parameters:
     ///   - targets: 受影响的文件/目录列表（仅用于摘要展示）。
     ///   - completion: 用户做出选择后回调，必定在主线程。
+    @MainActor
     func present(targets: [URL], completion: @escaping (DestructiveChoice) -> Void)
 }
 
@@ -57,6 +58,7 @@ public final class MainThreadAlertPresenter: ConfirmationPresenter {
         return alert
     }
 
+    @MainActor
     public func present(targets: [URL], completion: @escaping (DestructiveChoice) -> Void) {
         // 强约束：必须主线程调用。Coordinator 已保证；这里多一道断言防止误用。
         dispatchPrecondition(condition: .onQueue(.main))

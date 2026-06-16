@@ -359,6 +359,7 @@ extension FileManageAction {
     }
 
     /// 主线程：弹 NSOpenPanel 让用户选目标目录。
+    @MainActor
     static func chooseDestinationDirectory() -> URL? {
         dispatchPrecondition(condition: .onQueue(.main))
         let panel = NSOpenPanel()
@@ -372,6 +373,7 @@ extension FileManageAction {
     }
 
     /// 主线程：操作前的"二次确认 + 路径预览"弹窗。
+    @MainActor
     static func confirmTransfer(op: TransferOp, count: Int, destination: URL) -> Bool {
         dispatchPrecondition(condition: .onQueue(.main))
         let alert = NSAlert()

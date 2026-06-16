@@ -42,8 +42,8 @@ public final class InteractiveActionRunner {
     ///   - perform: 后台串行队列上执行真正 IO，不应再回主线程做长任务。
     /// - Returns: `.accepted` 表示已接管；`.rejected` 表示有别的交互在进行，请求被丢弃。
     @discardableResult
-    public func run<Prompt>(
-        prompt: @escaping () -> Prompt?,
+    public func run<Prompt: Sendable>(
+        prompt: @escaping @MainActor () -> Prompt?,
         perform: @escaping (Prompt) -> Void
     ) -> Outcome {
         guard InteractiveActionGate.shared.tryAcquire(label: actionLabel) else {

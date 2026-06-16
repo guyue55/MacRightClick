@@ -375,6 +375,7 @@ extension UtilityAction {
     )
 
     /// 主线程：弹 critical 确认。`true` 表示用户同意，`false` 取消。
+    @MainActor
     static func confirmToggleHiddenAlert() -> Bool {
         dispatchPrecondition(condition: .onQueue(.main))
         let alert = NSAlert()
