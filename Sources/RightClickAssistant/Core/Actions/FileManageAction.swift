@@ -1,55 +1,11 @@
 import Foundation
 import AppKit
 
-// MARK: - DestructiveActionConfirmer
-/// 破坏性动作的确认弹窗封装，集中处理：
-/// - .critical 警示样式（macOS HIG 要求不可撤销操作必须使用）
-/// - 默认按钮为「取消」（按 Return 不会误删）
-/// - 列出最多 5 个文件名摘要 + 总数
-/// - 提供「移到废纸篓」中间档作为可恢复选项
-fileprivate enum DestructiveChoice {
-    case cancel
-    case recoverable
-    case destructive
-}
-
-fileprivate enum DestructiveActionConfirmer {
-    /// 仅构造 NSAlert，便于单测断言配置。生产路径走 `confirm(...)`。
-    static func makeAlert(targets: [URL]) -> NSAlert {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "确认永久删除？"
-
-        let names = targets.prefix(5).map { $0.lastPathComponent }
-        var summary = names.joined(separator: "、")
-        if targets.count > 5 {
-            summary += " 等共 \(targets.count) 项"
-        } else if names.isEmpty {
-            summary = "（无目标）"
-        }
-        alert.informativeText = "将处理：\(summary)\n永久删除会绕过废纸篓且无法撤销，建议优先选择「移到废纸篓」。"
-
-        // NSAlert 的第一个按钮是默认按钮（keyEquivalent = "\r"），让「取消」承接 Return 键。
-        alert.addButton(withTitle: "取消")
-        alert.addButton(withTitle: "移到废纸篓")
-        alert.addButton(withTitle: "永久删除")
-        // 清空「永久删除」按钮的 keyEquivalent，避免任何快捷键意外命中。
-        alert.buttons[2].keyEquivalent = ""
-        return alert
-    }
-
-    static func confirm(targets: [URL]) -> DestructiveChoice {
-        let alert = makeAlert(targets: targets)
-        alert.window.level = .modalPanel
-        alert.window.orderFrontRegardless()
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:  return .cancel
-        case .alertSecondButtonReturn: return .recoverable
-        case .alertThirdButtonReturn:  return .destructive
-        default: return .cancel
-        }
-    }
-}
+// 注：破坏性确认弹窗与并发裁决已抽到独立模块：
+// - `ConfirmationPresenter` / `MainThreadAlertPresenter`：弹窗呈现
+// - `DeletionRequestCoordinator`：并发裁决 + 后台 IO
+// 这里只剩"接到事件 → 委托 Coordinator"的薄壳，
+// 彻底切断 folder-monitor 队列 main.sync 弹窗带来的死锁链。
 
 /// 文件剪切板单例，用于在进程内存中管理“剪切”状态
 public final class FileCutClipboard {
@@ -289,46 +245,12 @@ public final class FileManageAction: MenuAction {
             return successCount > 0
             
         case .permanentDelete:
-            let choice = runOnMainThread {
-                DestructiveActionConfirmer.confirm(targets: targetURLs)
-            }
-            switch choice {
-            case .cancel:
-                return false
-            case .recoverable:
-                var successCount = 0
-                for fileURL in targetURLs {
-                    do {
-                        var resultingURL: NSURL?
-                        try FileManager.default.trashItem(at: fileURL, resultingItemURL: &resultingURL)
-                        successCount += 1
-                    } catch {
-                        AppLog.error("移到废纸篓失败: \(fileURL.path) -> \(error.localizedDescription)", category: .action)
-                    }
-                }
-                SharedHUDManager.show(
-                    title: successCount > 0 ? "已移到废纸篓" : "操作失败",
-                    content: successCount > 0 ? "已处理 \(successCount) 项，可在废纸篓中恢复" : "请检查系统权限或文件是否被锁定",
-                    isSuccess: successCount > 0
-                )
-                return successCount > 0
-            case .destructive:
-                var successCount = 0
-                for fileURL in targetURLs {
-                    do {
-                        try FileManager.default.removeItem(at: fileURL)
-                        successCount += 1
-                    } catch {
-                        AppLog.error("彻底删除失败: \(fileURL.path) -> \(error.localizedDescription)", category: .action)
-                    }
-                }
-                SharedHUDManager.show(
-                    title: successCount > 0 ? "已彻底删除" : "删除失败",
-                    content: successCount > 0 ? "已彻底从磁盘抹除 \(successCount) 项，无法恢复" : "请检查系统权限或文件是否被锁定",
-                    isSuccess: successCount > 0
-                )
-                return successCount > 0
-            }
+            // 真正的弹窗 + IO 全部委托给 DeletionRequestCoordinator，
+            // 让 folder-monitor 串行队列**立刻**返回，不再阻塞主线程。
+            // accepted 与否对调用方都是"事件已被接受"，
+            // 用户感知的成功/失败通过 HUD 异步给出。
+            let outcome = DeletionRequestCoordinator.shared.requestDeletion(targets: targetURLs)
+            return outcome == .accepted
             
         case .copyPath:
             let paths = targetURLs.map { $0.path }.joined(separator: "\n")
