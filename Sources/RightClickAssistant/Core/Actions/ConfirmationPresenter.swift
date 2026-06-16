@@ -36,6 +36,7 @@ public final class MainThreadAlertPresenter: ConfirmationPresenter {
     public init() {}
 
     /// 仅构造 NSAlert，便于断言配置。
+    @MainActor
     public static func makeAlert(targets: [URL]) -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .critical

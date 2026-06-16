@@ -7,7 +7,7 @@ import CoreImage
 /// 文件作用域强引用：QRCodePanelController 内部的 NSPanel 不会被 UI 框架自动持有，
 /// 一旦控制器随 dispatch closure 退栈即析构，面板会瞬间消失。这里用 fileprivate 单
 /// 变量持有最近一次打开的控制器，再次生成时旧实例自动被替换并随面板关闭一起释放。
-fileprivate var activeQRController: QRCodePanelController?
+nonisolated(unsafe) fileprivate var activeQRController: QRCodePanelController?
 
 /// 实用小工具类型
 public enum UtilityType: String, Codable {
@@ -369,7 +369,7 @@ extension UtilityAction {
 
     /// 与 transferRunner 通过 InteractiveActionGate 共享 modal 互斥。
     /// toggleHiddenRunner 自带串行 IO 队列：多次切换不会并发抢 Finder。
-    static let toggleHiddenRunner = InteractiveActionRunner(
+    nonisolated(unsafe) static let toggleHiddenRunner = InteractiveActionRunner(
         actionLabel: "utility.toggleHidden",
         ioQueueLabel: "guyue.RightClickAssistant.utility-toggle-hidden-io"
     )
