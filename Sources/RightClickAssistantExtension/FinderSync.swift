@@ -72,15 +72,7 @@ class FinderSync: FIFinderSync {
         logToSharedContainer("[FinderSync] [actionMenuItemSelected] 已发出动作触发信号", level: .debug)
         
         // 3. 仅在宿主 App 未运行时才拉起；已运行时 DistributedNotification 已足够唤醒消费队列。
-        let hostBundleID = "guyue.RightClickAssistant"
-        let isHostRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == hostBundleID }
-        if !isHostRunning {
-            if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: hostBundleID) {
-                let configuration = NSWorkspace.OpenConfiguration()
-                configuration.addsToRecentItems = false
-                NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
-            }
-        }
+        Self.ensureHostRunning()
     }
     
     override init() {
@@ -115,6 +107,28 @@ class FinderSync: FIFinderSync {
         ActionConfigCache.shared.preheat()
         let bundleIds = ActionDispatcher.shared.allActions.compactMap { $0.associatedBundleIdentifier }
         InstalledAppRegistry.shared.preheat(bundleIds)
+
+        // 6. 主 App 是状态栏图标与设置面板的唯一宿主。
+        //    用户若曾强退主 App，菜单栏图标会消失；这里在 Extension 初始化时拉一次，
+        //    让"重启 Finder / 重新进入受监控目录"就能把图标找回来，
+        //    无需用户手动去 Launchpad 启动。
+        Self.ensureHostRunning()
+    }
+
+    /// 检查并按需拉起主 App（状态栏图标 + 设置面板宿主）。
+    /// 已在跑则什么都不做，依赖 Launch Services 的进程级去重。
+    static func ensureHostRunning() {
+        let hostBundleID = "guyue.RightClickAssistant"
+        let isHostRunning = NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == hostBundleID
+        }
+        guard !isHostRunning else { return }
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: hostBundleID) else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.addsToRecentItems = false
+        // activates 默认为 true 会抢焦点；主 App 是 .accessory，不会有窗口跳出，但还是显式关掉更稳。
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
     }
     
     @objc private func configChanged() {

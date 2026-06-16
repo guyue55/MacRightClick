@@ -214,6 +214,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             image.isTemplate = true // 跟随系统深/浅色菜单栏渲染
             button.image = image
         }
+        // 兜底：若 SF Symbol 拉取失败（旧系统、缺资源、降级路径），
+        // 让 statusItem 至少有 1 个汉字宽度，避免变成 0 宽不可见。
+        if button.image == nil {
+            button.title = "右"
+        }
         
         let menu = NSMenu(title: "开源右键助手")
         menu.delegate = self
