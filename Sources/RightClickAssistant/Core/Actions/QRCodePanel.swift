@@ -43,7 +43,7 @@ public enum QRCodePasteboardWriter {
 ///   QRCodePasteboardWriter，UI 这层不再持有编码 / 剪贴板逻辑
 /// - panel 必须由调用者强引用（见 UtilityAction.activeQRController），否则
 ///   控制器会随 stack 退出而析构，panel 立刻消失
-final class QRCodePanelController: NSObject {
+@MainActor final class QRCodePanelController: NSObject {
     private let panel: NSPanel
     private let image: NSImage
     private let text: String
