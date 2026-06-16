@@ -9,6 +9,22 @@ public struct SharedActionEvent: Codable, Equatable, Identifiable {
     public let paths: [String]
 }
 
+/// dispatcher 消费一个 PendingAction 时拿到的「租约」凭证（P1-2 事务化）：
+/// - `event` 是真正要执行的动作；
+/// - `inFlightURL` 指向已被搬到 InFlightActions/<pid>/ 的实体文件；
+/// - 跑完动作后必须调用 `SharedStorageManager.acknowledge(_:)` 删除 InFlight 文件，
+///   否则进程崩溃后会被 `reclaimAbandonedInFlightActions` 复活重跑。
+/// `inFlightURL == nil` 仅用于旧版兼容路径（pending_action.json）。
+public struct PendingActionLease: Equatable {
+    public let event: SharedActionEvent
+    public let inFlightURL: URL?
+
+    public init(event: SharedActionEvent, inFlightURL: URL?) {
+        self.event = event
+        self.inFlightURL = inFlightURL
+    }
+}
+
 /// 共享日志级别。生产环境默认只记录必要信息，调试日志需要用户显式开启。
 public enum SharedLogLevel {
     case info
@@ -115,6 +131,28 @@ public final class SharedStorageManager {
         return url
     }
 
+    /// 「已被某进程 lease、但还没确认完成」的事件目录。每个进程独占一个 PID 子目录，
+    /// 这样多实例（极端情况下）互不踩，并且 reclaim 时只搬「不是当前进程的」目录。
+    /// 设计目标（P1-2）：
+    /// - 旧实现 decode 之后立即 unconditional 删除，dispatcher 中途崩溃就丢事件；
+    /// - 改成「PendingActions/X.json → InFlightActions/<pid>/X.json」的原子 rename，
+    ///   dispatcher 跑完才 ack 删除 InFlight 文件；
+    /// - 启动时调用 `reclaimAbandonedInFlightActions`：把不属于当前进程的 InFlight
+    ///   文件搬回 PendingActions，再清理空 PID 目录。
+    public var inFlightActionsDirectoryURL: URL {
+        let url = sharedContainerURL.appendingPathComponent("InFlightActions", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
+        return url
+    }
+
+    /// 当前进程独占的 InFlight 子目录。
+    private var currentProcessInFlightDirectoryURL: URL {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let url = inFlightActionsDirectoryURL.appendingPathComponent(String(pid), isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
+        return url
+    }
+
     /// 共享的 config.json 配置交换文件 URL。
     public var configURL: URL {
         return sharedContainerURL.appendingPathComponent("config.json")
@@ -197,9 +235,14 @@ public final class SharedStorageManager {
         return url
     }
 
-    /// 消费队列中所有待处理动作。成功读取的事件会立即删除，避免重复执行。
-    public func consumePendingActionEvents() -> [SharedActionEvent] {
-        var events: [SharedActionEvent] = []
+    /// 消费队列中所有待处理动作的 lease 形式（P1-2 事务化）：
+    /// 1. 把 PendingActions/*.json 原子 rename 到 InFlightActions/<pid>/，
+    ///    避免「decode 成功 → 立即删除 → dispatcher 崩溃」之间丢事件；
+    /// 2. dispatcher 跑完后必须显式 `acknowledge`，否则下次启动 `reclaimAbandonedInFlightActions`
+    ///    会把它搬回 PendingActions 重跑（at-least-once）；
+    /// 3. decode 失败的文件直接搬到 FailedActions 隔离，不阻塞队列。
+    public func consumePendingActionLeases() -> [PendingActionLease] {
+        var leases: [PendingActionLease] = []
         let directoryURL = pendingActionsDirectoryURL
 
         let queuedURLs = (try? FileManager.default.contentsOfDirectory(
@@ -219,30 +262,102 @@ public final class SharedStorageManager {
                 return leftCreated < rightCreated
             }
 
+        let inFlightDir = currentProcessInFlightDirectoryURL
+
         for url in sortedURLs {
-            defer { try? FileManager.default.removeItem(at: url) }
-
+            // Step 1: 原子 rename 到 InFlight。极小概率同名时附加 UUID 前缀。
+            var inFlightURL = inFlightDir.appendingPathComponent(url.lastPathComponent)
+            if FileManager.default.fileExists(atPath: inFlightURL.path) {
+                inFlightURL = inFlightDir.appendingPathComponent("\(UUID().uuidString)-\(url.lastPathComponent)")
+            }
             do {
-                let data = try Data(contentsOf: url)
-                let event = try JSONDecoder().decode(SharedActionEvent.self, from: data)
-                events.append(event)
+                try FileManager.default.moveItem(at: url, to: inFlightURL)
             } catch {
-                writeLog("[SharedStorage] 无法解析队列动作文件，已隔离至 FailedActions: \(url.lastPathComponent), error: \(error.localizedDescription)")
-                let failedURL = failedActionsDirectoryURL.appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.moveItem(at: url, to: failedURL)
+                writeLog("[SharedStorage] 队列文件搬入 InFlight 失败，跳过本轮: \(url.lastPathComponent), error: \(error.localizedDescription)", level: .error)
+                continue
+            }
+
+            // Step 2: decode；失败搬到 FailedActions，不进 lease。
+            do {
+                let data = try Data(contentsOf: inFlightURL)
+                let event = try JSONDecoder().decode(SharedActionEvent.self, from: data)
+                leases.append(PendingActionLease(event: event, inFlightURL: inFlightURL))
+            } catch {
+                writeLog("[SharedStorage] 无法解析队列动作文件，已隔离至 FailedActions: \(inFlightURL.lastPathComponent), error: \(error.localizedDescription)", level: .error)
+                let failedURL = failedActionsDirectoryURL.appendingPathComponent(inFlightURL.lastPathComponent)
+                try? FileManager.default.moveItem(at: inFlightURL, to: failedURL)
             }
         }
 
+        // 兼容旧 pending_action.json 单文件路径：直接消费（无事务），保持向后兼容。
+        // 新版扩展不会再写此文件，留下来仅为升级残留。
         if let legacyEvent = consumeLegacyPendingActionEvent() {
-            events.append(legacyEvent)
+            leases.append(PendingActionLease(event: legacyEvent, inFlightURL: nil))
         }
 
-        return events.sorted {
-            if $0.createdAt == $1.createdAt {
-                return $0.id < $1.id
+        return leases.sorted {
+            if $0.event.createdAt == $1.event.createdAt {
+                return $0.event.id < $1.event.id
             }
-            return $0.createdAt < $1.createdAt
+            return $0.event.createdAt < $1.event.createdAt
         }
+    }
+
+    /// 标记 lease 已被 dispatcher 安全消费完毕，可以删除 InFlight 文件。
+    /// 必须在 dispatcher 返回后调用，否则进程崩溃会让事件被 reclaim 重跑。
+    public func acknowledge(_ lease: PendingActionLease) {
+        guard let url = lease.inFlightURL else { return }  // legacy 路径无 InFlight 文件
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// 把不属于当前进程的 InFlight 文件搬回 PendingActions，让下一轮消费循环重新处理。
+    /// 应在 AppDelegate.applicationDidFinishLaunching 启动消费循环之前调用一次。
+    /// 不会动当前进程目录（避免和正在跑的 dispatcher 抢文件）。
+    public func reclaimAbandonedInFlightActions() {
+        let parent = inFlightActionsDirectoryURL
+        let currentPID = String(ProcessInfo.processInfo.processIdentifier)
+
+        let pidDirs = (try? FileManager.default.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+
+        for pidDir in pidDirs {
+            if pidDir.lastPathComponent == currentPID { continue }
+            let isDir = (try? pidDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            guard isDir else { continue }
+
+            let orphanFiles = (try? FileManager.default.contentsOfDirectory(
+                at: pidDir,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
+
+            for orphan in orphanFiles where orphan.pathExtension == "json" {
+                let target = pendingActionsDirectoryURL.appendingPathComponent(orphan.lastPathComponent)
+                try? FileManager.default.removeItem(at: target)
+                do {
+                    try FileManager.default.moveItem(at: orphan, to: target)
+                    writeLog("[SharedStorage] reclaim 把孤儿 InFlight 事件搬回 PendingActions: \(orphan.lastPathComponent)", level: .info)
+                } catch {
+                    writeLog("[SharedStorage] reclaim 搬回失败: \(orphan.lastPathComponent), error: \(error.localizedDescription)", level: .error)
+                }
+            }
+
+            // 清空 PID 目录后清理（保持 InFlight 树整洁）。
+            try? FileManager.default.removeItem(at: pidDir)
+        }
+    }
+
+    /// 旧 API：tin shell，内部走 lease 路径并立即 ack。
+    /// 不再推荐使用，仅为已有调用点（测试 / 旧版本工具）做兼容。
+    /// 注意：立即 ack 等于"无事务"，调用方必须自己保证 dispatcher 不会崩。
+    @available(*, deprecated, message: "改用 consumePendingActionLeases + acknowledge 以获得崩溃安全语义")
+    public func consumePendingActionEvents() -> [SharedActionEvent] {
+        let leases = consumePendingActionLeases()
+        leases.forEach { acknowledge($0) }
+        return leases.map { $0.event }
     }
 
     private func consumeLegacyPendingActionEvent() -> SharedActionEvent? {

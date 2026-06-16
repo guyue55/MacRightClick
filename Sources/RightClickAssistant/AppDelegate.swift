@@ -29,6 +29,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             object: nil,
             suspensionBehavior: .deliverImmediately
         )
+
+        // P1-2：先把上次进程崩溃前未 ack 的 InFlight 孤儿事件搬回 PendingActions，
+        // 再启动 folder-monitor。这样 reclaim 出来的事件会被本轮 processPendingAction 自然消费。
+        SharedStorageManager.shared.reclaimAbandonedInFlightActions()
         
         // 3. 挂载 DispatchSource 动作队列监听服务。
         let pendingActionsURL = SharedStorageManager.shared.pendingActionsDirectoryURL
@@ -87,17 +91,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     private func processPendingAction() {
         // 防止分布式通知与 kqueue 在毫秒内同时调用造成事件重复消费。
         // try_lock 而非 lock：若已经有一个消费循环在跑，新的回调直接退出，
-        // 因为 consumePendingActionEvents 内部自带原子文件 rename，
+        // 因为 consumePendingActionLeases 内部自带原子文件 rename（Pending → InFlight/<pid>/），
         // 跑完一轮后任何遗漏事件都会在下一次 kqueue write 事件里再次进入这里。
         guard os_unfair_lock_trylock(&pendingActionLock) else { return }
         defer { os_unfair_lock_unlock(&pendingActionLock) }
         
-        let events = SharedStorageManager.shared.consumePendingActionEvents()
-        guard !events.isEmpty else { return }
+        // P1-2：lease 形式拿事件——文件已搬到 InFlight/<pid>/，dispatcher 跑完才 ack 删除。
+        // 中途崩溃/强退都会被下次启动的 reclaim 救回。
+        let leases = SharedStorageManager.shared.consumePendingActionLeases()
+        guard !leases.isEmpty else { return }
 
-        SharedStorageManager.shared.writeLog("[App] [processPendingAction] 开始消费动作队列，事件数: \(events.count)")
+        SharedStorageManager.shared.writeLog("[App] [processPendingAction] 开始消费动作队列，事件数: \(leases.count)")
 
-        for event in events {
+        for lease in leases {
+            let event = lease.event
             SharedStorageManager.shared.writeLog("[App] [processPendingAction] 成功解析动作: \(event.actionId), 目标路径总数: \(event.paths.count), eventId: \(event.id)")
 
             let urls = event.paths.map { URL(fileURLWithPath: $0) }
@@ -107,6 +114,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             SharedStorageManager.shared.writeLog("[App] [processPendingAction] 即将由 ActionDispatcher 分发动作 \(event.actionId)...")
             let success = ActionDispatcher.shared.dispatch(actionId: event.actionId, targetURLs: urls)
             SharedStorageManager.shared.writeLog("[App] [processPendingAction] 动作 \(event.actionId) 代理执行结果: \(success ? "成功" : "失败")")
+
+            // ack：dispatcher 已 return（不论真假成功），事件已被「认真处理过」，可以删除 InFlight 文件。
+            // 注意 dispatcher 的 return 不代表后台 IO 跑完——交互/后台动作的真实工作已被 InteractiveActionRunner /
+            // BackgroundActionRunner 接管在自己的私有队列上，那部分崩溃风险由 Runner 各自负责，不再属于 PendingAction 队列层语义。
+            SharedStorageManager.shared.acknowledge(lease)
         }
     }
     

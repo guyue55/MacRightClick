@@ -117,11 +117,14 @@ final class RightClickAssistantTests: XCTestCase {
         let storage = SharedStorageManager.shared
         try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
         try? FileManager.default.removeItem(at: storage.pendingActionURL)
+        try? FileManager.default.removeItem(at: storage.inFlightActionsDirectoryURL)
 
         _ = try storage.enqueueAction(actionId: "guyue.action.newfile.txt", paths: [tempDirectory.path])
         _ = try storage.enqueueAction(actionId: "guyue.action.newfile.md", paths: [tempDirectory.path])
 
-        let events = storage.consumePendingActionEvents()
+        let leases = storage.consumePendingActionLeases()
+        let events = leases.map { $0.event }
+        leases.forEach { storage.acknowledge($0) }
 
         XCTAssertEqual(Set(events.map(\.actionId)), Set([
             "guyue.action.newfile.txt",
@@ -241,13 +244,14 @@ final class RightClickAssistantTests: XCTestCase {
         let storage = SharedStorageManager.shared
         try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
         try? FileManager.default.removeItem(at: storage.failedActionsDirectoryURL)
+        try? FileManager.default.removeItem(at: storage.inFlightActionsDirectoryURL)
 
         let malformedURL = storage.pendingActionsDirectoryURL.appendingPathComponent("malformed.json")
         try Data("{ invalid json".utf8).write(to: malformedURL)
 
-        let events = storage.consumePendingActionEvents()
+        let leases = storage.consumePendingActionLeases()
 
-        XCTAssertTrue(events.isEmpty)
+        XCTAssertTrue(leases.isEmpty)
         XCTAssertEqual(storage.pendingActionCount, 0)
         XCTAssertEqual(storage.failedActionCount, 1)
     }

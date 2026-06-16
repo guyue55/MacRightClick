@@ -168,3 +168,49 @@ open /Applications/RightClickAssistant.app → PID 14025 主 App + PID 14026 Ext
    - 期望：HUD 拒绝；确认弹窗仍可正常关闭；关闭后 Finder 在 0.5-1s 内重启完成
 4. 跨卷大文件 moveTo：选一个 1 GB 以上文件到 U 盘 → 期间立刻在 Finder 另一处右键
    - 期望：菜单照常弹出，IO 跑在后台不阻塞 folder-monitor 队列
+
+## 10. 2026-06-16 P1 修复：paste 后台化 + PendingAction 事务化
+
+本轮按 superpowers systematic-debugging 收尾上一轮 P1/P2 待修清单的两条 P1：
+
+| 编号 | 现象 | 根因 | 修复 |
+| --- | --- | --- | --- |
+| P1-1 | 跨盘大文件 paste 期间，再触发同源右键动作会被 folder-monitor 队列长时间阻塞，UI 卡顿 | `FileManageAction.paste` 在 folder-monitor 串行队列上同步跑 `moveItem` / `crossVolumeMove`（copy + remove），跨盘大文件耗时秒级到分钟级 | 新增 `BackgroundActionRunner`（同 InteractiveActionRunner 同家族但不抢全局 modal 闸门）；paste 改成「快照参数 → pasteRunner.submit { executePaste }」薄壳，folder-monitor 队列立刻返回；HUD 由后台异步反馈 |
+| P1-2 | dispatcher 跑到一半进程崩溃/强退 → 队列文件已被 `defer { removeItem }` 删掉 → 用户操作丢失 | `consumePendingActionEvents` 用 `defer { removeItem }`，decode 后立即 unconditional 删；从 decode 到 dispatcher.dispatch 完成之间崩溃就丢事件 | 新增 `consumePendingActionLeases` + `acknowledge` + `reclaimAbandonedInFlightActions` 三件套：Pending → InFlight/<pid>/ 原子 rename，dispatcher 跑完才 ack 删；启动时 reclaim 把不属于当前 PID 的 InFlight 文件搬回 Pending 重跑 |
+
+对应 commit：
+- `671ffd7 fix(filemanage): paste 走 BackgroundActionRunner，跨盘大文件不再阻塞 folder-monitor 队列`
+- （本轮新增）`fix(storage): PendingAction 改 lease/ack/reclaim 三件套，进程崩溃不丢事件`
+
+自动回归验证（命令实测）：
+
+```text
+# 出包 + 安装 + 自动启动
+DISTRIBUTION_ROUTE=website-dev bash Scripts/build.sh → 成功
+codesign --verify --deep --strict /Applications/RightClickAssistant.app → valid + satisfies DR
+open /Applications/RightClickAssistant.app → 主 App + Extension 均存活
+# OSLog 启动健康，新增 InFlightActions/<pid>/ 子目录
+ls ~/Library/Containers/guyue.RightClickAssistant.Extension/Data/InFlightActions/ → 仅当前 PID 子目录
+
+# reclaim 端到端真机回归（人为塞孤儿事件 → 重启 → 验证）
+# 1. 在 InFlightActions/99999/ 写入 orphan-test.json
+# 2. pkill RightClickAssistant && open /Applications/RightClickAssistant.app
+# 3. OSLog 显示：
+#    [SharedStorage] reclaim 把孤儿 InFlight 事件搬回 PendingActions: orphan-test.json
+#    [App] [processPendingAction] 开始消费动作队列，事件数: 1
+#    [App] [processPendingAction] 成功解析动作: guyue.action.test.orphan, eventId: orphan-uuid
+# 4. InFlightActions/99999/ 被自动清理；Pending 已空
+```
+
+人手回归 checklist（P1 专项）：
+
+1. 跨盘 paste 大文件（>1GB）期间，立刻在 Finder 另一处右键 → 菜单正常弹出，HUD 不闪退；paste 完成后 HUD「粘贴成功」异步出现
+2. paste 期间触发「彻底删除」/「移动到」等交互动作 → InteractiveActionGate 不被 paste 占用，可正常进入 modal
+3. 触发任一动作进入 dispatcher 后立即 `Activity Monitor → Force Quit` 主 App → 重新打开主 App → 该动作应被 reclaim 后重跑（OSLog `reclaim 把孤儿 InFlight 事件搬回` 可定位）
+4. 反复 enqueue + ack 100 次后查看 `InFlightActions/<pid>/` → 应保持空，PendingActions 也保持空，FailedActions 不增长
+
+遗留事项（按 P0/P1/P2 审查报告，等用户确认）：
+
+- P2-1 FinderSync.requestBadgeIdentifier 缓存（< 0.1ms 命中）
+- P2-2 AppLog 路由：主 App 事件被归到 `:storage` 而非 `:host`
+- P2-3 DeletionRequestCoordinator 与 InteractiveActionRunner 抽象统一
