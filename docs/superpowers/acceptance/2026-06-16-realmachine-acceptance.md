@@ -214,3 +214,60 @@ ls ~/Library/Containers/guyue.RightClickAssistant.Extension/Data/InFlightActions
 - P2-1 FinderSync.requestBadgeIdentifier 缓存（< 0.1ms 命中）
 - P2-2 AppLog 路由：主 App 事件被归到 `:storage` 而非 `:host`
 - P2-3 DeletionRequestCoordinator 与 InteractiveActionRunner 抽象统一
+
+## 11. 2026-06-16 UX 修复：右键菜单作用范围 = 默认全盘
+
+用户反馈：刚装好后只在 Desktop / Downloads / Documents 三个目录能看到右键菜单，
+其他目录（含 /tmp、/Volumes、Project 子目录、临时盘等）一律看不到——明明已开
+「完全磁盘访问」也无效。
+
+根因（Phase 1 调查）：
+- 这不是 bug，是 macOS FinderSync 设计强制：Extension 必须通过
+  `FIFinderSyncController.directoryURLs` 显式声明白名单，Finder 才会把那些目录
+  的 `menu(for:)` / `requestBadgeIdentifier(for:)` 路由进来；
+- 项目历史默认值 `defaultWatchedDirectoryPaths = ["Desktop","Downloads","Documents"]`
+  来自 [SharedStorageManager.swift:185](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/Core/SharedStorageManager.swift:185)，对新用户而言"开箱即用"门槛过高；
+- 「完全磁盘访问」只影响进程文件 IO 权限，与 FinderSync 路由表毫不相干。
+
+修复（产品决策 + 工程实现）：
+- 新增枚举 `WatchScope { everywhere, custom }`，存于 SharedStorageManager；
+  默认值 `.everywhere` —— 与 Keka / SnailSVN / WPS 等同类 FinderSync 工具的
+  「装好就在所有目录可用」体感一致；
+- `watchedDirectoryURLs` 单一分发点：`.everywhere` 返回 `["/"] + 三个种子目录`，
+  `.custom` 仍走旧逻辑（用户加入的列表）；
+- 「种子目录」是为了打破 Finder 懒加载 chicken-and-egg：全新设备上 Finder 还没
+  看见任何受监控目录就不会拉起 Extension，于是写到 directoryURLs 的 `/` 永远到
+  不了 Finder。Desktop/Downloads/Documents 任一存在就能让 Finder 在用户打开它时
+  把 Extension 拉起，Extension 启动后写入的 `[/]` 立即向 Finder 全盘生效；
+- 设置页 PermissionsSettingsView 加「右键菜单作用范围」segmented 控件
+  （所有目录 / 仅自定义目录），切换实时生效（DistributedNotificationCenter
+  configChanged → FinderSync.updateObservedDirectories）；
+- `customWatchedDirectoryPathsForUI` 始终读旧 key，不受 watchScope 路由，保证用户
+  在 .everywhere 模式下切回 .custom 时之前的自定义列表不丢失。
+
+对应 commit：
+- （本轮）`feat(ux): 右键菜单作用范围默认 .everywhere，新增 WatchScope 开关`
+
+自动回归验证（命令实测）：
+
+```text
+DISTRIBUTION_ROUTE=website-dev bash Scripts/build.sh → 成功
+codesign --verify --deep --strict /Applications/RightClickAssistant.app → valid
+open /Applications/RightClickAssistant.app + killall Finder + osascript open Home
+→ 主 App PID 61244 + Extension PID 61389 健康存活
+→ InFlightActions/ 仅当前 PID 61244 子目录（reclaim 把上轮 49718/42539 残余清理）
+→ config.json 不写 watch_scope 时 getter 走默认 .everywhere
+```
+
+人手回归 checklist（请用户实测）：
+
+1. 在 Finder 打开 `/tmp`、外接磁盘、`/Library`、随便一个项目目录右键 → 应当看到
+   「右键助手」菜单（首次新装可能需要在 Desktop / Downloads / Documents 任一处先
+   右键一次唤醒 Extension，之后即全盘生效；这是 Finder 的懒加载特性，不是 bug）
+2. 主 App 设置页 → 权限页 → 右键菜单作用范围 → 切到「仅自定义目录」→ 在
+   `/tmp` 右键应当不再看到菜单；切回「所有目录」→ 立刻恢复
+3. 在 .everywhere 模式下添加自定义目录 → 列表应可见但有提示「当前作用范围为「所
+   有目录」，自定义列表暂不生效」；切回 .custom 后自定义列表立即生效，且之前的
+   自定义记录未丢
+4. `killall Finder` 后等 5-10 秒，新 Finder 进程上仍然能在所有目录看到菜单
+   （Extension 的 [/] 注册在 Finder 重启后由 FinderSync.init 重新写入）

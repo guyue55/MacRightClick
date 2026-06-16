@@ -25,6 +25,19 @@ public struct PendingActionLease: Equatable {
     }
 }
 
+/// FinderSync 的「作用范围」配置（产品决策）：
+/// - `.everywhere`：directoryURLs 注册根目录 `/`，所有 Finder 目录均显示菜单。
+///   首次安装的默认值，与同类产品（MacZip / Hidden Bar 等）的"开箱即用"体验一致。
+/// - `.custom`：仅在用户显式加入的目录显示菜单（旧行为，给隐私敏感用户保留）。
+///
+/// 之所以做开关而不是直接硬编码 `.everywhere`：
+/// - 方便用户在隐私 / 性能敏感场景下关闭全盘扫描；
+/// - 单一权威：FinderSync 与设置页只读 `watchedDirectoryURLs`，分支收敛在此一处。
+public enum WatchScope: String, Codable, CaseIterable, Equatable {
+    case everywhere
+    case custom
+}
+
 /// 共享日志级别。生产环境默认只记录必要信息，调试日志需要用户显式开启。
 public enum SharedLogLevel {
     case info
@@ -41,6 +54,8 @@ public final class SharedStorageManager {
         public static let enableDebugLogging = "enable_debug_logging"
         public static let favoriteActionIds = "favorite_action_ids"
         public static let watchedDirectoryPaths = "watched_directory_paths"
+        /// FinderSync 作用范围：`.everywhere` / `.custom`，对应 `WatchScope`。
+        public static let watchScope = "watch_scope"
     }
     
     private let appGroupIdentifier = "group.guyue.RightClickAssistant"
@@ -192,9 +207,50 @@ public final class SharedStorageManager {
     }
 
     public var watchedDirectoryURLs: [URL] {
+        // 单一分发点：作用范围决定 FinderSync 实际看到的目录集合，
+        // 让 FinderSync.updateObservedDirectories 不需要知道任何作用范围细节。
+        switch watchScope {
+        case .everywhere:
+            // FIFinderSyncController.directoryURLs 接受根目录 "/"：
+            // Finder 会把全盘所有目录都路由到本扩展的 menu(for:)。
+            //
+            // 为什么除了 "/" 还要加上 Desktop/Downloads/Documents 三条「种子目录」：
+            // - 全新安装的设备上 Finder 还没看见任何受监控目录 → 不会主动拉起 Extension
+            //   → directoryURLs 永远写不进去（chicken-and-egg）。
+            // - 用户最常打开的就是这三个目录；只要在其中之一发生 Finder 活动，Extension
+            //   会被立即拉起，而它启动后注册的 [/] 立即向 Finder 全盘生效。
+            // - 这条额外注册对 .everywhere 的语义是无副作用的（"/" 已经覆盖一切）。
+            let homePath = getRealHomeDirectory()
+            let seeds = Self.defaultWatchedDirectoryPaths(homePath: homePath)
+                .map { URL(fileURLWithPath: $0) }
+            return [URL(fileURLWithPath: "/")] + seeds
+        case .custom:
+            let defaultPaths = Self.defaultWatchedDirectoryPaths(homePath: getRealHomeDirectory())
+            let paths = getStringArray(forKey: Keys.watchedDirectoryPaths, defaultValue: defaultPaths)
+            return paths.map { URL(fileURLWithPath: $0) }
+        }
+    }
+
+    /// 仅供 UI 设置页展示「自定义目录列表」用：始终读旧 key，不受 `watchScope` 影响。
+    /// 这样切到 .everywhere 时 UI 仍可显示用户之前配置的自定义目录，避免来回切换丢数据。
+    public var customWatchedDirectoryPathsForUI: [String] {
         let defaultPaths = Self.defaultWatchedDirectoryPaths(homePath: getRealHomeDirectory())
-        let paths = getStringArray(forKey: Keys.watchedDirectoryPaths, defaultValue: defaultPaths)
-        return paths.map { URL(fileURLWithPath: $0) }
+        return getStringArray(forKey: Keys.watchedDirectoryPaths, defaultValue: defaultPaths)
+    }
+
+    /// 当前作用范围。默认 `.everywhere`（首次安装最贴用户预期）。
+    /// setter 直接落 UserDefaults，配合 DistributedNotificationCenter
+    /// 通知 FinderSync 即刻刷新 `directoryURLs`。
+    public var watchScope: WatchScope {
+        get {
+            // 复用既有的 stringArray 通道（首项即值）。这样不必新增底层 IO 类型，
+            // 同时享受 App Group / config.json 双写的同款持久化语义。
+            let raw = getStringArray(forKey: Keys.watchScope, defaultValue: []).first
+            return raw.flatMap(WatchScope.init(rawValue:)) ?? .everywhere
+        }
+        set {
+            setStringArray([newValue.rawValue], forKey: Keys.watchScope)
+        }
     }
 
     /// 将运行日志追加写入共享日志文件，方便后续排查。

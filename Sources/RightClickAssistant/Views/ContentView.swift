@@ -195,6 +195,7 @@ struct PermissionsSettingsView: View {
     @State private var hasFullDiskAccess = false
     @State private var shouldEnableiCloudMenu = false
     @State private var watchedDirectoryPaths: [String] = []
+    @State private var watchScope: WatchScope = .everywhere
     // 改事件驱动：不再用 2s 轮询，避免 App 在后台空跑 timer。
     // 状态刷新由三处事件触发：onAppear、willBecomeActive（用户从系统设置切回时）、
     // 以及 FDA HStack 内的「重新检测」按钮（用户已知刚授权完想立刻确认）。
@@ -265,6 +266,32 @@ struct PermissionsSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            GroupBox(label: Label("右键菜单作用范围", systemImage: "scope")) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("作用范围", selection: Binding(
+                        get: { watchScope },
+                        set: { newValue in
+                            watchScope = newValue
+                            SharedStorageManager.shared.watchScope = newValue
+                            postConfigChanged()
+                        }
+                    )) {
+                        Text("所有目录").tag(WatchScope.everywhere)
+                        Text("仅自定义目录").tag(WatchScope.custom)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Text(watchScope == .everywhere
+                         ? "默认在 Finder 任意目录显示右键菜单（推荐）。"
+                         : "仅在下方自定义列表中的目录显示右键菜单，适合隐私敏感或希望降低 FinderSync 注册面的场景。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             GroupBox(label: Label("Finder 菜单监听目录", systemImage: "folder.badge.gearshape")) {
                 VStack(alignment: .leading, spacing: 10) {
                     if watchedDirectoryPaths.isEmpty {
@@ -295,7 +322,13 @@ struct PermissionsSettingsView: View {
                             resetWatchedDirectories()
                         }
                     }
+                    if watchScope == .everywhere {
+                        Text("当前作用范围为「所有目录」，自定义列表暂不生效。切回「仅自定义目录」即可启用此处配置。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .disabled(watchScope == .everywhere)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -306,7 +339,10 @@ struct PermissionsSettingsView: View {
 
     private func refresh() {
         shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
-        watchedDirectoryPaths = SharedStorageManager.shared.watchedDirectoryURLs.map(\.path)
+        watchScope = SharedStorageManager.shared.watchScope
+        // UI 永远展示用户的「自定义目录」原始列表（即使当前作用范围是 .everywhere，
+        // 切回 .custom 时仍保留之前的自定义配置，避免来回切换丢数据）。
+        watchedDirectoryPaths = SharedStorageManager.shared.customWatchedDirectoryPathsForUI
         checkFullDiskAccess()
     }
 
