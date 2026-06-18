@@ -581,6 +581,7 @@ struct AdvancedSettingsView: View {
         SharedStorageManager.shared.removeValue(forKey: "shouldEnableiCloudMenu")
         SharedStorageManager.shared.removeValue(forKey: "enable_success_hud")
         SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.enableDebugLogging)
+        SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.menuLayoutMode)
 
         postConfigChanged()
         refreshID = UUID()
@@ -604,12 +605,45 @@ private func postConfigChanged() {
 // MARK: - B. 动作管理统一面板（根据不同分类渲染）
 struct ActionsHubView: View {
     @State private var selectedCategory: ActionCategory = .newFile
+    @State private var menuLayoutMode: MenuLayoutMode = .flat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("选择要显示在 Finder 右键菜单中的动作。星标动作会出现在右键菜单的“常用”分组中。")
                 .font(.body)
                 .foregroundColor(.secondary)
+
+            GroupBox(label: Label("右键菜单展示", systemImage: "menucard")) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("右键菜单展示", selection: Binding(
+                        get: { menuLayoutMode },
+                        set: { newValue in
+                            menuLayoutMode = newValue
+                            SharedStorageManager.shared.menuLayoutMode = newValue
+                            postConfigChanged()
+                            SharedHUDManager.show(
+                                title: "菜单展示已更新",
+                                content: newValue == .flat ? "已启用一级菜单直接显示" : "已切回分类子菜单显示",
+                                isSuccess: true
+                            )
+                        }
+                    )) {
+                        ForEach(MenuLayoutMode.allCases) { mode in
+                            Text(mode.localizedName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Text(menuLayoutMode == .flat
+                         ? "已启用的可用动作会直接出现在 Finder 右键一级菜单中，收藏动作置顶。"
+                         : "已启用的可用动作会按新建文件、文件管理、终端/编辑器、实用工具分类显示。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             Picker("动作分类", selection: $selectedCategory) {
                 ForEach(ActionCategory.allCases) { category in
@@ -619,6 +653,9 @@ struct ActionsHubView: View {
             .pickerStyle(.segmented)
 
             ActionsManagerView(category: selectedCategory, includeAdvanced: false)
+        }
+        .onAppear {
+            menuLayoutMode = SharedStorageManager.shared.menuLayoutMode
         }
     }
 }

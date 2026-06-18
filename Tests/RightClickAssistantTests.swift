@@ -325,4 +325,89 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(readBack?.count, 1, "拷贝图片后，pasteboard 应能 readObjects 出 1 张 NSImage")
         XCTAssertEqual(readBack?.first?.size, size, "回读图像的尺寸需与写入图像一致")
     }
+
+    /// 19. 菜单布局模式默认应为直接显示，贴近 Windows 风格一级右键体验
+    func testMenuLayoutModeDefaultsToFlat() {
+        let storage = SharedStorageManager.shared
+
+        storage.removeValue(forKey: SharedStorageManager.Keys.menuLayoutMode)
+
+        XCTAssertEqual(storage.menuLayoutMode, .flat)
+    }
+
+    /// 20. Flat 模式下收藏动作置顶、加分隔线，且收藏不应在普通区重复出现
+    func testFlatMenuLayoutPlacesFavoritesFirstWithoutDuplicates() {
+        let favorite = TestMenuAction(id: "favorite", title: "A Favorite", category: .utility)
+        let regularNewFile = TestMenuAction(id: "regular.new", title: "B New", category: .newFile)
+        let regularUtility = TestMenuAction(id: "regular.utility", title: "C Utility", category: .utility)
+
+        let sections = FinderMenuLayoutBuilder.build(
+            actions: [regularUtility, favorite, regularNewFile],
+            mode: .flat,
+            isEnabled: { _ in true },
+            isFavorite: { $0.actionId == favorite.actionId },
+            isAvailable: { _ in true }
+        )
+
+        XCTAssertEqual(sections, [
+            .directItems(actionIds: [favorite.actionId]),
+            .separator,
+            .directItems(actionIds: [regularNewFile.actionId, regularUtility.actionId])
+        ])
+    }
+
+    /// 21. Grouped 模式保留当前四分类子菜单结构，作为旧体验兼容开关
+    func testGroupedMenuLayoutKeepsCategorySubmenus() {
+        let newFile = TestMenuAction(id: "new", title: "New", category: .newFile)
+        let utility = TestMenuAction(id: "utility", title: "Utility", category: .utility)
+
+        let sections = FinderMenuLayoutBuilder.build(
+            actions: [utility, newFile],
+            mode: .grouped,
+            isEnabled: { _ in true },
+            isFavorite: { _ in false },
+            isAvailable: { _ in true }
+        )
+
+        XCTAssertEqual(sections, [
+            .submenu(title: ActionCategory.newFile.localizedName, actionIds: [newFile.actionId]),
+            .submenu(title: ActionCategory.utility.localizedName, actionIds: [utility.actionId])
+        ])
+    }
+
+    /// 22. 菜单布局 builder 必须继续尊重启用状态与可用性过滤
+    func testMenuLayoutFiltersDisabledAndUnavailableActions() {
+        let visible = TestMenuAction(id: "visible", title: "Visible", category: .newFile)
+        let disabled = TestMenuAction(id: "disabled", title: "Disabled", category: .newFile)
+        let unavailable = TestMenuAction(id: "unavailable", title: "Unavailable", category: .newFile)
+
+        let sections = FinderMenuLayoutBuilder.build(
+            actions: [visible, disabled, unavailable],
+            mode: .flat,
+            isEnabled: { $0.actionId != disabled.actionId },
+            isFavorite: { _ in false },
+            isAvailable: { $0.actionId != unavailable.actionId }
+        )
+
+        XCTAssertEqual(sections, [
+            .directItems(actionIds: [visible.actionId])
+        ])
+    }
+}
+
+private final class TestMenuAction: MenuAction {
+    let actionId: String
+    let localizedTitle: String
+    let iconName: String? = nil
+    let category: ActionCategory
+
+    init(id: String, title: String, category: ActionCategory) {
+        self.actionId = id
+        self.localizedTitle = title
+        self.category = category
+    }
+
+    func execute(targetURLs: [URL]) -> Bool {
+        true
+    }
 }

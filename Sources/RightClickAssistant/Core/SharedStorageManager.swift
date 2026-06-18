@@ -54,6 +54,7 @@ public final class SharedStorageManager {
         public static let enableDebugLogging = "enable_debug_logging"
         public static let favoriteActionIds = "favorite_action_ids"
         public static let watchedDirectoryPaths = "watched_directory_paths"
+        public static let menuLayoutMode = "menu_layout_mode"
         /// FinderSync 作用范围：`.everywhere` / `.custom`，对应 `WatchScope`。
         public static let watchScope = "watch_scope"
     }
@@ -250,6 +251,17 @@ public final class SharedStorageManager {
         }
         set {
             setStringArray([newValue.rawValue], forKey: Keys.watchScope)
+        }
+    }
+
+    /// Finder 右键菜单展示模式。默认 `.flat`，让已启用动作直接显示在一级菜单。
+    public var menuLayoutMode: MenuLayoutMode {
+        get {
+            let raw = getStringArray(forKey: Keys.menuLayoutMode, defaultValue: []).first
+            return raw.flatMap(MenuLayoutMode.init(rawValue:)) ?? .flat
+        }
+        set {
+            setStringArray([newValue.rawValue], forKey: Keys.menuLayoutMode)
         }
     }
 

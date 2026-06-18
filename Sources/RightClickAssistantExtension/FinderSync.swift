@@ -249,60 +249,23 @@ class FinderSync: FIFinderSync {
         }
         
         let cache = ActionConfigCache.shared
-        let favoriteActions = dispatcher.allActions
-            .filter { action in
+        let sections = FinderMenuLayoutBuilder.build(
+            actions: dispatcher.allActions,
+            mode: cache.menuLayoutMode,
+            isEnabled: { action in
+                cache.isEnabled(action.actionId, default: action.isEnabledByDefault)
+            },
+            isFavorite: { action in
                 cache.isFavorite(action.actionId)
-                    && cache.isEnabled(action.actionId, default: action.isEnabledByDefault)
-                    && action.isAvailable(for: targetURLs, isContainer: isContainer)
-            }
-            .sorted { $0.localizedTitle < $1.localizedTitle }
-
-        if !favoriteActions.isEmpty {
-            let favoritesItem = NSMenuItem(title: "常用", action: nil, keyEquivalent: "")
-            let favoritesMenu = NSMenu(title: "常用")
-
-            for action in favoriteActions {
-                let item = makeMenuItem(for: action)
-                favoritesMenu.addItem(item)
-            }
-
-            favoritesItem.submenu = favoritesMenu
-            menu.addItem(favoritesItem)
-        }
-
-        // 使用二级子菜单组织动作，减少 Finder 顶层右键菜单负担。
-        let categories = ActionCategory.allCases
-        logToSharedContainer("[FinderSync] 开始遍历分类渲染菜单, 分类总数: \(categories.count)", level: .debug)
-        
-        for category in categories {
-            let actions = dispatcher.actions(in: category)
-            logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] (\(category.rawValue)) 下共有 actions: \(actions.count) 个", level: .debug)
-            
-            let enabledActions = actions.filter { action in
-                // 启用状态从进程内缓存读，命中即 O(1)；isAvailable 仍走原 action 实现（含 InstalledAppRegistry）。
-                let isEnabled = cache.isEnabled(action.actionId, default: action.isEnabledByDefault)
+            },
+            isAvailable: { action in
                 let isAvail = action.isAvailable(for: targetURLs, isContainer: isContainer)
-                logToSharedContainer("[FinderSync] 过滤 Action [\(action.localizedTitle)] (\(action.actionId)): enabled=\(isEnabled), avail=\(isAvail)", level: .debug)
-                return isEnabled && isAvail && !cache.isFavorite(action.actionId)
+                logToSharedContainer("[FinderSync] 过滤 Action [\(action.localizedTitle)] (\(action.actionId)): avail=\(isAvail)", level: .debug)
+                return isAvail
             }
-            logToSharedContainer("[FinderSync] 分类 [\(category.localizedName)] 过滤后生效的 actions 数量: \(enabledActions.count)", level: .debug)
-            
-            // 只有当该子分类下有启用且可用的菜单项时，才渲染该分类的子菜单
-            if !enabledActions.isEmpty {
-                let categoryItem = NSMenuItem(title: category.localizedName, action: nil, keyEquivalent: "")
-                let subMenu = NSMenu(title: category.localizedName)
-                
-                for action in enabledActions {
-                    let item = makeMenuItem(for: action)
-                    subMenu.addItem(item)
-                    logToSharedContainer("[FinderSync] 成功添加子菜单项: [\(action.localizedTitle)] (Tag: \(item.tag))", level: .debug)
-                }
-                
-                categoryItem.submenu = subMenu
-                menu.addItem(categoryItem)
-                logToSharedContainer("[FinderSync] 成功向主菜单挂载分类: [\(category.localizedName)]", level: .debug)
-            }
-        }
+        )
+
+        render(sections: sections, into: menu, dispatcher: dispatcher)
         
         logToSharedContainer("[FinderSync] 菜单渲染完毕，主菜单 Items 数量: \(menu.items.count)", level: .debug)
         // 若全部为空则不展示任何项
@@ -323,6 +286,39 @@ class FinderSync: FIFinderSync {
         }
 
         return item
+    }
+
+    private func render(
+        sections: [FinderMenuLayoutSection],
+        into menu: NSMenu,
+        dispatcher: ActionDispatcher
+    ) {
+        for section in sections {
+            switch section {
+            case .directItems(let actionIds):
+                for actionId in actionIds {
+                    guard let action = dispatcher.action(forId: actionId) else { continue }
+                    menu.addItem(makeMenuItem(for: action))
+                    logToSharedContainer("[FinderSync] 成功添加一级菜单项: [\(action.localizedTitle)]", level: .debug)
+                }
+            case .submenu(let title, let actionIds):
+                let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                let submenu = NSMenu(title: title)
+                for actionId in actionIds {
+                    guard let action = dispatcher.action(forId: actionId) else { continue }
+                    submenu.addItem(makeMenuItem(for: action))
+                    logToSharedContainer("[FinderSync] 成功添加子菜单项: [\(action.localizedTitle)]", level: .debug)
+                }
+                if !submenu.items.isEmpty {
+                    parent.submenu = submenu
+                    menu.addItem(parent)
+                }
+            case .separator:
+                if !menu.items.isEmpty {
+                    menu.addItem(.separator())
+                }
+            }
+        }
     }
     
     /// 在 Extension 的独立沙盒进程中注册默认支持的一套右键操作

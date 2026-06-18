@@ -16,6 +16,7 @@ public final class ActionConfigCache {
     private let queue = DispatchQueue(label: "guyue.ActionConfigCache", attributes: .concurrent)
     private var enableMap: [String: Bool] = [:]
     private var favoriteSet: Set<String> = []
+    private var cachedMenuLayoutMode: MenuLayoutMode = .flat
 
     private init() {
         DistributedNotificationCenter.default().addObserver(
@@ -32,6 +33,7 @@ public final class ActionConfigCache {
         queue.sync(flags: .barrier) {
             self.enableMap.removeAll(keepingCapacity: true)
             self.favoriteSet = Set(SharedStorageManager.shared.favoriteActionIds)
+            self.cachedMenuLayoutMode = SharedStorageManager.shared.menuLayoutMode
         }
     }
 
@@ -40,6 +42,7 @@ public final class ActionConfigCache {
         queue.sync(flags: .barrier) {
             self.enableMap.removeAll(keepingCapacity: true)
             self.favoriteSet = Set(SharedStorageManager.shared.favoriteActionIds)
+            self.cachedMenuLayoutMode = SharedStorageManager.shared.menuLayoutMode
         }
     }
 
@@ -58,5 +61,9 @@ public final class ActionConfigCache {
     /// 查询 action 是否在收藏集中。
     public func isFavorite(_ actionId: String) -> Bool {
         return queue.sync { favoriteSet.contains(actionId) }
+    }
+
+    public var menuLayoutMode: MenuLayoutMode {
+        return queue.sync { cachedMenuLayoutMode }
     }
 }
