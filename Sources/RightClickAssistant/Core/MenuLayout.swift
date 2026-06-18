@@ -68,17 +68,8 @@ public enum FinderMenuLayoutBuilder {
                 .map(\.actionId)
         }
 
-        var sections: [FinderMenuLayoutSection] = []
-        if !favoriteIds.isEmpty {
-            sections.append(.directItems(actionIds: favoriteIds))
-        }
-        if !favoriteIds.isEmpty && !regularIds.isEmpty {
-            sections.append(.separator)
-        }
-        if !regularIds.isEmpty {
-            sections.append(.directItems(actionIds: regularIds))
-        }
-        return sections
+        let ids = favoriteIds + regularIds
+        return ids.isEmpty ? [] : [.directItems(actionIds: ids)]
     }
 
     private static func buildGroupedSections(

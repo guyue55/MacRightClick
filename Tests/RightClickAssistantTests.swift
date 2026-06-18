@@ -335,7 +335,7 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(storage.menuLayoutMode, .flat)
     }
 
-    /// 20. Flat 模式下收藏动作置顶、加分隔线，且收藏不应在普通区重复出现
+    /// 20. Flat 模式下收藏动作置顶且连续排列，收藏不应在普通区重复出现
     func testFlatMenuLayoutPlacesFavoritesFirstWithoutDuplicates() {
         let favorite = TestMenuAction(id: "favorite", title: "A Favorite", category: .utility)
         let regularNewFile = TestMenuAction(id: "regular.new", title: "B New", category: .newFile)
@@ -350,9 +350,7 @@ final class RightClickAssistantTests: XCTestCase {
         )
 
         XCTAssertEqual(sections, [
-            .directItems(actionIds: [favorite.actionId]),
-            .separator,
-            .directItems(actionIds: [regularNewFile.actionId, regularUtility.actionId])
+            .directItems(actionIds: [favorite.actionId, regularNewFile.actionId, regularUtility.actionId])
         ])
     }
 
