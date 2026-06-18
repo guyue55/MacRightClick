@@ -26,6 +26,7 @@ The app uses a **Distributed Signal + BSD kqueue (DispatchSource)** queue-based 
 ## ✨ Features
 
 - 🚀 **Queued Action Dispatch**: Every click writes an independent UUID event file that the host app consumes in order, avoiding overwrite problems from a single pending file.
+- 🧭 **Direct Top-Level Menu Layout**: Enabled and currently available actions appear directly in the Finder top-level context menu by default, with favorites pinned first. You can still switch back to the grouped submenu layout.
 - 🔒 **Clear Shared Channel**: The current website distribution route uses the extension sandbox intermediary directory so Ad-hoc and Developer ID builds share the same path behavior. Queue-based action files plus dual wake-up signals avoid sandboxed DistributedNotification `userInfo` stripping. A future Mac App Store route should switch to formal App Groups and security-scoped access.
 - 🎨 **Non-Blocking Glassmorphism HUD**: Abandoned traditional blocking synchronous modal dialogs. It features a custom non-modal floating notification panel (`NSPanel`) designed with native macOS vibrancy (acrylic blur), rounded corners, fade micro-animations, and a 2.5s automatic fade-out.
 - 🦁 **Modern SMAppService Login Item Launch**: Uses the macOS 13+ `SMAppService` API to register login items. Users can manage it in "System Settings -> General -> Login Items".
@@ -35,11 +36,26 @@ The app uses a **Distributed Signal + BSD kqueue (DispatchSource)** queue-based 
 
 ---
 
+## 🖼️ Screenshots
+
+| Finder Top-Level Context Menu | Action Settings & Menu Layout |
+| :---: | :---: |
+| <img src="docs/screenshots/finder-context-menu.png" width="420" alt="Finder context menu with actions shown directly" /> | <img src="docs/screenshots/settings-actions.png" width="420" alt="Action settings and context menu layout mode" /> |
+
+| Permissions & Scope | Diagnostics & Logs |
+| :---: | :---: |
+| <img src="docs/screenshots/settings-permissions.png" width="420" alt="Full Disk Access, cloud-drive compatibility, and context menu scope settings" /> | <img src="docs/screenshots/settings-diagnostics.png" width="420" alt="Finder extension diagnostics and log tools" /> |
+
+---
+
 ## 🛠️ Action Matrix (28 Core Actions)
 
 | 📂 File Creation | 📝 File Management | 💻 Editor & Terminal | 🧰 Utility & Tools |
 | :--- | :--- | :--- | :--- |
 | - New `.txt` Text File<br>- New `.md` Markdown<br>- New `.json` Data File<br>- New `.csv` Spreadsheet<br>- New `.html` Web Page<br>- New `.docx` Word Document<br>- New `.xlsx` Excel Sheet<br>- New `.pptx` PowerPoint<br>- New `.pdf` PDF Document | - Cut selected items<br>- Paste clipboard items<br>- Permanent delete (Advanced, off by default)<br>- Copy absolute file paths<br>- Copy file name only<br>- Copy To... (Advanced, off by default)<br>- Move To... (Advanced, off by default) | - Open in Terminal<br>- Open in iTerm2<br>- Open in Warp<br>- Open in VSCode<br>- Open in Sublime Text<br>- Open in Cursor | - Compute file MD5 hash<br>- Compute file SHA256 hash<br>- Toggle show hidden files (Advanced, off by default)<br>- Generate QR Code from clipboard<br>- Convert image to PNG<br>- Convert image to JPEG |
+
+> [!NOTE]
+> This matrix lists the 28 core actions registered in code. To keep the default menu quiet and safe, some actions are off by default or hidden dynamically by context: JSON/CSV/HTML/Office file creation, non-system terminals/editors, MD5, image conversion, and advanced actions can be enabled in the Actions page as needed. Terminal/editor actions are also filtered by whether the corresponding app is installed locally.
 
 ---
 
@@ -64,13 +80,13 @@ sequenceDiagram
     FS->>Host: 3. Post DistributedNotification (empty payload) - Backup 1
     SC-->>Host: 4. Trigger BSD kqueue event (Backup 2)
     
-    Note over Host: Awakened by either backup channel
-    Note over Host: Lock via objc_sync_enter mutex
+    Note over Host: Either backup channel schedules the dedicated serial consumer queue
+    Note over Host: os_unfair_lock_trylock prevents re-entrant consumption
     
     Host->>SC: 5. Consume all queued JSON events by creation time
     Host->>SC: 6. Delete consumed event files (Prevent double execution)
     
-    Host->>Host: 7. ActionDispatcher.shared.dispatch (Concurrent queue)
+    Host->>Host: 7. ActionDispatcher.shared.dispatch (business dispatch; interactive/background runners take over)
     Host-->>User: 8. Create 'Untitled.txt'
 ```
 
@@ -204,6 +220,22 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 
 ## 📜 Changelog
 
+### v1.1.1 (2026-06-18)
+
+- **fix(permissions)**: Reworked Full Disk Access detection to reduce false "not authorized" results after the permission has already been granted.
+- **fix(menu)**: Refined spacing between favorite actions and regular actions in the flat context menu.
+- **docs(readme)**: Added real software screenshots and synchronized the English README.
+
+### v1.1.0 (2026-06-18)
+
+- **feat(menu)**: Added the default-on direct top-level menu layout. Enabled and currently available actions now appear directly in the Finder context menu.
+- **feat(menu)**: Kept the grouped submenu layout as a switchable option in the Actions page.
+- **core**: Added a renderer-neutral `MenuLayout` engine and menu-layout unit tests.
+
+### v1.0.2 (2026-06-18)
+
+- **icon**: Updated the app icon assets and release artifact version.
+
 ### v1.0.1 (2026-06-16)
 
 - **fix(ext)**: "One-Click Register Extension" now runs `pluginkit -a` (announce) + `pluginkit -e use` (enable) + `killall Finder` automatically — fixes the "registered but not active" issue.
@@ -225,7 +257,7 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 - **build**: Entitlements externalized; templates picked by `DISTRIBUTION_ROUTE`; release/MAS routes enable `-O`.
 - **core**: Full Swift 6.1 concurrency conformance (`@MainActor` / `nonisolated(unsafe)` / `Sendable`).
 
-Full changelog: [CHANGELOG.md](CHANGELOG.md). Release notes: [GitHub Releases v1.0.1](https://github.com/guyue55/MacRightClick/releases/tag/v1.0.1).
+Full changelog: [CHANGELOG.md](CHANGELOG.md). Published release notes: [GitHub Releases](https://github.com/guyue55/MacRightClick/releases).
 
 ---
 
