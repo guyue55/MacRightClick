@@ -379,16 +379,7 @@ struct PermissionsSettingsView: View {
     }
 
     private func checkFullDiskAccess() {
-        // 通过尝试访问用户 Safari 目录来检测完全磁盘访问权限。
-        // /Library/Application Support/com.apple.TCC 受 SIP 保护，即使授予 FDA 也无法读取。
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let testPath = home.appendingPathComponent("Library/Safari").path
-        do {
-            _ = try FileManager.default.contentsOfDirectory(atPath: testPath)
-            hasFullDiskAccess = true
-        } catch {
-            hasFullDiskAccess = false
-        }
+        hasFullDiskAccess = FullDiskAccessChecker.hasFullDiskAccess()
     }
 }
 

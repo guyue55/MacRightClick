@@ -393,6 +393,53 @@ final class RightClickAssistantTests: XCTestCase {
             .directItems(actionIds: [visible.actionId])
         ])
     }
+
+    /// 23. FDA 检测不应只依赖 Safari 目录；用户级 TCC.db 可读时应判定已授权
+    func testFullDiskAccessCheckerGrantsWhenTCCDatabaseIsReadable() {
+        let home = URL(fileURLWithPath: "/Users/example")
+        let probes = FullDiskAccessChecker.defaultProbes(homeDirectory: home)
+        let tccPath = "/Users/example/Library/Application Support/com.apple.TCC/TCC.db"
+
+        XCTAssertTrue(probes.contains { $0.url.path == tccPath })
+
+        let granted = FullDiskAccessChecker.hasFullDiskAccess(
+            probes: probes,
+            fileExists: { $0 == tccPath || $0 == "/Users/example/Library/Safari" },
+            canRead: { $0.url.path == tccPath }
+        )
+
+        XCTAssertTrue(granted)
+    }
+
+    /// 24. 某些机器没有 Safari 数据或 Safari 目录不可读时，其他受保护目录可读也应判定已授权
+    func testFullDiskAccessCheckerGrantsWhenAnyProtectedProbeIsReadable() {
+        let home = URL(fileURLWithPath: "/Users/example")
+        let messagesPath = "/Users/example/Library/Messages"
+
+        let granted = FullDiskAccessChecker.hasFullDiskAccess(
+            probes: FullDiskAccessChecker.defaultProbes(homeDirectory: home),
+            fileExists: { $0 == messagesPath },
+            canRead: { $0.url.path == messagesPath }
+        )
+
+        XCTAssertTrue(granted)
+    }
+
+    /// 25. 受保护探针存在但均不可读时，应判定尚未授予完全磁盘访问
+    func testFullDiskAccessCheckerDeniesWhenExistingProtectedProbesAreUnreadable() {
+        let home = URL(fileURLWithPath: "/Users/example")
+
+        let granted = FullDiskAccessChecker.hasFullDiskAccess(
+            probes: FullDiskAccessChecker.defaultProbes(homeDirectory: home),
+            fileExists: { path in
+                path == "/Users/example/Library/Safari"
+                    || path == "/Users/example/Library/Messages"
+            },
+            canRead: { _ in false }
+        )
+
+        XCTAssertFalse(granted)
+    }
 }
 
 private final class TestMenuAction: MenuAction {

@@ -210,6 +210,7 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/SharedFolderMonitor.swift \
     Sources/RightClickAssistant/Core/ActionDispatcher.swift \
     Sources/RightClickAssistant/Core/SharedHUDManager.swift \
+    Sources/RightClickAssistant/Core/FullDiskAccessChecker.swift \
     Sources/RightClickAssistant/Core/LaunchServiceManager.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
@@ -234,6 +235,7 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/SharedStorageManager.swift \
     Sources/RightClickAssistant/Core/ActionDispatcher.swift \
     Sources/RightClickAssistant/Core/SharedHUDManager.swift \
+    Sources/RightClickAssistant/Core/FullDiskAccessChecker.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \
