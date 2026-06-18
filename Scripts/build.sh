@@ -173,6 +173,13 @@ if [ -f "Resources/AppIcon.png" ]; then
     sips -z 512 512   "Resources/AppIcon.png" --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null 2>&1 || true
     sips -z 512 512   "Resources/AppIcon.png" --out "$ICONSET_DIR/icon_512x512.png" >/dev/null 2>&1 || true
     sips -z 1024 1024 "Resources/AppIcon.png" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null 2>&1 || true
+
+    if command -v zopflipng >/dev/null; then
+        echo "🗜️ [Build] 使用 zopflipng 优化 AppIcon.iconset 体积..."
+        for icon_png in "$ICONSET_DIR"/*.png; do
+            zopflipng -y -m --lossy_transparent "$icon_png" "$icon_png" >/dev/null 2>&1 || true
+        done
+    fi
     
     if command -v iconutil >/dev/null; then
         iconutil -c icns "$ICONSET_DIR" -o "$BUILD_DIR/AppIcon.icns"
