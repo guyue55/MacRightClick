@@ -165,6 +165,12 @@ public final class FileManageAction: MenuAction {
                 userInfo: nil,
                 deliverImmediately: true
             )
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("guyue.RightClickAssistant.cutStateChanged"),
+                object: nil,
+                userInfo: nil,
+                deliverImmediately: true
+            )
             return true
             
         case .paste:
@@ -339,6 +345,12 @@ extension FileManageAction {
         FileCutClipboard.shared.clear()
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name("guyue.RightClickAssistant.configChanged"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("guyue.RightClickAssistant.cutStateChanged"),
             object: nil,
             userInfo: nil,
             deliverImmediately: true

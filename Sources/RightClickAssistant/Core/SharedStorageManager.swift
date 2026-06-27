@@ -26,7 +26,7 @@ public struct PendingActionLease: Equatable {
 }
 
 /// FinderSync 的「作用范围」配置（产品决策）：
-/// - `.everywhere`：directoryURLs 注册根目录 `/`，所有 Finder 目录均显示菜单。
+/// - `.everywhere`：directoryURLs 注册一组稳定根目录，尽量覆盖所有 Finder 常见路径。
 ///   首次安装的默认值，与同类产品（MacZip / Hidden Bar 等）的"开箱即用"体验一致。
 /// - `.custom`：仅在用户显式加入的目录显示菜单（旧行为，给隐私敏感用户保留）。
 ///
@@ -207,24 +207,58 @@ public final class SharedStorageManager {
             .filter(fileExists)
     }
 
+    /// `.everywhere` 模式下真正写入 FinderSync `directoryURLs` 的稳定根目录集合。
+    ///
+    /// 经验上仅注册 `/` 在部分 Finder 会话、外接卷或受系统管理目录中不够稳定；
+    /// 因此保留 `/` 作为兜底，同时显式注册常见系统根、用户 Home、默认种子目录与已挂载卷。
+    /// 这样仍然保持「所有目录」的产品语义，但不把可靠性押在单个根路径上。
+    public static func everywhereWatchedDirectoryPaths(
+        homePath: String,
+        mountedVolumePaths: [String],
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> [String] {
+        let stableRoots = [
+            "/",
+            "/Applications",
+            "/Users",
+            "/Volumes",
+            "/tmp",
+            "/private/tmp",
+            homePath
+        ]
+
+        let seeds = defaultWatchedDirectoryPaths(homePath: homePath, fileExists: fileExists)
+        let paths = stableRoots + seeds + mountedVolumePaths
+
+        var seen = Set<String>()
+        return paths
+            .map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path }
+            .filter(fileExists)
+            .filter { seen.insert($0).inserted }
+    }
+
     public var watchedDirectoryURLs: [URL] {
         // 单一分发点：作用范围决定 FinderSync 实际看到的目录集合，
         // 让 FinderSync.updateObservedDirectories 不需要知道任何作用范围细节。
         switch watchScope {
         case .everywhere:
-            // FIFinderSyncController.directoryURLs 接受根目录 "/"：
-            // Finder 会把全盘所有目录都路由到本扩展的 menu(for:)。
+            // FIFinderSyncController.directoryURLs 理论上接受根目录 "/"，但真机上仅依赖
+            // "/" 覆盖所有路径并不总是稳定；这里显式补充常见稳定根目录和已挂载卷。
             //
-            // 为什么除了 "/" 还要加上 Desktop/Downloads/Documents 三条「种子目录」：
+            // 为什么还要加上 Desktop/Downloads/Documents 三条「种子目录」：
             // - 全新安装的设备上 Finder 还没看见任何受监控目录 → 不会主动拉起 Extension
             //   → directoryURLs 永远写不进去（chicken-and-egg）。
             // - 用户最常打开的就是这三个目录；只要在其中之一发生 Finder 活动，Extension
-            //   会被立即拉起，而它启动后注册的 [/] 立即向 Finder 全盘生效。
-            // - 这条额外注册对 .everywhere 的语义是无副作用的（"/" 已经覆盖一切）。
+            //   会被立即拉起，而它启动后注册的全量根目录集合立即向 Finder 生效。
             let homePath = getRealHomeDirectory()
-            let seeds = Self.defaultWatchedDirectoryPaths(homePath: homePath)
-                .map { URL(fileURLWithPath: $0) }
-            return [URL(fileURLWithPath: "/")] + seeds
+            let mountedVolumePaths = FileManager.default
+                .mountedVolumeURLs(includingResourceValuesForKeys: nil, options: [.skipHiddenVolumes])?
+                .map(\.path) ?? []
+            return Self.everywhereWatchedDirectoryPaths(
+                homePath: homePath,
+                mountedVolumePaths: mountedVolumePaths
+            )
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
         case .custom:
             let defaultPaths = Self.defaultWatchedDirectoryPaths(homePath: getRealHomeDirectory())
             let paths = getStringArray(forKey: Keys.watchedDirectoryPaths, defaultValue: defaultPaths)

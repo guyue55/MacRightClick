@@ -116,6 +116,8 @@ cat <<EOF > "$APP_BUNDLE/Contents/Info.plist"
     <string>13.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
 </dict>
@@ -212,6 +214,7 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/SharedHUDManager.swift \
     Sources/RightClickAssistant/Core/FullDiskAccessChecker.swift \
     Sources/RightClickAssistant/Core/LaunchServiceManager.swift \
+    Sources/RightClickAssistant/Core/LaunchPresentationPolicy.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \
@@ -236,6 +239,7 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/ActionDispatcher.swift \
     Sources/RightClickAssistant/Core/SharedHUDManager.swift \
     Sources/RightClickAssistant/Core/FullDiskAccessChecker.swift \
+    Sources/RightClickAssistant/Core/LaunchPresentationPolicy.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \

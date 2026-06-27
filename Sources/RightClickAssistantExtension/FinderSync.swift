@@ -5,11 +5,13 @@ import Darwin
 // MARK: - FinderSync 主插件
 @objc(FinderSync)
 class FinderSync: FIFinderSync {
+    private static let cutStateChangedNotification = Notification.Name("guyue.RightClickAssistant.cutStateChanged")
     
     // MARK: - ActionTagMapper (双向唯一整数 Tag 映射表)
     // 使用稳定的整数 tag 传递菜单动作标识，避免依赖 representedObject。
     private static var tagToActionId: [Int: String] = [:]
     private static var nextTag: Int = 1000
+    private var lastCutBadgePaths: Set<String> = []
     
     private static func getTag(for actionId: String) -> Int {
         if let existingTag = tagToActionId.first(where: { $0.value == actionId })?.key {
@@ -98,6 +100,13 @@ class FinderSync: FIFinderSync {
             name: Notification.Name("guyue.RightClickAssistant.configChanged"),
             object: nil
         )
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(cutStateChanged),
+            name: Self.cutStateChangedNotification,
+            object: nil
+        )
         
         // 4. 在插件进程中也初始化默认动作集，以便直接在插件中分发执行
         registerDefaultActionsInExtension()
@@ -128,21 +137,44 @@ class FinderSync: FIFinderSync {
         configuration.addsToRecentItems = false
         // activates 默认为 true 会抢焦点；主 App 是 .accessory，不会有窗口跳出，但还是显式关掉更稳。
         configuration.activates = false
+        configuration.arguments = [LaunchPresentationPolicy.backgroundLaunchArgument]
         NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
     }
     
     @objc private func configChanged() {
         logToSharedContainer("[FinderSync] 收到配置变更，同步刷新内存缓存、监听路径与角标状态")
         updateObservedDirectories()
+        refreshCutBadges()
         
         // 强行刷新监控目录以立即触发生效/清除角标
         let currentURLs = FIFinderSyncController.default().directoryURLs
         FIFinderSyncController.default().directoryURLs = currentURLs
     }
+
+    @objc private func cutStateChanged() {
+        logToSharedContainer("[FinderSync] 收到剪切状态变更，刷新 Finder 角标")
+        refreshCutBadges()
+    }
+
+    private func refreshCutBadges() {
+        let currentPaths = Set(FileCutClipboard.shared.cutURLs.map { $0.standardizedFileURL.path })
+        let controller = FIFinderSyncController.default()
+
+        for path in lastCutBadgePaths.subtracting(currentPaths) {
+            controller.setBadgeIdentifier("", for: URL(fileURLWithPath: path))
+        }
+
+        for path in currentPaths {
+            controller.setBadgeIdentifier("cut", for: URL(fileURLWithPath: path))
+        }
+
+        lastCutBadgePaths = currentPaths
+    }
     
     override func requestBadgeIdentifier(for url: URL) {
-        let cutPaths = FileCutClipboard.shared.cutURLs.map { $0.path }
-        if cutPaths.contains(url.path) {
+        let cutPaths = Set(FileCutClipboard.shared.cutURLs.map { $0.standardizedFileURL.path })
+        let currentPath = url.standardizedFileURL.path
+        if cutPaths.contains(currentPath) {
             FIFinderSyncController.default().setBadgeIdentifier("cut", for: url)
             logToSharedContainer("[FinderSync] 成功在 \(url.lastPathComponent) 上渲染已剪切 'cut' 状态角标", level: .debug)
         } else {

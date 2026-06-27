@@ -438,6 +438,45 @@ final class RightClickAssistantTests: XCTestCase {
 
         XCTAssertFalse(granted)
     }
+
+    func testLaunchPresentationPolicyHidesWindowForBackgroundLaunchWhenSilentLaunchIsEnabled() {
+        let context = LaunchPresentationPolicy.Context(
+            isBackgroundRequest: true,
+            appIsActive: false,
+            appIsFrontmost: false
+        )
+
+        XCTAssertFalse(LaunchPresentationPolicy.shouldShowSettingsWindowOnLaunch(
+            silentLaunchEnabled: true,
+            context: context
+        ))
+    }
+
+    func testLaunchPresentationPolicyShowsWindowForExplicitForegroundLaunchByDefault() {
+        let context = LaunchPresentationPolicy.Context(
+            isBackgroundRequest: false,
+            appIsActive: true,
+            appIsFrontmost: true
+        )
+
+        XCTAssertTrue(LaunchPresentationPolicy.shouldShowSettingsWindowOnLaunch(
+            silentLaunchEnabled: true,
+            context: context
+        ))
+    }
+
+    func testLaunchPresentationPolicyShowsWindowWhenSilentLaunchIsDisabled() {
+        let context = LaunchPresentationPolicy.Context(
+            isBackgroundRequest: false,
+            appIsActive: false,
+            appIsFrontmost: false
+        )
+
+        XCTAssertTrue(LaunchPresentationPolicy.shouldShowSettingsWindowOnLaunch(
+            silentLaunchEnabled: false,
+            context: context
+        ))
+    }
 }
 
 private final class TestMenuAction: MenuAction {

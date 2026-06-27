@@ -30,6 +30,41 @@ final class WatchScopeTests: XCTestCase {
                       ".everywhere 必须返回 / 让 FinderSync 注册全盘 directoryURLs")
     }
 
+    func testEverywhereIncludesHomeDirectoryAsStableFinderSyncRoot() {
+        storage.watchScope = .everywhere
+        let urls = storage.watchedDirectoryURLs.map(\.standardizedFileURL.path)
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+
+        XCTAssertTrue(urls.contains(homePath),
+                      ".everywhere 除了 / 之外还应注册用户 Home，确保文稿等 Home 下目录稳定出现菜单")
+    }
+
+    func testEverywhereStableRootsCoverCommonNonHomeLocations() {
+        let paths = SharedStorageManager.everywhereWatchedDirectoryPaths(
+            homePath: "/Users/tester",
+            mountedVolumePaths: [],
+            fileExists: { ["/", "/Applications", "/Users", "/Volumes", "/tmp", "/private/tmp", "/Users/tester"].contains($0) }
+        )
+
+        XCTAssertTrue(paths.contains("/Applications"),
+                      ".everywhere 应显式覆盖 /Applications，不能只依赖 / 的递归语义")
+        XCTAssertTrue(paths.contains("/Volumes"),
+                      ".everywhere 应显式覆盖 /Volumes，确保外接盘/挂载卷入口能触发 FinderSync")
+        XCTAssertTrue(paths.contains("/Users/tester"),
+                      ".everywhere 应显式覆盖用户 Home")
+    }
+
+    func testEverywhereIncludesMountedVolumes() {
+        let paths = SharedStorageManager.everywhereWatchedDirectoryPaths(
+            homePath: "/Users/tester",
+            mountedVolumePaths: ["/Volumes/WorkDisk", "/Volumes/WorkDisk"],
+            fileExists: { ["/", "/Users", "/Volumes", "/Users/tester", "/Volumes/WorkDisk"].contains($0) }
+        )
+
+        XCTAssertEqual(paths.filter { $0 == "/Volumes/WorkDisk" }.count, 1,
+                       "挂载卷应被加入且去重，保证外接卷路径下右键菜单稳定出现")
+    }
+
     /// .everywhere 时还要把 Desktop/Downloads/Documents 作为「种子目录」一并注册，
     /// 用来打破 chicken-and-egg：全新设备上 Finder 没看见受监控目录就不会拉起 Extension，
     /// 那么写到 directoryURLs 的 "/" 永远到不了 Finder。

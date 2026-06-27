@@ -76,10 +76,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         window.contentView = NSHostingView(rootView: contentView)
         window.orderOut(nil) // 【关键体验优化】：确保主设置窗口初始状态绝对不可见
         
-        // 【关键体验优化】：主程序启动时，默认保持极其安静的托盘挂载状态 (.accessory)
-        // 只有在需要显示 UI 的模态或用户双击图标重开时，才将策略调为 .regular，彻底根治触发右键菜单时强弹出主配置窗口的流氓体验。
+        // 主程序默认保持安静的菜单栏形态；是否展示设置页由启动来源决定。
         NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
+        showSettingsWindowIfNeededForLaunch()
         
         print("[App] 右键助手宿主程序启动并初始化完成 (双保险中介链路就绪)")
         
@@ -279,16 +279,62 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         let aboutItem = NSMenuItem(title: "关于右键助手", action: #selector(showAboutDialog), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
+
+        let silentLaunchItem = NSMenuItem(
+            title: "静默启动",
+            action: #selector(toggleSilentLaunch(_:)),
+            keyEquivalent: ""
+        )
+        silentLaunchItem.target = self
+        silentLaunchItem.state = isSilentLaunchEnabled ? .on : .off
+        menu.addItem(silentLaunchItem)
+
+        menu.addItem(NSMenuItem.separator())
         
         let quitItem = NSMenuItem(title: "退出", action: #selector(terminateApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+    }
+
+    private var isSilentLaunchEnabled: Bool {
+        SharedStorageManager.shared.getBool(
+            forKey: LaunchPresentationPolicy.silentLaunchKey,
+            defaultValue: true
+        )
+    }
+
+    private func showSettingsWindowIfNeededForLaunch() {
+        let context = LaunchPresentationPolicy.context(
+            arguments: CommandLine.arguments,
+            appIsActive: NSApp.isActive,
+            frontmostBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+            ownBundleIdentifier: Bundle.main.bundleIdentifier
+        )
+
+        if LaunchPresentationPolicy.shouldShowSettingsWindowOnLaunch(
+            silentLaunchEnabled: isSilentLaunchEnabled,
+            context: context
+        ) {
+            showSettingsWindow()
+        }
     }
     
     @objc private func showSettingsWindow() {
         // 保持在 accessory 模式（无 Dock 图标），仅将窗口前置。
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func toggleSilentLaunch(_ sender: NSMenuItem) {
+        let newValue = !isSilentLaunchEnabled
+        SharedStorageManager.shared.setBool(newValue, forKey: LaunchPresentationPolicy.silentLaunchKey)
+        sender.state = newValue ? .on : .off
+        SharedHUDManager.show(
+            title: newValue ? "静默启动已启用" : "静默启动已关闭",
+            content: newValue ? "后台拉起时仅保留菜单栏图标" : "下次启动会直接显示设置窗口",
+            iconName: newValue ? "moon.fill" : "macwindow",
+            isSuccess: true
+        )
     }
     
     @objc private func showAboutDialog() {

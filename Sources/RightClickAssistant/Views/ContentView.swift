@@ -100,6 +100,7 @@ public struct ContentView: View {
 // MARK: - A. 新信息架构页面
 struct OverviewSettingsView: View {
     @State private var isLaunchEnabled = false
+    @State private var isSilentLaunchEnabled = true
 
     private var launchEnabledBinding: Binding<Bool> {
         Binding<Bool>(
@@ -146,6 +147,28 @@ struct OverviewSettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
+                    Toggle("静默启动", isOn: Binding(
+                        get: { isSilentLaunchEnabled },
+                        set: { newValue in
+                            isSilentLaunchEnabled = newValue
+                            SharedStorageManager.shared.setBool(
+                                newValue,
+                                forKey: LaunchPresentationPolicy.silentLaunchKey
+                            )
+                            SharedHUDManager.show(
+                                title: newValue ? "静默启动已启用" : "静默启动已关闭",
+                                content: newValue ? "登录和后台拉起时仅保留菜单栏图标" : "下次启动会直接显示设置窗口",
+                                iconName: newValue ? "moon.fill" : "macwindow",
+                                isSuccess: true
+                            )
+                        }
+                    ))
+                    .toggleStyle(.checkbox)
+
+                    Text("用户从启动台或应用程序主动打开时，仍会显示设置窗口。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
                     Divider()
 
                     Toggle("显示成功提示", isOn: Binding(
@@ -184,15 +207,25 @@ struct OverviewSettingsView: View {
         }
         .onAppear {
             isLaunchEnabled = LaunchServiceManager.shared.isEnabled
+            isSilentLaunchEnabled = SharedStorageManager.shared.getBool(
+                forKey: LaunchPresentationPolicy.silentLaunchKey,
+                defaultValue: true
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
             isLaunchEnabled = LaunchServiceManager.shared.isEnabled
+            isSilentLaunchEnabled = SharedStorageManager.shared.getBool(
+                forKey: LaunchPresentationPolicy.silentLaunchKey,
+                defaultValue: true
+            )
         }
     }
 }
 
 struct PermissionsSettingsView: View {
     @State private var hasFullDiskAccess = false
+    @State private var hasLoadedInitialFullDiskAccess = false
+    @State private var didPromptAfterFullDiskAccessGrant = false
     @State private var shouldEnableiCloudMenu = false
     @State private var watchedDirectoryPaths: [String] = []
     @State private var watchScope: WatchScope = .everywhere
@@ -230,12 +263,12 @@ struct PermissionsSettingsView: View {
                         .buttonStyle(.bordered)
 
                         Button("重新检测") {
-                            refresh()
+                            refresh(promptOnFullDiskAccessGrant: true)
                             SharedHUDManager.show(
                                 title: hasFullDiskAccess ? "已授权" : "尚未授权",
                                 content: hasFullDiskAccess
-                                    ? "完全磁盘访问权限已生效"
-                                    : "请在系统设置中勾选「右键助手」，再次点击重新检测",
+                                    ? "完全磁盘访问权限已生效。如右键菜单仍未刷新，请重启 Finder。"
+                                    : "请在系统设置中勾选「右键助手」；若刚授权仍未生效，请退出并重新打开本应用",
                                 isSuccess: hasFullDiskAccess
                             )
                         }
@@ -333,17 +366,19 @@ struct PermissionsSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .onAppear(perform: refresh)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in refresh() }
+        .onAppear { refresh(promptOnFullDiskAccessGrant: false) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            refresh(promptOnFullDiskAccessGrant: true)
+        }
     }
 
-    private func refresh() {
+    private func refresh(promptOnFullDiskAccessGrant: Bool) {
         shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
         watchScope = SharedStorageManager.shared.watchScope
         // UI 永远展示用户的「自定义目录」原始列表（即使当前作用范围是 .everywhere，
         // 切回 .custom 时仍保留之前的自定义配置，避免来回切换丢数据）。
         watchedDirectoryPaths = SharedStorageManager.shared.customWatchedDirectoryPathsForUI
-        checkFullDiskAccess()
+        checkFullDiskAccess(promptOnGrant: promptOnFullDiskAccessGrant)
     }
 
     private func addWatchedDirectory() {
@@ -368,7 +403,7 @@ struct PermissionsSettingsView: View {
 
     private func resetWatchedDirectories() {
         SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
-        refresh()
+        refresh(promptOnFullDiskAccessGrant: false)
         postConfigChanged()
     }
 
@@ -378,8 +413,52 @@ struct PermissionsSettingsView: View {
         postConfigChanged()
     }
 
-    private func checkFullDiskAccess() {
-        hasFullDiskAccess = FullDiskAccessChecker.hasFullDiskAccess()
+    private func checkFullDiskAccess(promptOnGrant: Bool) {
+        let previous = hasFullDiskAccess
+        let current = FullDiskAccessChecker.hasFullDiskAccess()
+        hasFullDiskAccess = current
+
+        defer { hasLoadedInitialFullDiskAccess = true }
+
+        guard promptOnGrant,
+              hasLoadedInitialFullDiskAccess,
+              !previous,
+              current,
+              !didPromptAfterFullDiskAccessGrant else {
+            return
+        }
+
+        didPromptAfterFullDiskAccessGrant = true
+        promptRestartFinderAfterFullDiskAccessGrant()
+    }
+
+    private func promptRestartFinderAfterFullDiskAccessGrant() {
+        let alert = NSAlert()
+        alert.messageText = "完全磁盘访问权限已生效"
+        alert.informativeText = "Finder 扩展可能仍在使用旧的权限和监听状态。建议立即重启 Finder，让右键菜单和文件操作按新权限重新加载。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "重启 Finder")
+        alert.addButton(withTitle: "稍后")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            reloadFinderAfterPermissionChange()
+        }
+    }
+
+    private func reloadFinderAfterPermissionChange() {
+        postConfigChanged()
+        SharedHUDManager.show(
+            title: "正在重启 Finder",
+            content: "右键菜单会在 Finder 重新打开后按新权限刷新",
+            isSuccess: true
+        )
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+            proc.arguments = ["Finder"]
+            try? proc.run()
+        }
     }
 }
 
