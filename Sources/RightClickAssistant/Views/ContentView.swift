@@ -820,7 +820,7 @@ struct DiagnosticsSettingsView: View {
                 )
                 return
             }
-            SharedHUDManager.show(title: "正在重新打开", content: "当前进程即将退出，新进程会重启 Finder", isSuccess: true)
+            SharedHUDManager.show(title: "正在重新打开", content: "Finder 已刷新，当前进程即将退出", isSuccess: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 NSApplication.shared.terminate(nil)
             }
@@ -1482,7 +1482,7 @@ struct ExtensionStatusBanner: View {
                 )
                 return
             }
-            SharedHUDManager.show(title: "正在重新打开", content: "当前进程即将退出，新进程会重启 Finder", isSuccess: true)
+            SharedHUDManager.show(title: "正在重新打开", content: "Finder 已刷新，当前进程即将退出", isSuccess: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 NSApplication.shared.terminate(nil)
             }

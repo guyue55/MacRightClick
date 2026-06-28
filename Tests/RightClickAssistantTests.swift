@@ -573,14 +573,26 @@ final class RightClickAssistantTests: XCTestCase {
     }
 
     func testSystemReloaderCapturesLargeCommandOutputWithoutBlocking() {
-        let output = String(repeating: "x", count: 200_000)
         let result = SystemReloader.runCommand(
-            executablePath: "/bin/echo",
-            arguments: [output]
+            executablePath: "/bin/sh",
+            arguments: ["-c", "/usr/bin/yes x | /usr/bin/head -c 200000"]
         )
 
         XCTAssertTrue(result.isSuccess)
-        XCTAssertEqual(result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines).count, output.count)
+        XCTAssertEqual(result.standardOutput.count, 200_000)
+    }
+
+    func testSystemReloaderTimesOutLongRunningCommand() {
+        let startedAt = Date()
+        let result = SystemReloader.runCommand(
+            executablePath: "/bin/sleep",
+            arguments: ["2"],
+            timeoutSeconds: 0.1
+        )
+
+        XCTAssertFalse(result.isSuccess)
+        XCTAssertTrue(result.errorDescription?.contains("超时") == true)
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 1.5)
     }
 
     func testPluginkitParserDetectsExtensionRegistrationStates() {

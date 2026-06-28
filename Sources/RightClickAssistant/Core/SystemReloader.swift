@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct SystemCommandResult: Equatable {
@@ -40,6 +41,25 @@ public struct FinderExtensionRegistrationOutcome: Equatable {
             && announceResult?.isSuccess == true
             && enableResult?.isSuccess == true
             && restartFinderResult?.isSuccess == true
+    }
+}
+
+private final class CommandOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ newData: Data) {
+        guard !newData.isEmpty else { return }
+        lock.lock()
+        data.append(newData)
+        lock.unlock()
+    }
+
+    var snapshot: Data {
+        lock.lock()
+        let current = data
+        lock.unlock()
+        return current
     }
 }
 
@@ -129,55 +149,61 @@ public enum SystemReloader {
         )
     }
 
-    public static func runCommand(executablePath: String, arguments: [String]) -> SystemCommandResult {
+    public static func runCommand(
+        executablePath: String,
+        arguments: [String],
+        timeoutSeconds: TimeInterval = 10
+    ) -> SystemCommandResult {
         let proc = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
-        let outputLock = NSLock()
-        let errorLock = NSLock()
-        var outputData = Data()
-        var errorData = Data()
+        let outputBuffer = CommandOutputBuffer()
+        let errorBuffer = CommandOutputBuffer()
+        let readGroup = DispatchGroup()
+        let terminationSemaphore = DispatchSemaphore(value: 0)
 
         proc.executableURL = URL(fileURLWithPath: executablePath)
         proc.arguments = arguments
         proc.standardOutput = outputPipe
         proc.standardError = errorPipe
-        outputPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            outputLock.lock()
-            outputData.append(data)
-            outputLock.unlock()
-        }
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            errorLock.lock()
-            errorData.append(data)
-            errorLock.unlock()
+        proc.terminationHandler = { _ in
+            terminationSemaphore.signal()
         }
 
         do {
             try proc.run()
-            proc.waitUntilExit()
-            outputPipe.fileHandleForReading.readabilityHandler = nil
-            errorPipe.fileHandleForReading.readabilityHandler = nil
 
-            let remainingOutput = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let remainingError = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            readGroup.enter()
+            DispatchQueue.global(qos: .utility).async {
+                outputBuffer.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+                readGroup.leave()
+            }
 
-            outputLock.lock()
-            outputData.append(remainingOutput)
-            let finalOutputData = outputData
-            outputLock.unlock()
+            readGroup.enter()
+            DispatchQueue.global(qos: .utility).async {
+                errorBuffer.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
+                readGroup.leave()
+            }
 
-            errorLock.lock()
-            errorData.append(remainingError)
-            let finalErrorData = errorData
-            errorLock.unlock()
+            let waitResult = terminationSemaphore.wait(timeout: .now() + timeoutSeconds)
+            let timedOut = waitResult == .timedOut
+            if timedOut {
+                if proc.isRunning {
+                    proc.terminate()
+                }
+                if terminationSemaphore.wait(timeout: .now() + 1) == .timedOut, proc.isRunning {
+                    kill(proc.processIdentifier, SIGKILL)
+                    _ = terminationSemaphore.wait(timeout: .now() + 1)
+                }
+            }
 
-            let output = String(data: finalOutputData, encoding: .utf8) ?? ""
-            let errorOutput = String(data: finalErrorData, encoding: .utf8) ?? ""
+            _ = readGroup.wait(timeout: .now() + 1)
+
+            let output = String(data: outputBuffer.snapshot, encoding: .utf8) ?? ""
+            let errorOutput = String(data: errorBuffer.snapshot, encoding: .utf8) ?? ""
+            let errorDescription = timedOut
+                ? "命令超时（\(String(format: "%.1f", timeoutSeconds)) 秒）"
+                : nil
 
             let result = SystemCommandResult(
                 executablePath: executablePath,
@@ -185,18 +211,16 @@ public enum SystemReloader {
                 terminationStatus: proc.terminationStatus,
                 standardOutput: output,
                 standardError: errorOutput,
-                errorDescription: nil
+                errorDescription: errorDescription
             )
             if !result.isSuccess {
                 AppLog.error(
-                    "系统命令失败: \(executablePath) \(arguments.joined(separator: " ")), status=\(proc.terminationStatus), stderr=\(errorOutput)",
+                    "系统命令失败: \(executablePath) \(arguments.joined(separator: " ")), status=\(proc.terminationStatus), error=\(errorDescription ?? ""), stderr=\(errorOutput)",
                     category: .ui
                 )
             }
             return result
         } catch {
-            outputPipe.fileHandleForReading.readabilityHandler = nil
-            errorPipe.fileHandleForReading.readabilityHandler = nil
             AppLog.error("无法执行系统命令 \(executablePath): \(error.localizedDescription)", category: .ui)
             return SystemCommandResult(
                 executablePath: executablePath,
