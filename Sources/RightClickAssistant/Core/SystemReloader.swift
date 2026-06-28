@@ -197,25 +197,31 @@ public enum SystemReloader {
                 }
             }
 
-            _ = readGroup.wait(timeout: .now() + 1)
+            let processTerminated = !proc.isRunning
+            if processTerminated {
+                readGroup.wait()
+            } else {
+                _ = readGroup.wait(timeout: .now() + 1)
+            }
 
             let output = String(data: outputBuffer.snapshot, encoding: .utf8) ?? ""
             let errorOutput = String(data: errorBuffer.snapshot, encoding: .utf8) ?? ""
             let errorDescription = timedOut
                 ? "命令超时（\(String(format: "%.1f", timeoutSeconds)) 秒）"
                 : nil
+            let terminationStatus = processTerminated ? proc.terminationStatus : nil
 
             let result = SystemCommandResult(
                 executablePath: executablePath,
                 arguments: arguments,
-                terminationStatus: proc.terminationStatus,
+                terminationStatus: terminationStatus,
                 standardOutput: output,
                 standardError: errorOutput,
                 errorDescription: errorDescription
             )
             if !result.isSuccess {
                 AppLog.error(
-                    "系统命令失败: \(executablePath) \(arguments.joined(separator: " ")), status=\(proc.terminationStatus), error=\(errorDescription ?? ""), stderr=\(errorOutput)",
+                    "系统命令失败: \(executablePath) \(arguments.joined(separator: " ")), status=\(terminationStatus.map { String($0) } ?? "running"), error=\(errorDescription ?? ""), stderr=\(errorOutput)",
                     category: .ui
                 )
             }

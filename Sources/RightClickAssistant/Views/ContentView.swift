@@ -900,6 +900,8 @@ struct AdvancedSettingsView: View {
             )
             .id(refreshID)
 
+            ExternalToolsManagerView()
+
             GroupBox(label: Label("恢复", systemImage: "arrow.counterclockwise")) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -973,6 +975,176 @@ struct AdvancedSettingsView: View {
             content: "动作、收藏、监听目录、提示开关均已重置",
             isSuccess: true
         )
+    }
+}
+
+struct ExternalToolsManagerView: View {
+    @State private var brewPath: String?
+    @State private var installedTools: [ManagedExternalTool: Bool] = [:]
+    @State private var runningTool: ManagedExternalTool?
+    @State private var runningOperation: ExternalToolOperation?
+
+    var body: some View {
+        GroupBox(label: Label("外部工具", systemImage: "hammer")) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("终端与编辑器依赖")
+                            .font(.body)
+                        Text(brewPath == nil
+                             ? "未检测到 Homebrew。安装 Homebrew 后，可在这里直接安装或更新可选工具。"
+                             : "已检测到 Homebrew：\(brewPath ?? "")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    if brewPath == nil {
+                        Button("打开 Homebrew") {
+                            NSWorkspace.shared.open(ExternalToolManager.homebrewWebsiteURL)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("复制安装命令") {
+                            copyHomebrewInstallCommand()
+                        }
+                        .buttonStyle(.bordered)
+                    } else {
+                        Button("重新检测") { refresh() }
+                            .buttonStyle(.bordered)
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(ManagedExternalTool.allCases) { tool in
+                        externalToolRow(tool)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .onAppear { refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            refresh()
+        }
+    }
+
+    private func externalToolRow(_ tool: ManagedExternalTool) -> some View {
+        let isInstalled = installedTools[tool] ?? false
+        let operation: ExternalToolOperation = isInstalled ? .update : .install
+        let isRunning = runningTool == tool
+
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(tool.displayName)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                Text("brew \(operation == .install ? "install" : "upgrade") --cask \(tool.caskName)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            Spacer()
+
+            Text(isInstalled ? "已安装" : "未安装")
+                .font(.caption)
+                .foregroundColor(isInstalled ? .green : .secondary)
+
+            Button(action: { run(operation, for: tool) }) {
+                HStack(spacing: 6) {
+                    if isRunning {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .frame(width: 14, height: 14)
+                    }
+                    Text(isRunning ? "\(runningOperation?.title ?? operation.title)中…" : operation.title)
+                }
+                .frame(minWidth: 72)
+            }
+            .buttonStyle(.bordered)
+            .disabled(brewPath == nil || runningTool != nil)
+        }
+        .padding(.vertical, 5)
+    }
+
+    private func refresh() {
+        brewPath = ExternalToolManager.homebrewExecutablePath()
+        InstalledAppRegistry.shared.invalidateAll()
+        installedTools = Dictionary(
+            uniqueKeysWithValues: ManagedExternalTool.allCases.map { tool in
+                (tool, ExternalToolManager.isInstalled(tool))
+            }
+        )
+    }
+
+    private func copyHomebrewInstallCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(ExternalToolManager.homebrewInstallCommand, forType: .string)
+        SharedHUDManager.show(
+            title: "已复制 Homebrew 安装命令",
+            content: "请在终端中确认后执行",
+            isSuccess: true
+        )
+    }
+
+    private func run(_ operation: ExternalToolOperation, for tool: ManagedExternalTool) {
+        guard let brewPath else {
+            SharedHUDManager.show(
+                title: "未检测到 Homebrew",
+                content: "请先安装 Homebrew 后再安装或更新工具",
+                isSuccess: false
+            )
+            return
+        }
+
+        runningTool = tool
+        runningOperation = operation
+        SharedHUDManager.show(
+            title: "\(operation.title)\(tool.displayName)",
+            content: "Homebrew 正在后台执行，请稍候",
+            isSuccess: true
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = ExternalToolManager.perform(
+                operation: operation,
+                tool: tool,
+                brewExecutablePath: brewPath
+            )
+
+            DispatchQueue.main.async {
+                runningTool = nil
+                runningOperation = nil
+                refresh()
+
+                if outcome.isSuccess {
+                    SharedHUDManager.show(
+                        title: "\(operation.title)完成",
+                        content: "\(tool.displayName) 已处理完成",
+                        isSuccess: true
+                    )
+                } else {
+                    SharedHUDManager.show(
+                        title: "\(operation.title)失败",
+                        content: operationErrorDescription(outcome),
+                        isSuccess: false
+                    )
+                }
+            }
+        }
+    }
+
+    private func operationErrorDescription(_ outcome: ExternalToolOperationOutcome) -> String {
+        let stderr = outcome.commandResult.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !stderr.isEmpty {
+            return String(stderr.prefix(240))
+        }
+        return outcome.commandResult.errorDescription
+            ?? "brew 返回码：\(outcome.commandResult.terminationStatus.map { String($0) } ?? "unknown")"
     }
 }
 

@@ -50,7 +50,7 @@ public enum PermissionRefreshCoordinator {
     }
 
     @discardableResult
-    public static func relaunchAppAndRestartFinder(bundleURL: URL) -> SystemCommandResult {
+    private static func relaunchAppForPermissionRefresh(bundleURL: URL) -> SystemCommandResult {
         SystemReloader.postConfigChanged()
         return SystemReloader.relaunchApp(
             bundleURL: bundleURL,
@@ -69,7 +69,7 @@ public enum PermissionRefreshCoordinator {
             let outcome: ReloadOutcome
             switch choice {
             case .relaunchAppAndRestartFinder:
-                let relaunchResult = relaunchAppAndRestartFinder(bundleURL: bundleURL)
+                let relaunchResult = relaunchAppForPermissionRefresh(bundleURL: bundleURL)
                 let restartResult = relaunchResult.isSuccess ? restartFinderOnly() : nil
                 outcome = ReloadOutcome(
                     choice: choice,

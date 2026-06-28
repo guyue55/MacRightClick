@@ -6,6 +6,21 @@
 
 ---
 
+## Unreleased
+
+### Added
+
+- **tools**: 新增「高级 -> 外部工具」管理入口，检测 Homebrew 后可通过 Homebrew Cask 安装或更新 iTerm2、Warp、Visual Studio Code、Sublime Text、Cursor。
+
+### Fixed
+
+- **system-command**: 系统命令执行器在进程退出后完整等待 stdout/stderr 管道读完，避免 `pluginkit` / `brew` 等命令结果被截断。
+- **permissions**: 收紧权限刷新协调器的公开 API，避免“重新打开 App”步骤被误用为完整的“重新打开并重启 Finder”流程。
+
+### Documentation
+
+- **readme**: 同步中文与英文 README 的外部工具安装/更新说明，并明确不会自动执行 Homebrew 远程安装脚本。
+
 ## v1.1.1 — 2026-06-18
 
 ### Fixed

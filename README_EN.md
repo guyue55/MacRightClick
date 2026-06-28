@@ -27,6 +27,7 @@ The app uses a **Distributed Signal + BSD kqueue (DispatchSource)** queue-based 
 
 - 🚀 **Queued Action Dispatch**: Every click writes an independent UUID event file that the host app consumes in order, avoiding overwrite problems from a single pending file.
 - 🧭 **Direct Top-Level Menu Layout**: Enabled and currently available actions appear directly in the Finder top-level context menu by default, with favorites pinned first. You can still switch back to the grouped submenu layout.
+- 🧩 **External Tool Install & Update**: Settings -> Advanced -> External Tools detects Homebrew and can install or update optional terminal/editor apps via `brew install --cask` / `brew upgrade --cask`, including iTerm2, Warp, VS Code, Sublime Text, and Cursor.
 - 🔒 **Clear Shared Channel**: The current website distribution route uses the extension sandbox intermediary directory so Ad-hoc and Developer ID builds share the same path behavior. Queue-based action files plus dual wake-up signals avoid sandboxed DistributedNotification `userInfo` stripping. A future Mac App Store route should switch to formal App Groups and security-scoped access.
 - 🎨 **Non-Blocking Glassmorphism HUD**: Abandoned traditional blocking synchronous modal dialogs. It features a custom non-modal floating notification panel (`NSPanel`) designed with native macOS vibrancy (acrylic blur), rounded corners, fade micro-animations, and a 2.5s automatic fade-out.
 - 🦁 **Modern SMAppService Login Item Launch**: Uses the macOS 13+ `SMAppService` API to register login items. Users can manage it in "System Settings -> General -> Login Items".
@@ -56,6 +57,7 @@ The app uses a **Distributed Signal + BSD kqueue (DispatchSource)** queue-based 
 
 > [!NOTE]
 > This matrix lists the 28 core actions registered in code. To keep the default menu quiet and safe, some actions are off by default or hidden dynamically by context: JSON/CSV/HTML/Office file creation, non-system terminals/editors, MD5, image conversion, and advanced actions can be enabled in the Actions page as needed. Terminal/editor actions are also filtered by whether the corresponding app is installed locally.
+> To install or update iTerm2, Warp, VS Code, Sublime Text, or Cursor, use Settings -> Advanced -> External Tools. If Homebrew is not installed, the app offers the Homebrew website and official install command copy action, but it does not execute remote install scripts automatically.
 
 ---
 
@@ -209,11 +211,29 @@ Since this is an open-source project compiled with local Ad-Hoc code signatures 
 * **Legacy compatibility**: Older builds used to append to `~/Library/Containers/<extBundle>/Data/Library/Logs/extension.log`. This file is no longer written; if it still exists on your machine, the Settings → Diagnostics page provides an "Export legacy log (if any)" button that reveals it in Finder.
 * **Verbose debug logging**: Off by default. Enable it in Settings → Diagnostics → "Enable verbose debug logging" to make `.debug` entries (menu rendering, path monitoring, action filtering) flow into OSLog.
 
+### Q5: Can the app install or update external tools used by right-click actions?
+Yes. Open Settings -> Advanced -> External Tools. The app checks common Homebrew paths:
+
+```text
+/opt/homebrew/bin/brew
+/usr/local/bin/brew
+```
+
+When `brew` is available, you can install or update optional terminal/editor tools used by right-click actions: iTerm2, Warp, Visual Studio Code, Sublime Text, and Cursor. Commands are executed through Homebrew Cask:
+
+```bash
+brew install --cask visual-studio-code
+brew upgrade --cask iterm2
+```
+
+If Homebrew is not detected, the app only provides a Homebrew website shortcut and a copy action for the official install command. It does not execute remote install scripts without user confirmation.
+
 ### Privacy And Security
 
 - The project contains no ads and does not actively collect or upload usage data.
 - Detailed debug logging is off by default. When enabled, logs may include menu rendering, watched path, and action filtering details; use it only for troubleshooting.
 - High-risk actions such as permanent deletion, cross-directory copy/move, and hidden-file toggling are off by default and require confirmation before execution.
+- External tool installation and updates only run local Homebrew commands after the user clicks an explicit button. The app does not auto-install Homebrew or silently install third-party apps in the background.
 - Website release builds should use Developer ID, Hardened Runtime, Apple notarization, and stapled tickets for both `.app` and `.dmg` artifacts.
 
 ---

@@ -25,6 +25,7 @@
 
 - 🚀 **队列化动作消费**：右键点击会写入独立 UUID 事件文件，宿主 App 按顺序消费，避免连续点击覆盖单个 pending 文件。
 - 🧭 **一级菜单直接展示**：默认将已启用且当前可用的动作直接铺在 Finder 右键一级菜单中，收藏动作置顶；也可切回按分类显示的二级菜单模式。
+- 🧩 **外部工具安装与更新**：在「高级 -> 外部工具」中检测 Homebrew，并可直接通过 `brew install --cask` / `brew upgrade --cask` 安装或更新 iTerm2、Warp、VS Code、Sublime Text、Cursor 等可选终端/编辑器。
 - 🔒 **清晰的共享通道**：当前官网分发路线使用扩展沙盒中介目录保持 Ad-hoc 与 Developer ID 环境路径一致；通过队列化数据中介与双通道信号机制，规避强沙盒下 DistributedNotification `userInfo` 被剥离的问题。若未来切换 Mac App Store，应改为正式 App Group 与 security-scoped access。
 - 🎨 **非阻塞磨砂玻璃 HUD**：彻底弃用传统的同步阻塞弹窗，独创实现了带有原生 macOS 磨砂玻璃、圆角卡片、淡入淡出微动画、2.5 秒自动关闭的非模态 `NSPanel` 浮动通知面板（HUD），不强占系统焦点，体验极其优雅。
 - 🦁 **现代 SMAppService 登录项自启**：依托 macOS 13+ `SMAppService` API 注册登录项。用户可在系统的“系统设置 -> 通用 -> 登录项”中管理。
@@ -54,6 +55,7 @@
 
 > [!NOTE]
 > 这里列的是代码中注册的 28 个核心动作能力。为降低默认菜单噪音和风险，部分动作默认关闭或按上下文动态隐藏：JSON/CSV/HTML/Office 新建项、非系统终端/编辑器、MD5、图片转换以及高级动作可在「动作」页按需开启；终端/编辑器类还会根据本机是否安装对应 App 自动过滤。
+> 如需安装或更新 iTerm2、Warp、VS Code、Sublime Text、Cursor，可在「高级 -> 外部工具」中使用 Homebrew Cask 管理；若尚未安装 Homebrew，App 会提供官网入口与官方安装命令复制，不会擅自执行远程安装脚本。
 
 ---
 
@@ -207,11 +209,29 @@ Mac App Store 不是当前默认路线。若未来切换到 Mac App Store，请�
 * **旧版兼容**：早期版本曾把日志追加到 `~/Library/Containers/<extBundle>/Data/Library/Logs/extension.log`。本版本起该文件不再被追加；如本机仍存在旧文件，可在「设置 → 诊断」点「导出旧日志（如有）」一键定位。
 * **详细调试日志**：默认关闭。在「设置 → 诊断 → 启用详细调试日志」打开后，会让 `.debug` 级别走 OSLog 记录菜单渲染、路径监听等细节。
 
+### Q5: 能否直接安装或更新右键菜单依赖的外部工具？
+可以。进入「设置 -> 高级 -> 外部工具」，App 会检测常见 Homebrew 路径：
+
+```text
+/opt/homebrew/bin/brew
+/usr/local/bin/brew
+```
+
+检测到 `brew` 后，可直接安装或更新终端/编辑器类右键动作使用的可选工具：iTerm2、Warp、Visual Studio Code、Sublime Text、Cursor。执行命令采用 Homebrew Cask：
+
+```bash
+brew install --cask visual-studio-code
+brew upgrade --cask iterm2
+```
+
+如果未检测到 Homebrew，App 只提供打开 Homebrew 官网和复制官方安装命令的入口，避免未经用户确认直接执行远程脚本。
+
 ### 隐私与安全
 
 - 项目不包含广告，也不会主动收集或上传使用数据。
 - 详细调试日志默认关闭。开启后，日志可能包含菜单渲染、路径监听和动作过滤信息，请仅在排查问题时使用。
 - 高风险动作（永久删除、跨目录复制/移动、切换隐藏文件）默认关闭，并在执行前显示确认。
+- 外部工具安装/更新仅在用户点击按钮后执行本机 Homebrew 命令；不会自动安装 Homebrew，也不会后台静默安装第三方 App。
 - 正式站外发布版应使用 Developer ID、Hardened Runtime、Apple notarization，并对 `.app` 与 `.dmg` 执行 stapler 附票。
 
 ---

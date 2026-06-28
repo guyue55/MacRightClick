@@ -699,6 +699,64 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(unregisteredAndDenied.recommendedRepairAction, .registerExtension)
         XCTAssertEqual(enabledButNeedsFinderRestartAndDenied.recommendedRepairAction, .restartFinder)
     }
+
+    func testExternalToolManagerFindsHomebrewPathInPriorityOrder() {
+        let path = ExternalToolManager.homebrewExecutablePath { candidate in
+            candidate == "/usr/local/bin/brew"
+        }
+
+        XCTAssertEqual(path, "/usr/local/bin/brew")
+    }
+
+    func testExternalToolManagerBuildsHomebrewCaskCommands() {
+        let install = ExternalToolManager.command(
+            for: .install,
+            tool: .visualStudioCode,
+            brewExecutablePath: "/opt/homebrew/bin/brew"
+        )
+        let update = ExternalToolManager.command(
+            for: .update,
+            tool: .iterm2,
+            brewExecutablePath: "/opt/homebrew/bin/brew"
+        )
+
+        XCTAssertEqual(install.executablePath, "/opt/homebrew/bin/brew")
+        XCTAssertEqual(install.arguments, ["install", "--cask", "visual-studio-code"])
+        XCTAssertEqual(update.arguments, ["upgrade", "--cask", "iterm2"])
+    }
+
+    func testManagedExternalToolsMapToTerminalEditorApps() {
+        XCTAssertEqual(ManagedExternalTool.iterm2.bundleIdentifier, TerminalEditorType.iterm2.bundleIdentifier)
+        XCTAssertEqual(ManagedExternalTool.warp.bundleIdentifier, TerminalEditorType.warp.bundleIdentifier)
+        XCTAssertEqual(ManagedExternalTool.visualStudioCode.bundleIdentifier, TerminalEditorType.vscode.bundleIdentifier)
+        XCTAssertEqual(ManagedExternalTool.sublimeText.bundleIdentifier, TerminalEditorType.sublime.bundleIdentifier)
+        XCTAssertEqual(ManagedExternalTool.cursor.bundleIdentifier, TerminalEditorType.cursor.bundleIdentifier)
+    }
+
+    func testExternalToolOperationOutcomeReflectsCommandStatus() {
+        let success = ExternalToolOperationOutcome(
+            operation: .install,
+            tool: .iterm2,
+            commandResult: SystemCommandResult(
+                executablePath: "/opt/homebrew/bin/brew",
+                arguments: ["install", "--cask", "iterm2"],
+                terminationStatus: 0
+            )
+        )
+        let failure = ExternalToolOperationOutcome(
+            operation: .update,
+            tool: .warp,
+            commandResult: SystemCommandResult(
+                executablePath: "/opt/homebrew/bin/brew",
+                arguments: ["upgrade", "--cask", "warp"],
+                terminationStatus: 1,
+                standardError: "Error"
+            )
+        )
+
+        XCTAssertTrue(success.isSuccess)
+        XCTAssertFalse(failure.isSuccess)
+    }
 }
 
 private final class TestMenuAction: MenuAction {
