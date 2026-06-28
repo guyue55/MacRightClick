@@ -80,6 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
         showSettingsWindowIfNeededForLaunch()
+        handlePermissionRefreshLaunchIfNeeded()
         
         print("[App] 右键助手宿主程序启动并初始化完成 (双保险中介链路就绪)")
         
@@ -304,6 +305,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     }
 
     private func showSettingsWindowIfNeededForLaunch() {
+        evaluateLaunchPresentation()
+
+        // LSUIElement app 在 didFinishLaunching 时可能还没来得及成为 active/frontmost。
+        // 延迟做一次二次判断，避免用户从启动台/Applications 主动打开却看不到窗口。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.evaluateLaunchPresentation()
+        }
+    }
+
+    private func evaluateLaunchPresentation() {
+        guard !window.isVisible else { return }
+
         let context = LaunchPresentationPolicy.context(
             arguments: CommandLine.arguments,
             appIsActive: NSApp.isActive,
@@ -316,6 +329,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             context: context
         ) {
             showSettingsWindow()
+        }
+    }
+
+    private func handlePermissionRefreshLaunchIfNeeded() {
+        guard CommandLine.arguments.contains(LaunchPresentationPolicy.permissionRefreshArgument) else {
+            return
+        }
+
+        SystemReloader.postConfigChanged()
+        SharedHUDManager.show(
+            title: "正在刷新 Finder",
+            content: "已重新打开右键助手，正在让 Finder 按新权限加载右键菜单",
+            isSuccess: true
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = SystemReloader.restartFinder()
+            DispatchQueue.main.async {
+                guard !result.isSuccess else { return }
+                SharedHUDManager.show(
+                    title: "Finder 重启失败",
+                    content: result.errorDescription ?? "请手动重启 Finder 或重新登录后再试",
+                    isSuccess: false
+                )
+            }
         }
     }
     

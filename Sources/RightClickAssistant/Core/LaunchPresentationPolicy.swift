@@ -7,15 +7,27 @@ import Foundation
 /// small pure type makes the AppKit lifecycle easier to reason about and test.
 public enum LaunchPresentationPolicy {
     public static let backgroundLaunchArgument = "--rightclickassistant-background"
+    public static let userOpenArgument = "--rightclickassistant-user-open"
+    public static let permissionRefreshArgument = "--rightclickassistant-permission-refresh"
     public static let silentLaunchKey = "silent_launch_enabled"
 
     public struct Context: Equatable {
         public let isBackgroundRequest: Bool
+        public let isUserOpenRequest: Bool
+        public let isPermissionRefreshRequest: Bool
         public let appIsActive: Bool
         public let appIsFrontmost: Bool
 
-        public init(isBackgroundRequest: Bool, appIsActive: Bool, appIsFrontmost: Bool) {
+        public init(
+            isBackgroundRequest: Bool,
+            isUserOpenRequest: Bool = false,
+            isPermissionRefreshRequest: Bool = false,
+            appIsActive: Bool,
+            appIsFrontmost: Bool
+        ) {
             self.isBackgroundRequest = isBackgroundRequest
+            self.isUserOpenRequest = isUserOpenRequest
+            self.isPermissionRefreshRequest = isPermissionRefreshRequest
             self.appIsActive = appIsActive
             self.appIsFrontmost = appIsFrontmost
         }
@@ -29,6 +41,8 @@ public enum LaunchPresentationPolicy {
     ) -> Context {
         Context(
             isBackgroundRequest: arguments.contains(backgroundLaunchArgument),
+            isUserOpenRequest: arguments.contains(userOpenArgument),
+            isPermissionRefreshRequest: arguments.contains(permissionRefreshArgument),
             appIsActive: appIsActive,
             appIsFrontmost: ownBundleIdentifier != nil && frontmostBundleIdentifier == ownBundleIdentifier
         )
@@ -40,6 +54,9 @@ public enum LaunchPresentationPolicy {
     ) -> Bool {
         if context.isBackgroundRequest {
             return false
+        }
+        if context.isUserOpenRequest || context.isPermissionRefreshRequest {
+            return true
         }
         if !silentLaunchEnabled {
             return true

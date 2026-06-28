@@ -1,6 +1,53 @@
 import SwiftUI
 import FinderSync
 
+private let rightClickFinderExtensionBundleIdentifier = "guyue.RightClickAssistant.Extension"
+
+private func openFinderExtensionSettings() {
+    if #available(macOS 13.0, *),
+       let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
+        NSWorkspace.shared.open(url)
+    } else {
+        FIFinderSyncController.showExtensionManagementInterface()
+    }
+}
+
+private func makeRightClickMenuHealthSnapshot(
+    finderSyncControllerEnabled: Bool = FIFinderSyncController.isExtensionEnabled
+) -> RightClickMenuHealthSnapshot {
+    let query = SystemReloader.queryFinderExtension(bundleIdentifier: rightClickFinderExtensionBundleIdentifier)
+    let pluginKitState = FinderExtensionDiagnostics.registrationState(
+        pluginKitOutput: query.standardOutput,
+        commandSucceeded: query.isSuccess,
+        bundleIdentifier: rightClickFinderExtensionBundleIdentifier
+    )
+
+    return FinderExtensionDiagnostics.makeSnapshot(
+        fullDiskAccessGranted: FullDiskAccessChecker.hasFullDiskAccess(),
+        finderSyncControllerEnabled: finderSyncControllerEnabled,
+        pluginKitState: pluginKitState,
+        watchScope: SharedStorageManager.shared.watchScope,
+        observedPathCount: SharedStorageManager.shared.watchedDirectoryURLs.count,
+        pendingActionCount: SharedStorageManager.shared.pendingActionCount,
+        failedActionCount: SharedStorageManager.shared.failedActionCount
+    )
+}
+
+private func showFinderExtensionRegistrationOutcome(_ outcome: FinderExtensionRegistrationOutcome) {
+    if outcome.isSuccess {
+        SharedHUDManager.show(
+            title: "注册成功",
+            content: "Finder 已重启，右键菜单会按最新扩展状态加载",
+            isSuccess: true
+        )
+    } else {
+        SharedHUDManager.show(
+            title: "注册失败",
+            content: outcome.errorDescription ?? "请打开扩展设置手动启用右键助手扩展",
+            isSuccess: false
+        )
+    }
+}
 
 /// 侧边栏导航条目
 enum SidebarItem: String, CaseIterable, Identifiable {
@@ -226,6 +273,7 @@ struct PermissionsSettingsView: View {
     @State private var hasFullDiskAccess = false
     @State private var hasLoadedInitialFullDiskAccess = false
     @State private var didPromptAfterFullDiskAccessGrant = false
+    @State private var shouldShowManualRelaunchFallback = false
     @State private var shouldEnableiCloudMenu = false
     @State private var watchedDirectoryPaths: [String] = []
     @State private var watchScope: WatchScope = .everywhere
@@ -267,12 +315,37 @@ struct PermissionsSettingsView: View {
                             SharedHUDManager.show(
                                 title: hasFullDiskAccess ? "已授权" : "尚未授权",
                                 content: hasFullDiskAccess
-                                    ? "完全磁盘访问权限已生效。如右键菜单仍未刷新，请重启 Finder。"
-                                    : "请在系统设置中勾选「右键助手」；若刚授权仍未生效，请退出并重新打开本应用",
+                                    ? "完全磁盘访问权限已生效。如右键菜单仍未刷新，请重新打开应用并重启 Finder。"
+                                    : "如果刚刚已授权但尚未生效，请使用下方修复按钮重新打开并重启 Finder",
                                 isSuccess: hasFullDiskAccess
                             )
                         }
                         .buttonStyle(.bordered)
+                    }
+
+                    if shouldShowManualRelaunchFallback {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(
+                                "如果刚刚已在系统设置授权，请重新打开右键助手并重启 Finder",
+                                systemImage: "arrow.clockwise.circle.fill"
+                            )
+                            .font(.caption)
+                            .foregroundColor(.orange)
+
+                            HStack(spacing: 10) {
+                                Button("重新打开并重启 Finder") {
+                                    relaunchAppAndRestartFinderAfterPermissionChange()
+                                }
+                                .buttonStyle(.borderedProminent)
+
+                                Button("仅重启 Finder") {
+                                    restartFinderAfterPermissionChange()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
                     }
                 }
                 .padding(.vertical, 8)
@@ -418,13 +491,23 @@ struct PermissionsSettingsView: View {
         let current = FullDiskAccessChecker.hasFullDiskAccess()
         hasFullDiskAccess = current
 
+        if current {
+            shouldShowManualRelaunchFallback = false
+        } else if promptOnGrant && hasLoadedInitialFullDiskAccess {
+            shouldShowManualRelaunchFallback = PermissionRefreshCoordinator
+                .shouldOfferManualRelaunchFallback(currentFullDiskAccess: current)
+        }
+
+        let shouldPrompt = PermissionRefreshCoordinator.shouldPromptAfterGrant(
+            previous: previous,
+            current: current,
+            hasLoadedInitialState: hasLoadedInitialFullDiskAccess,
+            didPrompt: didPromptAfterFullDiskAccessGrant
+        )
+
         defer { hasLoadedInitialFullDiskAccess = true }
 
-        guard promptOnGrant,
-              hasLoadedInitialFullDiskAccess,
-              !previous,
-              current,
-              !didPromptAfterFullDiskAccessGrant else {
+        guard promptOnGrant, shouldPrompt else {
             return
         }
 
@@ -435,69 +518,120 @@ struct PermissionsSettingsView: View {
     private func promptRestartFinderAfterFullDiskAccessGrant() {
         let alert = NSAlert()
         alert.messageText = "完全磁盘访问权限已生效"
-        alert.informativeText = "Finder 扩展可能仍在使用旧的权限和监听状态。建议立即重启 Finder，让右键菜单和文件操作按新权限重新加载。"
+        alert.informativeText = "macOS 可能不会把新权限热更新给已运行的主程序和 Finder 扩展。建议重新打开右键助手并重启 Finder，让右键菜单和文件操作按新权限加载。"
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "重启 Finder")
+        alert.addButton(withTitle: "重新打开并重启 Finder")
+        alert.addButton(withTitle: "仅重启 Finder")
         alert.addButton(withTitle: "稍后")
 
-        if alert.runModal() == .alertFirstButtonReturn {
-            reloadFinderAfterPermissionChange()
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            relaunchAppAndRestartFinderAfterPermissionChange()
+        case .alertSecondButtonReturn:
+            restartFinderAfterPermissionChange()
+        default:
+            break
         }
     }
 
-    private func reloadFinderAfterPermissionChange() {
-        postConfigChanged()
+    private func relaunchAppAndRestartFinderAfterPermissionChange() {
+        SharedHUDManager.show(
+            title: "正在重新打开",
+            content: "正在启动新进程，随后会让 Finder 按新权限刷新",
+            isSuccess: true
+        )
+
+        PermissionRefreshCoordinator.performReload(
+            choice: .relaunchAppAndRestartFinder,
+            bundleURL: Bundle.main.bundleURL
+        ) { outcome in
+            guard outcome.isSuccess else {
+                SharedHUDManager.show(
+                    title: "重新打开失败",
+                    content: outcome.relaunchResult?.errorDescription
+                        ?? "请手动退出并重新打开右键助手，然后重启 Finder",
+                    isSuccess: false
+                )
+                return
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+
+    private func restartFinderAfterPermissionChange() {
         SharedHUDManager.show(
             title: "正在重启 Finder",
             content: "右键菜单会在 Finder 重新打开后按新权限刷新",
             isSuccess: true
         )
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-            proc.arguments = ["Finder"]
-            try? proc.run()
+        PermissionRefreshCoordinator.performReload(
+            choice: .restartFinderOnly,
+            bundleURL: Bundle.main.bundleURL
+        ) { outcome in
+            if !outcome.isSuccess {
+                SharedHUDManager.show(
+                    title: "Finder 重启失败",
+                    content: outcome.restartFinderResult?.errorDescription
+                        ?? "请手动重启 Finder 或重新登录后再试",
+                    isSuccess: false
+                )
+            }
         }
     }
 }
 
 struct DiagnosticsSettingsView: View {
-    @State private var isExtensionEnabled = false
+    @State private var snapshot: RightClickMenuHealthSnapshot?
     @State private var isDebugLoggingEnabled = false
-    @State private var pendingCount = 0
-    @State private var failedCount = 0
+    @State private var isRepairRunning = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             GroupBox(label: Label("状态", systemImage: "waveform.path.ecg")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Label(isExtensionEnabled ? "Finder 扩展已启用" : "Finder 扩展未启用", systemImage: isExtensionEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundColor(isExtensionEnabled ? .green : .orange)
-                        Spacer()
-                        Button("重新检测") {
-                            refresh()
+                    if let snapshot {
+                        HStack {
+                            Label(healthTitle(snapshot), systemImage: healthIcon(snapshot))
+                                .foregroundColor(healthColor(snapshot))
+                            Spacer()
+                            Button("重新检测") { refresh() }
                         }
-                    }
 
-                    HStack(spacing: 16) {
-                        Label("待处理: \(pendingCount)", systemImage: "tray")
-                            .foregroundColor(pendingCount > 0 ? .accentColor : .secondary)
-                        Label("失败: \(failedCount)", systemImage: "tray.and.arrow.down")
-                            .foregroundColor(failedCount > 0 ? .red : .secondary)
-                    }
-                    .font(.callout)
+                        Divider()
 
-                    Button("打开扩展设置") {
-                        if #available(macOS 13.0, *),
-                           let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
-                            NSWorkspace.shared.open(url)
-                        } else {
-                            FIFinderSyncController.showExtensionManagementInterface()
+                        VStack(alignment: .leading, spacing: 8) {
+                            diagnosticRow(
+                                title: "完全磁盘访问",
+                                value: snapshot.fullDiskAccessState == .granted ? "已授权" : "尚未授权",
+                                isHealthy: snapshot.fullDiskAccessState == .granted
+                            )
+                            diagnosticRow(
+                                title: "Finder 扩展注册",
+                                value: extensionStateTitle(snapshot.finderExtensionState),
+                                isHealthy: snapshot.finderExtensionState == .enabled
+                            )
+                            diagnosticRow(
+                                title: "右键菜单作用范围",
+                                value: snapshot.watchScope == .everywhere
+                                    ? "所有目录，监听 \(snapshot.observedPathCount) 个入口"
+                                    : "自定义目录，监听 \(snapshot.observedPathCount) 个入口",
+                                isHealthy: snapshot.observedPathCount > 0
+                            )
+                            diagnosticRow(
+                                title: "动作队列",
+                                value: "待处理 \(snapshot.pendingActionCount)，失败 \(snapshot.failedActionCount)",
+                                isHealthy: snapshot.failedActionCount == 0
+                            )
                         }
+
+                        repairButtons(snapshot)
+                    } else {
+                        ProgressView("正在检测右键菜单状态…")
                     }
-                    .buttonStyle(.borderedProminent)
                 }
                 .padding(.vertical, 8)
             }
@@ -542,8 +676,8 @@ struct DiagnosticsSettingsView: View {
                             refresh()
                             SharedHUDManager.show(
                                 title: "诊断完成",
-                                content: isExtensionEnabled ? "Finder 扩展已启用" : "Finder 扩展未启用",
-                                isSuccess: isExtensionEnabled
+                                content: snapshot.map { healthTitle($0) } ?? "正在检测右键菜单状态",
+                                isSuccess: snapshot?.healthLevel == .healthy
                             )
                         }
                     }
@@ -556,10 +690,184 @@ struct DiagnosticsSettingsView: View {
     }
 
     private func refresh() {
-        isExtensionEnabled = FIFinderSyncController.isExtensionEnabled
         isDebugLoggingEnabled = SharedStorageManager.shared.isDebugLoggingEnabled
-        pendingCount = SharedStorageManager.shared.pendingActionCount
-        failedCount = SharedStorageManager.shared.failedActionCount
+        let finderSyncEnabled = FIFinderSyncController.isExtensionEnabled
+        DispatchQueue.global(qos: .userInitiated).async {
+            let nextSnapshot = makeRightClickMenuHealthSnapshot(
+                finderSyncControllerEnabled: finderSyncEnabled
+            )
+            DispatchQueue.main.async {
+                snapshot = nextSnapshot
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func diagnosticRow(title: String, value: String, isHealthy: Bool) -> some View {
+        HStack {
+            Label(title, systemImage: isHealthy ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundColor(isHealthy ? .green : .orange)
+            Spacer()
+            Text(value)
+                .foregroundColor(.secondary)
+        }
+        .font(.callout)
+    }
+
+    @ViewBuilder
+    private func repairButtons(_ snapshot: RightClickMenuHealthSnapshot) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                repairButtonRow
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Button("一键注册扩展") { registerExtension() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isRepairRunning)
+
+                    Button("重启 Finder") { restartFinder() }
+                        .buttonStyle(.bordered)
+                        .disabled(isRepairRunning)
+                }
+                HStack(spacing: 10) {
+                    Button("重新打开并重启 Finder") { relaunchAppAndRestartFinder() }
+                        .buttonStyle(.bordered)
+                        .disabled(isRepairRunning)
+
+                    Button("打开扩展设置") { openFinderExtensionSettings() }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+
+        if snapshot.recommendedRepairAction != .none {
+            Text(repairHint(snapshot.recommendedRepairAction))
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var repairButtonRow: some View {
+        Group {
+            Button("一键注册扩展") { registerExtension() }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRepairRunning)
+
+            Button("重启 Finder") { restartFinder() }
+                .buttonStyle(.bordered)
+                .disabled(isRepairRunning)
+
+            Button("重新打开并重启 Finder") { relaunchAppAndRestartFinder() }
+                .buttonStyle(.bordered)
+                .disabled(isRepairRunning)
+
+            Button("打开扩展设置") { openFinderExtensionSettings() }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private func registerExtension() {
+        isRepairRunning = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = SystemReloader.registerFinderExtension(appBundleURL: Bundle.main.bundleURL)
+            DispatchQueue.main.async {
+                isRepairRunning = false
+                showFinderExtensionRegistrationOutcome(outcome)
+                refresh()
+            }
+        }
+    }
+
+    private func restartFinder() {
+        isRepairRunning = true
+        PermissionRefreshCoordinator.performReload(
+            choice: .restartFinderOnly,
+            bundleURL: Bundle.main.bundleURL
+        ) { outcome in
+            isRepairRunning = false
+            if outcome.isSuccess {
+                SharedHUDManager.show(title: "Finder 已重启", content: "右键菜单会按最新状态加载", isSuccess: true)
+            } else {
+                SharedHUDManager.show(
+                    title: "Finder 重启失败",
+                    content: outcome.restartFinderResult?.errorDescription ?? "请手动重启 Finder 或重新登录后再试",
+                    isSuccess: false
+                )
+            }
+            refresh()
+        }
+    }
+
+    private func relaunchAppAndRestartFinder() {
+        isRepairRunning = true
+        PermissionRefreshCoordinator.performReload(
+            choice: .relaunchAppAndRestartFinder,
+            bundleURL: Bundle.main.bundleURL
+        ) { outcome in
+            isRepairRunning = false
+            guard outcome.isSuccess else {
+                SharedHUDManager.show(
+                    title: "重新打开失败",
+                    content: outcome.relaunchResult?.errorDescription ?? "请手动退出并重新打开右键助手",
+                    isSuccess: false
+                )
+                return
+            }
+            SharedHUDManager.show(title: "正在重新打开", content: "当前进程即将退出，新进程会重启 Finder", isSuccess: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+
+    private func healthTitle(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        switch snapshot.healthLevel {
+        case .healthy: return "右键菜单状态正常"
+        case .warning: return "右键菜单需要刷新"
+        case .critical: return "右键菜单需要修复"
+        }
+    }
+
+    private func healthIcon(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        switch snapshot.healthLevel {
+        case .healthy: return "checkmark.circle.fill"
+        case .warning: return "arrow.clockwise.circle.fill"
+        case .critical: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func healthColor(_ snapshot: RightClickMenuHealthSnapshot) -> Color {
+        switch snapshot.healthLevel {
+        case .healthy: return .green
+        case .warning: return .orange
+        case .critical: return .red
+        }
+    }
+
+    private func extensionStateTitle(_ state: FinderExtensionRegistrationState) -> String {
+        switch state {
+        case .enabled: return "已启用"
+        case .registeredButNotEnabled: return "已注册但未启用"
+        case .notRegistered: return "未注册"
+        case .unknown: return "无法确认"
+        }
+    }
+
+    private func repairHint(_ action: RecommendedRepairAction) -> String {
+        switch action {
+        case .none:
+            return "当前无需修复。"
+        case .openFullDiskAccessSettings:
+            return "请先授予完全磁盘访问；若刚授权仍未生效，请重新打开并重启 Finder。"
+        case .registerExtension:
+            return "Finder 扩展未处于可用状态，建议先执行一键注册扩展。"
+        case .restartFinder:
+            return "扩展已注册，但 Finder 可能仍使用旧会话，建议重启 Finder。"
+        case .relaunchAppAndRestartFinder:
+            return "建议重新打开右键助手并重启 Finder，让主程序和扩展同时刷新。"
+        }
     }
 }
 
@@ -664,12 +972,7 @@ struct AdvancedSettingsView: View {
 }
 
 private func postConfigChanged() {
-    DistributedNotificationCenter.default().postNotificationName(
-        Notification.Name("guyue.RightClickAssistant.configChanged"),
-        object: nil,
-        userInfo: nil,
-        deliverImmediately: true
-    )
+    SystemReloader.postConfigChanged()
 }
 
 // MARK: - B. 动作管理统一面板（根据不同分类渲染）
@@ -958,9 +1261,6 @@ struct ExtensionRegistrationBox: View {
                     Button(action: {
                         isRegistering = true
                         autoRegisterExtension()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            isRegistering = false
-                        }
                     }) {
                         HStack(spacing: 6) {
                             if isRegistering {
@@ -978,12 +1278,7 @@ struct ExtensionRegistrationBox: View {
                     .disabled(isRegistering)
 
                     Button("打开系统设置") {
-                        if #available(macOS 13.0, *),
-                           let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
-                            NSWorkspace.shared.open(url)
-                        } else {
-                            FIFinderSyncController.showExtensionManagementInterface()
-                        }
+                        openFinderExtensionSettings()
                     }
                     .buttonStyle(.bordered)
                     .font(.system(size: 12))
@@ -994,280 +1289,245 @@ struct ExtensionRegistrationBox: View {
     }
 
     private func autoRegisterExtension() {
-        guard let appPath = Bundle.main.bundleURL.path as String? else {
-            SharedHUDManager.show(title: "注册失败", content: "无法定位 App 路径", isSuccess: false)
-            return
-        }
-        let extPath = (appPath as NSString).appendingPathComponent("Contents/PlugIns/RightClickAssistantExtension.appex")
-
-        guard FileManager.default.fileExists(atPath: extPath) else {
-            SharedHUDManager.show(title: "注册失败", content: "未找到扩展组件", isSuccess: false)
-            return
-        }
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
-        proc.arguments = ["-a", extPath]
-
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            if proc.terminationStatus == 0 {
-                // 注册后立即启用：pluginkit -a 只注册，不启用；需要 -e use 才能真正激活
-                let enableProc = Process()
-                enableProc.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
-                enableProc.arguments = ["-e", "use", "-i", "guyue.RightClickAssistant.Extension"]
-                try? enableProc.run()
-                enableProc.waitUntilExit()
-                
-                SharedHUDManager.show(title: "注册成功", content: "正在重启 Finder 使扩展生效…", isSuccess: true)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    let killProc = Process()
-                    killProc.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-                    killProc.arguments = ["Finder"]
-                    try? killProc.run()
-                }
-            } else {
-                SharedHUDManager.show(title: "注册失败", content: "pluginkit 返回码: \(proc.terminationStatus)", isSuccess: false)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = SystemReloader.registerFinderExtension(appBundleURL: Bundle.main.bundleURL)
+            DispatchQueue.main.async {
+                isRegistering = false
+                showFinderExtensionRegistrationOutcome(outcome)
+                refresh()
             }
-        } catch {
-            SharedHUDManager.show(title: "注册失败", content: error.localizedDescription, isSuccess: false)
         }
     }
 }
 
 // MARK: - C. 访达右键扩展集成状态自检 Banner
 struct ExtensionStatusBanner: View {
-    @State private var isEnabled = false
+    @State private var snapshot: RightClickMenuHealthSnapshot?
     @State private var isPulsing = false
-    
-    // 1.5 秒定时器进行保底状态查询 (以防部分平铺多窗口操作时未触发 willBecomeActive)
-    let timer = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
-    
+    @State private var isRepairRunning = false
+
     var body: some View {
-        Group {
-            if isEnabled {
-                // 已激活 Banner
+        VStack(alignment: .leading, spacing: 10) {
+            if let snapshot {
                 HStack(spacing: 14) {
-                    Image(systemName: "checkmark.shield.fill")
+                    Image(systemName: bannerIcon(snapshot))
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.green)
+                        .foregroundColor(bannerColor(snapshot))
                         .frame(width: 32, height: 32)
-                        .background(Color.green.opacity(0.15))
+                        .background(bannerColor(snapshot).opacity(0.15))
                         .cornerRadius(8)
-                    
+
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("右键助手扩展服务已启用")
+                        Text(bannerTitle(snapshot))
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundColor(.primary)
-                            Text("Finder 扩展正在运行。您可以在下方管理右键动作。")
+                        Text(bannerSubtitle(snapshot))
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    
+
                     Spacer()
-                    
-                    // Pulsing Dot 动态呼吸灯
-                    HStack(spacing: 6) {
-                        Text("运行中")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(.green)
-                        
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-                            .scaleEffect(isPulsing ? 1.3 : 0.8)
-                            .opacity(isPulsing ? 1.0 : 0.4)
-                            .onAppear {
-                                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                                    isPulsing = true
+
+                    if snapshot.healthLevel == .healthy {
+                        HStack(spacing: 6) {
+                            Text("运行中")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundColor(.green)
+
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 8, height: 8)
+                                .scaleEffect(isPulsing ? 1.3 : 0.8)
+                                .opacity(isPulsing ? 1.0 : 0.4)
+                                .onAppear {
+                                    withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                                        isPulsing = true
+                                    }
                                 }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.green.opacity(0.12)))
+                    } else {
+                        Button(action: { runRecommendedAction(snapshot) }) {
+                            HStack(spacing: 5) {
+                                Text(bannerButtonTitle(snapshot))
+                                Image(systemName: "arrow.clockwise")
                             }
+                            .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(bannerColor(snapshot))
+                        .disabled(isRepairRunning)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.green.opacity(0.12)))
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(LinearGradient(
-                            colors: [Color.green.opacity(0.08), Color.teal.opacity(0.03)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
+                            colors: [bannerColor(snapshot).opacity(0.08), bannerColor(snapshot).opacity(0.02)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         ))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                        .stroke(bannerColor(snapshot).opacity(0.22), lineWidth: 1)
                 )
-                .padding(.horizontal)
-                .padding(.top, 16)
-            } else {
-                // 未激活 Banner + 步骤引导
-                VStack(alignment: .leading, spacing: 14) {
-                    // 1. 顶部的紧凑式提醒 Row
-                    HStack(spacing: 14) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.orange)
-                            .frame(width: 32, height: 32)
-                            .background(Color.orange.opacity(0.15))
-                            .cornerRadius(8)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("访达右键扩展尚未启用")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundColor(.primary)
-                            Text("右键助手需要系统扩展授权才能正常运行，请按下方指引开启服务。")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            openExtensionSettings()
-                        }) {
-                            HStack(spacing: 5) {
-                                Text("打开扩展设置")
-                                Image(systemName: "arrow.up.forward.app.fill")
-                            }
-                            .font(.system(size: 12, weight: .semibold))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
-                    }
 
-                    // 一键注册扩展独立成行，避免与上方按钮挤在同一 HStack 中被截断
-                    HStack {
-                        Spacer()
-                        Button(action: {
-                            autoRegisterExtension()
-                        }) {
-                            HStack(spacing: 5) {
-                                Text("一键注册扩展")
-                                Image(systemName: "bolt.fill")
-                            }
-                            .font(.system(size: 12, weight: .semibold))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
+                if snapshot.recommendedRepairAction == .registerExtension {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Divider()
+                            .background(Color.orange.opacity(0.15))
+                        OnboardingStepsView()
                     }
-                    
-                    Divider()
-                        .background(Color.orange.opacity(0.15))
-                    
-                    // 2. 动态检测并呈现对应的系统版本引导
-                    OnboardingStepsView()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.orange.opacity(0.04))
+                    .cornerRadius(12)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(LinearGradient(
-                            colors: [Color.orange.opacity(0.06), Color.orange.opacity(0.01)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.orange.opacity(0.25), lineWidth: 1)
-                )
-                .padding(.horizontal)
-                .padding(.top, 16)
+            } else {
+                ProgressView("正在检测右键菜单状态…")
             }
         }
-        .onAppear {
-            checkStatus()
-        }
-        .onReceive(timer) { _ in
-            checkStatus()
-        }
-        // 监听系统 willBecomeActive 通知：用户在系统设置中勾选后，切回 App 时刷新状态。
+        .padding(.horizontal)
+        .padding(.top, 16)
+        .onAppear { checkStatus() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
             checkStatus()
         }
     }
-    
-    private func checkStatus() {
-        isEnabled = FIFinderSyncController.isExtensionEnabled
-    }
 
-    /// 智能打开扩展管理面板：优先用 URL Scheme 直达，失败回退到系统 API。
-    private func openExtensionSettings() {
-        // macOS 13+ 推荐使用 URL Scheme 定位扩展面板，避免跳转到通用设置页。
-        if #available(macOS 13.0, *) {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
-                NSWorkspace.shared.open(url)
-                return
+    private func checkStatus() {
+        let finderSyncEnabled = FIFinderSyncController.isExtensionEnabled
+        DispatchQueue.global(qos: .userInitiated).async {
+            let nextSnapshot = makeRightClickMenuHealthSnapshot(
+                finderSyncControllerEnabled: finderSyncEnabled
+            )
+            DispatchQueue.main.async {
+                snapshot = nextSnapshot
             }
         }
-        FIFinderSyncController.showExtensionManagementInterface()
     }
 
-    /// 通过 pluginkit 命令行自动注册 Finder 扩展，无需用户手动在系统设置中翻找。
-    private func autoRegisterExtension() {
-        guard let appBundle = Bundle.main.bundleURL.path as String? else {
-            SharedHUDManager.show(title: "注册失败", content: "无法定位 App Bundle 路径", isSuccess: false)
-            return
+    private func runRecommendedAction(_ snapshot: RightClickMenuHealthSnapshot) {
+        switch snapshot.recommendedRepairAction {
+        case .openFullDiskAccessSettings:
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                NSWorkspace.shared.open(url)
+            }
+        case .registerExtension:
+            registerExtension()
+        case .restartFinder:
+            restartFinder()
+        case .relaunchAppAndRestartFinder:
+            relaunchAppAndRestartFinder()
+        case .none:
+            checkStatus()
         }
-        let extPath = (appBundle as NSString).appendingPathComponent("Contents/PlugIns/RightClickAssistantExtension.appex")
-        
-        guard FileManager.default.fileExists(atPath: extPath) else {
-            SharedHUDManager.show(
-                title: "注册失败",
-                content: "未找到扩展组件，请确认 App 未被移动或损坏",
-                isSuccess: false
-            )
-            return
+    }
+
+    private func registerExtension() {
+        isRepairRunning = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = SystemReloader.registerFinderExtension(appBundleURL: Bundle.main.bundleURL)
+            DispatchQueue.main.async {
+                isRepairRunning = false
+                showFinderExtensionRegistrationOutcome(outcome)
+                checkStatus()
+            }
         }
+    }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
-        process.arguments = ["-a", extPath]
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            if process.terminationStatus == 0 {
-                // 注册后立即启用：pluginkit -a 只注册，不启用；需要 -e use 才能真正激活
-                let enableProc = Process()
-                enableProc.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
-                enableProc.arguments = ["-e", "use", "-i", "guyue.RightClickAssistant.Extension"]
-                try? enableProc.run()
-                enableProc.waitUntilExit()
-                
-                SharedHUDManager.show(
-                    title: "注册成功",
-                    content: "正在重启 Finder 使扩展生效…",
-                    isSuccess: true
-                )
-                // 注册后自动重启 Finder，避免用户「等半天没生效」误以为失败
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    let killProc = Process()
-                    killProc.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-                    killProc.arguments = ["Finder"]
-                    try? killProc.run()
-                }
-                // Finder 重启需要时间，2 秒后刷新 banner 状态
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    self.checkStatus()
-                }
+    private func restartFinder() {
+        isRepairRunning = true
+        PermissionRefreshCoordinator.performReload(
+            choice: .restartFinderOnly,
+            bundleURL: Bundle.main.bundleURL
+        ) { outcome in
+            isRepairRunning = false
+            if outcome.isSuccess {
+                SharedHUDManager.show(title: "Finder 已重启", content: "右键菜单会按最新状态加载", isSuccess: true)
             } else {
                 SharedHUDManager.show(
-                    title: "注册失败",
-                    content: "pluginkit 返回错误码 \(process.terminationStatus)",
+                    title: "Finder 重启失败",
+                    content: outcome.restartFinderResult?.errorDescription ?? "请手动重启 Finder 或重新登录后再试",
                     isSuccess: false
                 )
             }
-        } catch {
-            SharedHUDManager.show(
-                title: "注册失败",
-                content: "无法执行 pluginkit: \(error.localizedDescription)",
-                isSuccess: false
-            )
+            checkStatus()
+        }
+    }
+
+    private func relaunchAppAndRestartFinder() {
+        isRepairRunning = true
+        PermissionRefreshCoordinator.performReload(
+            choice: .relaunchAppAndRestartFinder,
+            bundleURL: Bundle.main.bundleURL
+        ) { outcome in
+            isRepairRunning = false
+            guard outcome.isSuccess else {
+                SharedHUDManager.show(
+                    title: "重新打开失败",
+                    content: outcome.relaunchResult?.errorDescription ?? "请手动退出并重新打开右键助手",
+                    isSuccess: false
+                )
+                return
+            }
+            SharedHUDManager.show(title: "正在重新打开", content: "当前进程即将退出，新进程会重启 Finder", isSuccess: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+
+    private func bannerTitle(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        switch snapshot.healthLevel {
+        case .healthy: return "右键助手扩展服务已启用"
+        case .warning: return "右键菜单需要刷新"
+        case .critical: return "右键菜单需要修复"
+        }
+    }
+
+    private func bannerSubtitle(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        switch snapshot.recommendedRepairAction {
+        case .none:
+            return "Finder 扩展正在运行。您可以在下方管理右键动作。"
+        case .openFullDiskAccessSettings:
+            return "完全磁盘访问尚未生效，部分受保护路径的文件操作可能受限。"
+        case .registerExtension:
+            return "Finder 扩展未处于可用状态，请一键注册或打开系统扩展设置。"
+        case .restartFinder:
+            return "扩展已注册，但 Finder 可能仍在使用旧会话，建议重启 Finder。"
+        case .relaunchAppAndRestartFinder:
+            return "建议重新打开右键助手并重启 Finder，让主程序和扩展同时刷新。"
+        }
+    }
+
+    private func bannerButtonTitle(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        switch snapshot.recommendedRepairAction {
+        case .none: return "重新检测"
+        case .openFullDiskAccessSettings: return "打开权限设置"
+        case .registerExtension: return isRepairRunning ? "注册中…" : "一键注册扩展"
+        case .restartFinder: return "重启 Finder"
+        case .relaunchAppAndRestartFinder: return "重新打开"
+        }
+    }
+
+    private func bannerIcon(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        switch snapshot.healthLevel {
+        case .healthy: return "checkmark.shield.fill"
+        case .warning: return "arrow.clockwise.circle.fill"
+        case .critical: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func bannerColor(_ snapshot: RightClickMenuHealthSnapshot) -> Color {
+        switch snapshot.healthLevel {
+        case .healthy: return .green
+        case .warning: return .orange
+        case .critical: return .red
         }
     }
 }

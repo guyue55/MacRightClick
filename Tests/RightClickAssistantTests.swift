@@ -477,6 +477,181 @@ final class RightClickAssistantTests: XCTestCase {
             context: context
         ))
     }
+
+    func testLaunchPresentationPolicyShowsWindowForExplicitUserOpen() {
+        let context = LaunchPresentationPolicy.Context(
+            isBackgroundRequest: false,
+            isUserOpenRequest: true,
+            appIsActive: false,
+            appIsFrontmost: false
+        )
+
+        XCTAssertTrue(LaunchPresentationPolicy.shouldShowSettingsWindowOnLaunch(
+            silentLaunchEnabled: true,
+            context: context
+        ))
+    }
+
+    func testLaunchPresentationPolicyShowsWindowForPermissionRefreshRelaunch() {
+        let context = LaunchPresentationPolicy.Context(
+            isBackgroundRequest: false,
+            isPermissionRefreshRequest: true,
+            appIsActive: false,
+            appIsFrontmost: false
+        )
+
+        XCTAssertTrue(LaunchPresentationPolicy.shouldShowSettingsWindowOnLaunch(
+            silentLaunchEnabled: true,
+            context: context
+        ))
+    }
+
+    func testPermissionRefreshCoordinatorPromptsOnlyOnFreshGrantTransition() {
+        XCTAssertTrue(PermissionRefreshCoordinator.shouldPromptAfterGrant(
+            previous: false,
+            current: true,
+            hasLoadedInitialState: true,
+            didPrompt: false
+        ))
+
+        XCTAssertFalse(PermissionRefreshCoordinator.shouldPromptAfterGrant(
+            previous: true,
+            current: true,
+            hasLoadedInitialState: true,
+            didPrompt: false
+        ))
+
+        XCTAssertFalse(PermissionRefreshCoordinator.shouldPromptAfterGrant(
+            previous: false,
+            current: true,
+            hasLoadedInitialState: false,
+            didPrompt: false
+        ))
+
+        XCTAssertFalse(PermissionRefreshCoordinator.shouldPromptAfterGrant(
+            previous: false,
+            current: true,
+            hasLoadedInitialState: true,
+            didPrompt: true
+        ))
+    }
+
+    func testPermissionRefreshCoordinatorOffersManualRelaunchFallbackWhenPermissionStillLooksDenied() {
+        XCTAssertTrue(PermissionRefreshCoordinator.shouldOfferManualRelaunchFallback(currentFullDiskAccess: false))
+        XCTAssertFalse(PermissionRefreshCoordinator.shouldOfferManualRelaunchFallback(currentFullDiskAccess: true))
+    }
+
+    func testSystemCommandResultUsesTerminationStatusForSuccess() {
+        let success = SystemCommandResult(
+            executablePath: "/usr/bin/true",
+            arguments: [],
+            terminationStatus: 0,
+            standardOutput: "",
+            standardError: "",
+            errorDescription: nil
+        )
+        let failedExit = SystemCommandResult(
+            executablePath: "/usr/bin/false",
+            arguments: [],
+            terminationStatus: 1,
+            standardOutput: "",
+            standardError: "",
+            errorDescription: nil
+        )
+        let launchFailure = SystemCommandResult(
+            executablePath: "/missing",
+            arguments: [],
+            terminationStatus: nil,
+            standardOutput: "",
+            standardError: "",
+            errorDescription: "No such file"
+        )
+
+        XCTAssertTrue(success.isSuccess)
+        XCTAssertFalse(failedExit.isSuccess)
+        XCTAssertFalse(launchFailure.isSuccess)
+    }
+
+    func testPluginkitParserDetectsExtensionRegistrationStates() {
+        let bundleId = "guyue.RightClickAssistant.Extension"
+
+        XCTAssertEqual(
+            FinderExtensionDiagnostics.registrationState(
+                pluginKitOutput: "",
+                commandSucceeded: true,
+                bundleIdentifier: bundleId
+            ),
+            .notRegistered
+        )
+        XCTAssertEqual(
+            FinderExtensionDiagnostics.registrationState(
+                pluginKitOutput: "+    guyue.RightClickAssistant.Extension(1.1.1)",
+                commandSucceeded: true,
+                bundleIdentifier: bundleId
+            ),
+            .enabled
+        )
+        XCTAssertEqual(
+            FinderExtensionDiagnostics.registrationState(
+                pluginKitOutput: "     guyue.RightClickAssistant.Extension(1.1.1)",
+                commandSucceeded: true,
+                bundleIdentifier: bundleId
+            ),
+            .registeredButNotEnabled
+        )
+        XCTAssertEqual(
+            FinderExtensionDiagnostics.registrationState(
+                pluginKitOutput: "",
+                commandSucceeded: false,
+                bundleIdentifier: bundleId
+            ),
+            .unknown
+        )
+    }
+
+    func testHealthSnapshotRecommendsRepairActionsByPriority() {
+        let denied = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: false,
+            finderSyncControllerEnabled: true,
+            pluginKitState: .enabled,
+            watchScope: .everywhere,
+            observedPathCount: 4,
+            pendingActionCount: 0,
+            failedActionCount: 0
+        )
+        let unregistered = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: true,
+            finderSyncControllerEnabled: false,
+            pluginKitState: .notRegistered,
+            watchScope: .everywhere,
+            observedPathCount: 4,
+            pendingActionCount: 0,
+            failedActionCount: 0
+        )
+        let needsFinderRestart = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: true,
+            finderSyncControllerEnabled: false,
+            pluginKitState: .enabled,
+            watchScope: .everywhere,
+            observedPathCount: 4,
+            pendingActionCount: 0,
+            failedActionCount: 0
+        )
+        let healthy = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: true,
+            finderSyncControllerEnabled: true,
+            pluginKitState: .enabled,
+            watchScope: .everywhere,
+            observedPathCount: 4,
+            pendingActionCount: 0,
+            failedActionCount: 0
+        )
+
+        XCTAssertEqual(denied.recommendedRepairAction, .openFullDiskAccessSettings)
+        XCTAssertEqual(unregistered.recommendedRepairAction, .registerExtension)
+        XCTAssertEqual(needsFinderRestart.recommendedRepairAction, .restartFinder)
+        XCTAssertEqual(healthy.recommendedRepairAction, .none)
+    }
 }
 
 private final class TestMenuAction: MenuAction {
