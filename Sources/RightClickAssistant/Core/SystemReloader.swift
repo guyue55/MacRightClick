@@ -133,23 +133,51 @@ public enum SystemReloader {
         let proc = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
+        let outputLock = NSLock()
+        let errorLock = NSLock()
+        var outputData = Data()
+        var errorData = Data()
 
         proc.executableURL = URL(fileURLWithPath: executablePath)
         proc.arguments = arguments
         proc.standardOutput = outputPipe
         proc.standardError = errorPipe
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            outputLock.lock()
+            outputData.append(data)
+            outputLock.unlock()
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            errorLock.lock()
+            errorData.append(data)
+            errorLock.unlock()
+        }
 
         do {
             try proc.run()
             proc.waitUntilExit()
-            let output = String(
-                data: outputPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            ) ?? ""
-            let errorOutput = String(
-                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            ) ?? ""
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+
+            let remainingOutput = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let remainingError = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+            outputLock.lock()
+            outputData.append(remainingOutput)
+            let finalOutputData = outputData
+            outputLock.unlock()
+
+            errorLock.lock()
+            errorData.append(remainingError)
+            let finalErrorData = errorData
+            errorLock.unlock()
+
+            let output = String(data: finalOutputData, encoding: .utf8) ?? ""
+            let errorOutput = String(data: finalErrorData, encoding: .utf8) ?? ""
 
             let result = SystemCommandResult(
                 executablePath: executablePath,
@@ -167,6 +195,8 @@ public enum SystemReloader {
             }
             return result
         } catch {
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
             AppLog.error("无法执行系统命令 \(executablePath): \(error.localizedDescription)", category: .ui)
             return SystemCommandResult(
                 executablePath: executablePath,

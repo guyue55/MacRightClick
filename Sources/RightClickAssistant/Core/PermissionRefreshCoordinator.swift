@@ -21,7 +21,7 @@ public enum PermissionRefreshCoordinator {
         public var isSuccess: Bool {
             switch choice {
             case .relaunchAppAndRestartFinder:
-                return relaunchResult?.isSuccess == true
+                return relaunchResult?.isSuccess == true && restartFinderResult?.isSuccess == true
             case .restartFinderOnly:
                 return restartFinderResult?.isSuccess == true
             case .later:
@@ -55,8 +55,7 @@ public enum PermissionRefreshCoordinator {
         return SystemReloader.relaunchApp(
             bundleURL: bundleURL,
             arguments: [
-                LaunchPresentationPolicy.userOpenArgument,
-                LaunchPresentationPolicy.permissionRefreshArgument
+                LaunchPresentationPolicy.userOpenArgument
             ]
         )
     }
@@ -70,10 +69,12 @@ public enum PermissionRefreshCoordinator {
             let outcome: ReloadOutcome
             switch choice {
             case .relaunchAppAndRestartFinder:
+                let relaunchResult = relaunchAppAndRestartFinder(bundleURL: bundleURL)
+                let restartResult = relaunchResult.isSuccess ? restartFinderOnly() : nil
                 outcome = ReloadOutcome(
                     choice: choice,
-                    relaunchResult: relaunchAppAndRestartFinder(bundleURL: bundleURL),
-                    restartFinderResult: nil
+                    relaunchResult: relaunchResult,
+                    restartFinderResult: restartResult
                 )
             case .restartFinderOnly:
                 outcome = ReloadOutcome(

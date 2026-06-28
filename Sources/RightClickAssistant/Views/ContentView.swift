@@ -547,8 +547,9 @@ struct PermissionsSettingsView: View {
         ) { outcome in
             guard outcome.isSuccess else {
                 SharedHUDManager.show(
-                    title: "重新打开失败",
-                    content: outcome.relaunchResult?.errorDescription
+                    title: outcome.relaunchResult?.isSuccess == true ? "Finder 重启失败" : "重新打开失败",
+                    content: outcome.restartFinderResult?.errorDescription
+                        ?? outcome.relaunchResult?.errorDescription
                         ?? "请手动退出并重新打开右键助手，然后重启 Finder",
                     isSuccess: false
                 )
@@ -673,23 +674,24 @@ struct DiagnosticsSettingsView: View {
                             NSWorkspace.shared.open(SharedStorageManager.shared.sharedContainerURL)
                         }
                         Button("运行快速诊断") {
-                            refresh()
-                            SharedHUDManager.show(
-                                title: "诊断完成",
-                                content: snapshot.map { healthTitle($0) } ?? "正在检测右键菜单状态",
-                                isSuccess: snapshot?.healthLevel == .healthy
-                            )
+                            refresh { updatedSnapshot in
+                                SharedHUDManager.show(
+                                    title: "诊断完成",
+                                    content: healthTitle(updatedSnapshot),
+                                    isSuccess: updatedSnapshot.healthLevel == .healthy
+                                )
+                            }
                         }
                     }
                 }
                 .padding(.vertical, 8)
             }
         }
-        .onAppear(perform: refresh)
+        .onAppear { refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in refresh() }
     }
 
-    private func refresh() {
+    private func refresh(completion: ((RightClickMenuHealthSnapshot) -> Void)? = nil) {
         isDebugLoggingEnabled = SharedStorageManager.shared.isDebugLoggingEnabled
         let finderSyncEnabled = FIFinderSyncController.isExtensionEnabled
         DispatchQueue.global(qos: .userInitiated).async {
@@ -698,6 +700,7 @@ struct DiagnosticsSettingsView: View {
             )
             DispatchQueue.main.async {
                 snapshot = nextSnapshot
+                completion?(nextSnapshot)
             }
         }
     }
@@ -809,8 +812,10 @@ struct DiagnosticsSettingsView: View {
             isRepairRunning = false
             guard outcome.isSuccess else {
                 SharedHUDManager.show(
-                    title: "重新打开失败",
-                    content: outcome.relaunchResult?.errorDescription ?? "请手动退出并重新打开右键助手",
+                    title: outcome.relaunchResult?.isSuccess == true ? "Finder 重启失败" : "重新打开失败",
+                    content: outcome.restartFinderResult?.errorDescription
+                        ?? outcome.relaunchResult?.errorDescription
+                        ?? "请手动退出并重新打开右键助手",
                     isSuccess: false
                 )
                 return
@@ -1469,8 +1474,10 @@ struct ExtensionStatusBanner: View {
             isRepairRunning = false
             guard outcome.isSuccess else {
                 SharedHUDManager.show(
-                    title: "重新打开失败",
-                    content: outcome.relaunchResult?.errorDescription ?? "请手动退出并重新打开右键助手",
+                    title: outcome.relaunchResult?.isSuccess == true ? "Finder 重启失败" : "重新打开失败",
+                    content: outcome.restartFinderResult?.errorDescription
+                        ?? outcome.relaunchResult?.errorDescription
+                        ?? "请手动退出并重新打开右键助手",
                     isSuccess: false
                 )
                 return

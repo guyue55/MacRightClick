@@ -104,10 +104,6 @@ public enum FinderExtensionDiagnostics {
         finderExtensionState: FinderExtensionRegistrationState,
         observedPathCount: Int
     ) -> RecommendedRepairAction {
-        if fullDiskAccessState == .denied {
-            return .openFullDiskAccessSettings
-        }
-
         switch finderExtensionState {
         case .notRegistered, .registeredButNotEnabled, .unknown:
             return .registerExtension
@@ -115,7 +111,12 @@ public enum FinderExtensionDiagnostics {
             if !finderSyncControllerEnabled || observedPathCount == 0 {
                 return .restartFinder
             }
-            return .none
         }
+
+        if fullDiskAccessState == .denied {
+            return .openFullDiskAccessSettings
+        }
+
+        return .none
     }
 }

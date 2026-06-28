@@ -572,6 +572,17 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertFalse(launchFailure.isSuccess)
     }
 
+    func testSystemReloaderCapturesLargeCommandOutputWithoutBlocking() {
+        let output = String(repeating: "x", count: 200_000)
+        let result = SystemReloader.runCommand(
+            executablePath: "/bin/echo",
+            arguments: [output]
+        )
+
+        XCTAssertTrue(result.isSuccess)
+        XCTAssertEqual(result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines).count, output.count)
+    }
+
     func testPluginkitParserDetectsExtensionRegistrationStates() {
         let bundleId = "guyue.RightClickAssistant.Extension"
 
@@ -651,6 +662,30 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(unregistered.recommendedRepairAction, .registerExtension)
         XCTAssertEqual(needsFinderRestart.recommendedRepairAction, .restartFinder)
         XCTAssertEqual(healthy.recommendedRepairAction, .none)
+    }
+
+    func testHealthSnapshotPrioritizesMenuExtensionRepairBeforeFullDiskAccess() {
+        let unregisteredAndDenied = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: false,
+            finderSyncControllerEnabled: false,
+            pluginKitState: .notRegistered,
+            watchScope: .everywhere,
+            observedPathCount: 4,
+            pendingActionCount: 0,
+            failedActionCount: 0
+        )
+        let enabledButNeedsFinderRestartAndDenied = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: false,
+            finderSyncControllerEnabled: false,
+            pluginKitState: .enabled,
+            watchScope: .everywhere,
+            observedPathCount: 4,
+            pendingActionCount: 0,
+            failedActionCount: 0
+        )
+
+        XCTAssertEqual(unregisteredAndDenied.recommendedRepairAction, .registerExtension)
+        XCTAssertEqual(enabledButNeedsFinderRestartAndDenied.recommendedRepairAction, .restartFinder)
     }
 }
 
