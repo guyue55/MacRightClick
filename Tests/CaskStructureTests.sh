@@ -29,4 +29,9 @@ grep -q 'brew install --cask rightclickassistant' "$README_ZH" || fail "中文 R
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_EN" || fail "英文 README 缺少当前可用的 brew tap 命令"
 grep -q 'brew install --cask rightclickassistant' "$README_EN" || fail "英文 README 缺少当前可用的 brew 安装命令"
 
+users_prefix="/""Users/"
+if grep -q "$users_prefix" "$README_ZH" "$README_EN"; then
+  fail "README 不应包含开发者本机绝对路径"
+fi
+
 echo "✅ Cask 结构校验通过"

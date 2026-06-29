@@ -110,7 +110,17 @@ Download the pre-compiled **Universal 2 Multi-Architecture (Apple Silicon + Inte
 
 ### 🍺 Homebrew Install
 
-This repository now ships a Homebrew Cask file. After the Cask is pushed, you can add this repository as a tap and install the latest DMG with:
+This repository now ships a Homebrew Cask file for installing the latest DMG.
+
+If you have cloned this repository locally, you can install from the local checkout:
+
+```bash
+cd /path/to/MacRightClick
+brew tap guyue55/macrightclick "$(pwd)"
+brew install --cask rightclickassistant
+```
+
+After the Cask is pushed to GitHub, users can install from the remote repository tap:
 
 ```bash
 brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
@@ -128,6 +138,12 @@ Uninstall:
 
 ```bash
 brew uninstall --cask rightclickassistant
+```
+
+Remove the tap if needed:
+
+```bash
+brew untap guyue55/macrightclick
 ```
 
 If the project later moves to a standard dedicated tap (recommended repository name: `homebrew-macrightclick`), the URL can be omitted:

@@ -36,7 +36,7 @@ OSLog 实测样本：
 ## 2. 非阻塞观察（不在本轮 commit 修）
 
 - AppDelegate 通过 `SharedStorageManager.writeLog` 写日志，命中的全部是 `:storage` category。原因是 `writeLog` 内部统一走 `AppLog.info(.., category: .storage)`，主 App 自身的生命周期/状态变更也被归入 storage。期望表现是这类事件归到 `:host`。已记录待跟进，不阻断本轮收尾。
-- `Templates/blank.pdf` 不存在于 Bundle 是设计选择：`NewFileAction` 用纯字符串拼接 `%PDF-1.4` 字节流在运行时生成（见 [`NewFileAction.swift`](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/Core/Actions/NewFileAction.swift:64)），不需要外置模板。建议下一轮把这点写进 spec §5.2 的备注里，避免再被当成缺失。
+- `Templates/blank.pdf` 不存在于 Bundle 是设计选择：`NewFileAction` 用纯字符串拼接 `%PDF-1.4` 字节流在运行时生成（见 [`NewFileAction.swift`](../../../Sources/RightClickAssistant/Core/Actions/NewFileAction.swift:64)），不需要外置模板。建议下一轮把这点写进 spec §5.2 的备注里，避免再被当成缺失。
 
 ## 3. 残留 Gate（需要人手 5 分钟点完）
 
@@ -84,8 +84,8 @@ pgrep -fl RightClickAssistant   # 期望空输出
 
 ## 7. 链路一览
 
-- spec：[`docs/superpowers/specs/2026-06-15-ux-hardening-design.md`](/Users/guyue/GitProject/mac右键/docs/superpowers/specs/2026-06-15-ux-hardening-design.md)
-- plan：[`docs/superpowers/plans/2026-06-15-ux-hardening.md`](/Users/guyue/GitProject/mac右键/docs/superpowers/plans/2026-06-15-ux-hardening.md)
+- spec：[`docs/superpowers/specs/2026-06-15-ux-hardening-design.md`](../../../docs/superpowers/specs/2026-06-15-ux-hardening-design.md)
+- plan：[`docs/superpowers/plans/2026-06-15-ux-hardening.md`](../../../docs/superpowers/plans/2026-06-15-ux-hardening.md)
 - 关键修复 commit：`acb7916`
 - PR：https://github.com/guyue55/MacRightClick/pull/1
 
@@ -135,7 +135,7 @@ pgrep -fl RightClickAssistant   # 期望空输出
 
 新模块 / 改动：
 
-- 新增 [`InteractiveActionRunner.swift`](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/Core/Actions/InteractiveActionRunner.swift)：prompt 主线程 async / perform 后台串行队列；
+- 新增 [`InteractiveActionRunner.swift`](../../../Sources/RightClickAssistant/Core/Actions/InteractiveActionRunner.swift)：prompt 主线程 async / perform 后台串行队列；
 - 新增 `InteractiveActionGate`（同文件）：**全局** `os_unfair_lock` 闸门，跨 Runner 共享，保证任何时刻只有 1 个交互对话；第 2 个请求统一 HUD「请先处理上一个交互对话」并丢弃；
 - `DeletionRequestCoordinator` 与 InteractiveActionRunner 是同家族抽象，后续可统一；
 - 顺手把 `runOnMainThread / confirmHighRiskOperation / confirmToggleHiddenFiles` 老定义删除，防止误用回流。
@@ -226,7 +226,7 @@ ls ~/Library/Containers/guyue.RightClickAssistant.Extension/Data/InFlightActions
   `FIFinderSyncController.directoryURLs` 显式声明白名单，Finder 才会把那些目录
   的 `menu(for:)` / `requestBadgeIdentifier(for:)` 路由进来；
 - 项目历史默认值 `defaultWatchedDirectoryPaths = ["Desktop","Downloads","Documents"]`
-  来自 [SharedStorageManager.swift:185](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/Core/SharedStorageManager.swift:185)，对新用户而言"开箱即用"门槛过高；
+  来自 [SharedStorageManager.swift:185](../../../Sources/RightClickAssistant/Core/SharedStorageManager.swift:185)，对新用户而言"开箱即用"门槛过高；
 - 「完全磁盘访问」只影响进程文件 IO 权限，与 FinderSync 路由表毫不相干。
 
 修复（产品决策 + 工程实现）：
@@ -280,9 +280,9 @@ open /Applications/RightClickAssistant.app + killall Finder + osascript open Hom
 
 ### 压测 harness（高内聚低耦合）
 
-- [`run_stress.py`](/Users/guyue/GitProject/mac右键/Scripts/stress/run_stress.py)：
+- [`run_stress.py`](../../../Scripts/stress/run_stress.py)：
   burst（高并发 enqueue）+ malformed（垃圾 JSON 隔离）+ 残余检查；
-- [`run_reclaim_stress.py`](/Users/guyue/GitProject/mac右键/Scripts/stress/run_reclaim_stress.py)：
+- [`run_reclaim_stress.py`](../../../Scripts/stress/run_reclaim_stress.py)：
   模拟"主 App dispatch 中途崩溃"——往 `InFlightActions/<bogus_pid>/` 灌 N 个
   孤儿事件，重启主 App，断言 reclaim 回 Pending → 全部消费 → InFlight 清空；
 - 两个脚本都直接对**真实磁盘上的共享容器**写文件，wire format 与扩展端
@@ -320,13 +320,13 @@ applicationDidFinishLaunching
 
 ### 修复（高内聚低耦合）
 
-- [AppDelegate.swift](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/AppDelegate.swift)
+- [AppDelegate.swift](../../../Sources/RightClickAssistant/AppDelegate.swift)
   新增 `pendingActionDispatchQueue`（专用串行 queue, qos=.userInitiated）；
   `processPendingAction()` 现在只做"async 投递"，真实工作搬到 `drainPendingActions()`
   在该队列上跑，主线程 0 阻塞；
 - 串行队列保证 N 个 lease 的 dispatch 仍 FIFO 顺序消费，不会并发踩 NSPasteboard /
   HUD / cfprefsd；
-- [SharedStorageManager.swift](/Users/guyue/GitProject/mac右键/Sources/RightClickAssistant/Core/SharedStorageManager.swift)
+- [SharedStorageManager.swift](../../../Sources/RightClickAssistant/Core/SharedStorageManager.swift)
   getBool / getStringArray / setBool / setStringArray / removeValue 全部加上
   `Distribution.usesAppGroup` 守卫，website 路线下完全跳过 group UserDefaults，
   直接走 config.json，从根上消除 cfprefsd detach 链路。

@@ -108,7 +108,17 @@ sequenceDiagram
 
 ### 🍺 Homebrew 安装
 
-当前仓库已提供 Homebrew Cask 文件。发布并推送后，可把本仓库作为 tap 添加，再安装 latest DMG：
+当前仓库已提供 Homebrew Cask 文件，可用 Homebrew 安装 latest DMG。
+
+如果你已经克隆了本仓库，可直接把本地仓库作为 tap 安装：
+
+```bash
+cd /path/to/MacRightClick
+brew tap guyue55/macrightclick "$(pwd)"
+brew install --cask rightclickassistant
+```
+
+推送到 GitHub 后，普通用户可把远程仓库作为 tap 安装：
 
 ```bash
 brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
@@ -126,6 +136,12 @@ brew upgrade --cask rightclickassistant
 
 ```bash
 brew uninstall --cask rightclickassistant
+```
+
+如果需要移除 tap：
+
+```bash
+brew untap guyue55/macrightclick
 ```
 
 如果未来迁移到标准独立 tap（推荐仓库名：`homebrew-macrightclick`），可省略 URL：
