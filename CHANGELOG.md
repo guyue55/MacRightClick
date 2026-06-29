@@ -11,6 +11,7 @@
 ### Added
 
 - **tools**: 新增「高级 -> 外部工具」管理入口，检测 Homebrew 后可通过 Homebrew Cask 安装或更新 iTerm2、Warp、Visual Studio Code、Sublime Text、Cursor。
+- **homebrew**: 新增 `Casks/rightclickassistant.rb`，支持通过 Homebrew Cask 安装 latest DMG，并提供 Cask 结构校验脚本。
 
 ### Fixed
 

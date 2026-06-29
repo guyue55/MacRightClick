@@ -106,6 +106,35 @@ sequenceDiagram
 > [!TIP]
 > 📌 **所有历史版本与更新日志**：您可以随时访问 [GitHub Releases 页面](https://github.com/guyue55/MacRightClick/releases) 查阅所有的历史发布版本、多架构安装包以及详尽的 Release Note 演进过程。
 
+### 🍺 Homebrew 安装
+
+当前仓库已提供 Homebrew Cask 文件。发布并推送后，可把本仓库作为 tap 添加，再安装 latest DMG：
+
+```bash
+brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
+brew install --cask rightclickassistant
+```
+
+更新到最新发布包：
+
+```bash
+brew update
+brew upgrade --cask rightclickassistant
+```
+
+卸载：
+
+```bash
+brew uninstall --cask rightclickassistant
+```
+
+如果未来迁移到标准独立 tap（推荐仓库名：`homebrew-macrightclick`），可省略 URL：
+
+```bash
+brew tap guyue55/macrightclick
+brew install --cask rightclickassistant
+```
+
 ---
 
 ### 🚢 分发路线
