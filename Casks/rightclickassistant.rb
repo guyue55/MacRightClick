@@ -12,7 +12,11 @@ cask "rightclickassistant" do
 
   app "RightClickAssistant.app"
 
-  uninstall quit: "guyue.RightClickAssistant"
+  uninstall quit: "guyue.RightClickAssistant",
+            script: {
+              executable: "/usr/bin/pluginkit",
+              args:       ["-r", "guyue.RightClickAssistant.Extension"],
+            }
 
   zap trash: [
     "~/Library/Containers/guyue.RightClickAssistant",

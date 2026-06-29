@@ -19,6 +19,8 @@ grep -q 'sha256 :no_check' "$CASK_FILE" || fail "Latest DMG URL 必须使用 sha
 grep -q 'RightClickAssistant-Latest.dmg' "$CASK_FILE" || fail "Cask 必须指向 GitHub Releases latest DMG"
 grep -q 'app "RightClickAssistant.app"' "$CASK_FILE" || fail "Cask 必须安装 RightClickAssistant.app"
 grep -q 'depends_on macos: ">= :ventura"' "$CASK_FILE" || fail "Cask 必须声明 macOS 13+"
+grep -q '/usr/bin/pluginkit' "$CASK_FILE" || fail "Cask 卸载时必须反注册 FinderSync 扩展"
+grep -q 'guyue.RightClickAssistant.Extension' "$CASK_FILE" || fail "Cask 必须包含 FinderSync 扩展 bundle id"
 
 if grep -q 'curl .*|.*sh' "$CASK_FILE"; then
   fail "Cask 不允许执行远程安装脚本"
