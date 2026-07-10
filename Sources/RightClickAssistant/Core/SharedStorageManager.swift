@@ -215,6 +215,18 @@ public final class SharedStorageManager {
             .filter { $0.hasSuffix(".json") }.count ?? 0
     }
 
+    /// 清空失败事件隔离目录中的内容，同时保留目录本身供后续隔离继续使用。
+    public func clearFailedActions() throws {
+        let directoryURL = failedActionsDirectoryURL
+        let contents = try FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil
+        )
+        for url in contents {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
     /// 共享日志文件 URL。
     public var logFileURL: URL {
         let logsDir = sharedContainerURL.appendingPathComponent("Library/Logs", isDirectory: true)
@@ -443,12 +455,18 @@ public final class SharedStorageManager {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// 把不属于当前进程的 InFlight 文件搬回 PendingActions，让下一轮消费循环重新处理。
+    /// 把不属于任何存活进程的 InFlight 文件搬回 PendingActions，让下一轮消费循环重新处理。
     /// 应在 AppDelegate.applicationDidFinishLaunching 启动消费循环之前调用一次。
-    /// 不会动当前进程目录（避免和正在跑的 dispatcher 抢文件）。
+    /// 默认通过 `kill(pid, 0)` 判断 owner 是否存活；EPERM 表示进程存在但无权发送信号。
     public func reclaimAbandonedInFlightActions() {
+        reclaimAbandonedInFlightActions(processIsAlive: Self.isProcessAlive)
+    }
+
+    /// 可注入存活检查的回收入口，供测试和受控调用使用。
+    /// 当前进程、其他存活进程以及无效 PID 目录均不会被回收。
+    public func reclaimAbandonedInFlightActions(processIsAlive: (Int32) -> Bool) {
         let parent = inFlightActionsDirectoryURL
-        let currentPID = String(ProcessInfo.processInfo.processIdentifier)
+        let currentPID = ProcessInfo.processInfo.processIdentifier
 
         let pidDirs = (try? FileManager.default.contentsOfDirectory(
             at: parent,
@@ -457,9 +475,13 @@ public final class SharedStorageManager {
         )) ?? []
 
         for pidDir in pidDirs {
-            if pidDir.lastPathComponent == currentPID { continue }
             let isDir = (try? pidDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             guard isDir else { continue }
+            let ownerName = pidDir.lastPathComponent
+            guard ownerName.allSatisfy(\.isNumber),
+                  let ownerPID = Int32(ownerName),
+                  ownerPID > 0 else { continue }
+            if ownerPID == currentPID || processIsAlive(ownerPID) { continue }
 
             let orphanFiles = (try? FileManager.default.contentsOfDirectory(
                 at: pidDir,
@@ -481,6 +503,14 @@ public final class SharedStorageManager {
             // 清空 PID 目录后清理（保持 InFlight 树整洁）。
             try? FileManager.default.removeItem(at: pidDir)
         }
+    }
+
+    private static func isProcessAlive(_ pid: Int32) -> Bool {
+        errno = 0
+        if kill(pid, 0) == 0 {
+            return true
+        }
+        return errno == EPERM
     }
 
     /// 旧 API：tin shell，内部走 lease 路径并立即 ack。
@@ -519,21 +549,43 @@ public final class SharedStorageManager {
     
     // MARK: - 统一配置管理转换接口（双写机制与多级兜底）
     
-    /// 加载共享的 JSON 配置文件
-    private func loadConfig() -> [String: Any] {
+    /// 仅允许在 `configQueue` 内调用。
+    private func loadConfigUnlocked() -> [String: Any] {
         guard let data = try? Data(contentsOf: configURL),
               let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
             return [:]
         }
         return json
     }
-    
-    /// 写入共享的 JSON 配置文件。通过串行队列保护并发写入，避免 load-modify-save 竞态。
-    private func saveConfig(_ config: [String: Any]) {
+
+    /// 仅允许在 `configQueue` 内调用。
+    private func saveConfigUnlocked(_ config: [String: Any]) {
+        if let data = try? JSONSerialization.data(withJSONObject: config, options: .prettyPrinted) {
+            try? data.write(to: configURL, options: .atomic)
+        }
+    }
+
+    private func loadConfig() -> [String: Any] {
         configQueue.sync {
-            if let data = try? JSONSerialization.data(withJSONObject: config, options: .prettyPrinted) {
-                try? data.write(to: configURL, options: .atomic)
+            loadConfigUnlocked()
+        }
+    }
+
+    private func mutateConfig(
+        sharedDefaultsMutation: ((UserDefaults) -> Void)? = nil,
+        _ mutation: (inout [String: Any]) -> Void
+    ) {
+        configQueue.sync {
+            if shouldUseAppGroupDefaults,
+               let sharedDefaults,
+               let sharedDefaultsMutation {
+                sharedDefaultsMutation(sharedDefaults)
+                sharedDefaults.synchronize()
             }
+
+            var config = loadConfigUnlocked()
+            mutation(&config)
+            saveConfigUnlocked(config)
         }
     }
     
@@ -590,29 +642,36 @@ public final class SharedStorageManager {
     /// 仅在 App Group 路线下双写到 group UserDefaults；website 路线只写 config.json，
     /// 注入共享目录同样只写 config.json；见 getBool 注释。
     public func setBool(_ value: Bool, forKey key: String) {
-        if shouldUseAppGroupDefaults,
-           let sharedDefaults {
-            sharedDefaults.set(value, forKey: key)
-            sharedDefaults.synchronize()
+        mutateConfig(sharedDefaultsMutation: { defaults in
+            defaults.set(value, forKey: key)
+        }) { config in
+            config[key] = value
         }
-
-        var config = loadConfig()
-        config[key] = value
-        saveConfig(config)
     }
 
     public func setStringArray(_ values: [String], forKey key: String) {
         let uniqueValues = Array(NSOrderedSet(array: values)).compactMap { $0 as? String }
 
-        if shouldUseAppGroupDefaults,
-           let sharedDefaults {
-            sharedDefaults.set(uniqueValues, forKey: key)
-            sharedDefaults.synchronize()
+        mutateConfig(sharedDefaultsMutation: { defaults in
+            defaults.set(uniqueValues, forKey: key)
+        }) { config in
+            config[key] = uniqueValues
         }
+    }
 
-        var config = loadConfig()
-        config[key] = uniqueValues
-        saveConfig(config)
+    /// 一次配置事务写入全部动作开关，避免设置页批量保存时产生中间状态。
+    public func setActionEnabledStates(_ states: [String: Bool]) {
+        guard !states.isEmpty else { return }
+
+        mutateConfig(sharedDefaultsMutation: { defaults in
+            for (actionID, enabled) in states {
+                defaults.set(enabled, forKey: "enable_action_\(actionID)")
+            }
+        }) { config in
+            for (actionID, enabled) in states {
+                config["enable_action_\(actionID)"] = enabled
+            }
+        }
     }
 
     public func setAction(_ action: MenuAction, favorite: Bool) {
@@ -629,14 +688,10 @@ public final class SharedStorageManager {
 
     /// 移除指定配置值，让后续读取回到默认值。用于恢复默认设置和测试隔离。
     public func removeValue(forKey key: String) {
-        if shouldUseAppGroupDefaults,
-           let sharedDefaults {
-            sharedDefaults.removeObject(forKey: key)
-            sharedDefaults.synchronize()
+        mutateConfig(sharedDefaultsMutation: { defaults in
+            defaults.removeObject(forKey: key)
+        }) { config in
+            config.removeValue(forKey: key)
         }
-
-        var config = loadConfig()
-        config.removeValue(forKey: key)
-        saveConfig(config)
     }
 }
