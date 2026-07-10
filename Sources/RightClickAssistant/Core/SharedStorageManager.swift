@@ -59,18 +59,39 @@ public final class SharedStorageManager {
         public static let watchScope = "watch_scope"
     }
     
-    private let appGroupIdentifier = "group.guyue.RightClickAssistant"
+    private static let appGroupIdentifier = "group.guyue.RightClickAssistant"
     private let extensionBundleIdentifier = "guyue.RightClickAssistant.Extension"
     private let configQueue = DispatchQueue(label: "guyue.RightClickAssistant.config")
     private let sharedContainerURLOverride: URL?
+    private let shouldUseAppGroupDefaults: Bool
+    private let sharedDefaults: UserDefaults?
 
     /// 仅供测试注入：每次 `getBool(forKey:)` 被调用都会先回调此 closure。
     /// 用于验证菜单渲染主路径是否真的命中了 ActionConfigCache，没有穿透到底层 IO。
     /// 生产代码不要依赖此属性。
     public var observeGetBoolForTesting: ((String) -> Void)?
 
-    public init(sharedContainerURLOverride: URL? = nil) {
+    public convenience init(sharedContainerURLOverride: URL? = nil) {
+        let usesAppGroup = Distribution.usesAppGroup
+        let sharedDefaults = sharedContainerURLOverride == nil && usesAppGroup
+            ? UserDefaults(suiteName: Self.appGroupIdentifier)
+            : nil
+
+        self.init(
+            sharedContainerURLOverride: sharedContainerURLOverride,
+            usesAppGroup: usesAppGroup,
+            sharedDefaults: sharedDefaults
+        )
+    }
+
+    init(
+        sharedContainerURLOverride: URL?,
+        usesAppGroup: Bool,
+        sharedDefaults: UserDefaults?
+    ) {
         self.sharedContainerURLOverride = sharedContainerURLOverride
+        self.shouldUseAppGroupDefaults = sharedContainerURLOverride == nil && usesAppGroup
+        self.sharedDefaults = sharedDefaults
     }
     
     /// 获取真实的物理 Home 目录。
@@ -99,7 +120,9 @@ public final class SharedStorageManager {
         }
 
         if Distribution.usesAppGroup {
-            if let appGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
+            if let appGroupURL = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
+            ) {
                 let testDir = appGroupURL.appendingPathComponent(".test_write")
                 do {
                     try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true, attributes: nil)
@@ -520,10 +543,11 @@ public final class SharedStorageManager {
     /// for System Containers, detaching from cfprefsd" 错误链——一旦 detach，后续任何 CFPreferences
     /// 同步 XPC（含 NSWorkspace.accessibility 探测）会变成无人接的 mach_msg 等待，启动期最早被
     /// SwiftUI 的 NSHostingView.viewDidMoveToWindow 触发，进程死锁（压测捕获）。
+    /// 注入共享目录时始终只读写该目录下的 config.json，避免测试接触真实 App Group 偏好。
     public func getBool(forKey key: String, defaultValue: Bool = true) -> Bool {
         observeGetBoolForTesting?(key)
-        if Distribution.usesAppGroup,
-           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
+        if shouldUseAppGroupDefaults,
+           let sharedDefaults,
            sharedDefaults.object(forKey: key) != nil {
             return sharedDefaults.bool(forKey: key)
         }
@@ -536,8 +560,8 @@ public final class SharedStorageManager {
     }
 
     public func getStringArray(forKey key: String, defaultValue: [String] = []) -> [String] {
-        if Distribution.usesAppGroup,
-           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
+        if shouldUseAppGroupDefaults,
+           let sharedDefaults,
            let values = sharedDefaults.stringArray(forKey: key) {
             return values
         }
@@ -564,10 +588,10 @@ public final class SharedStorageManager {
     
     /// 写入指定菜单项的启用状态（在宿主设置界面变更配置时调用）
     /// 仅在 App Group 路线下双写到 group UserDefaults；website 路线只写 config.json，
-    /// 见 getBool 注释——避免触发 cfprefsd detach 死锁链。
+    /// 注入共享目录同样只写 config.json；见 getBool 注释。
     public func setBool(_ value: Bool, forKey key: String) {
-        if Distribution.usesAppGroup,
-           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
+        if shouldUseAppGroupDefaults,
+           let sharedDefaults {
             sharedDefaults.set(value, forKey: key)
             sharedDefaults.synchronize()
         }
@@ -580,8 +604,8 @@ public final class SharedStorageManager {
     public func setStringArray(_ values: [String], forKey key: String) {
         let uniqueValues = Array(NSOrderedSet(array: values)).compactMap { $0 as? String }
 
-        if Distribution.usesAppGroup,
-           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
+        if shouldUseAppGroupDefaults,
+           let sharedDefaults {
             sharedDefaults.set(uniqueValues, forKey: key)
             sharedDefaults.synchronize()
         }
@@ -605,8 +629,8 @@ public final class SharedStorageManager {
 
     /// 移除指定配置值，让后续读取回到默认值。用于恢复默认设置和测试隔离。
     public func removeValue(forKey key: String) {
-        if Distribution.usesAppGroup,
-           let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) {
+        if shouldUseAppGroupDefaults,
+           let sharedDefaults {
             sharedDefaults.removeObject(forKey: key)
             sharedDefaults.synchronize()
         }

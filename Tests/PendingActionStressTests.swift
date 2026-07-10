@@ -19,18 +19,14 @@ import XCTest
 final class PendingActionStressTests: XCTestCase {
 
     private var manager: SharedStorageManager!
-    private var sandboxRoot: URL!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        (manager, sandboxRoot) = try TestStorage.make()
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: sandboxRoot)
-        manager = nil
-        sandboxRoot = nil
-        try super.tearDownWithError()
+        let storage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(storage.root)
+        }
+        manager = storage.manager
     }
 
     /// 200 条事件由多线程并发 enqueue，consume 必须一次性全拿到、不丢不重。

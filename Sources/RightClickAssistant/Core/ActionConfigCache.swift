@@ -18,15 +18,22 @@ public final class ActionConfigCache {
     private var enableMap: [String: Bool] = [:]
     private var favoriteSet: Set<String> = []
     private var cachedMenuLayoutMode: MenuLayoutMode = .flat
+    private var configChangedObserver: NSObjectProtocol?
 
     init(storage: SharedStorageManager) {
         self.storage = storage
-        DistributedNotificationCenter.default().addObserver(
+        configChangedObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("guyue.RightClickAssistant.configChanged"),
             object: nil,
             queue: nil
         ) { [weak self] _ in
             self?.invalidate()
+        }
+    }
+
+    deinit {
+        if let configChangedObserver {
+            DistributedNotificationCenter.default().removeObserver(configChangedObserver)
         }
     }
 

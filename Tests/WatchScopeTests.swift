@@ -10,21 +10,17 @@ import XCTest
 final class WatchScopeTests: XCTestCase {
 
     private var storage: SharedStorageManager!
-    private var storageRoot: URL!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        (storage, storageRoot) = try TestStorage.make()
+        let testStorage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(testStorage.root)
+        }
+        storage = testStorage.manager
         // 清场：每个用例从默认值起步。
         storage.removeValue(forKey: SharedStorageManager.Keys.watchScope)
         storage.removeValue(forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: storageRoot)
-        storage = nil
-        storageRoot = nil
-        try super.tearDownWithError()
     }
 
     func testDefaultScopeIsEverywhere() {

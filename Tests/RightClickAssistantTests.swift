@@ -6,25 +6,27 @@ final class RightClickAssistantTests: XCTestCase {
     
     var tempDirectory: URL!
     var storage: SharedStorageManager!
-    var storageRoot: URL!
     
     override func setUpWithError() throws {
         try super.setUpWithError()
         // 创建一个独立的临时目录作为测试运行沙盒，避免对用户磁盘产生脏数据
         let uniqueName = UUID().uuidString
-        tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(uniqueName)
-        try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true, attributes: nil)
-        (storage, storageRoot) = try TestStorage.make()
-    }
-    
-    override func tearDownWithError() throws {
-        // 清理测试临时目录下的所有测试生成物
-        try? FileManager.default.removeItem(at: tempDirectory)
-        try? FileManager.default.removeItem(at: storageRoot)
-        tempDirectory = nil
-        storage = nil
-        storageRoot = nil
-        try super.tearDownWithError()
+        let temporaryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(uniqueName)
+        try FileManager.default.createDirectory(
+            at: temporaryDirectory,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(temporaryDirectory)
+        }
+        tempDirectory = temporaryDirectory
+
+        let testStorage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(testStorage.root)
+        }
+        storage = testStorage.manager
     }
     
     /// 1. 测试动作派发器能否正常注册和检索动作
@@ -121,9 +123,9 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 6. 测试共享动作通道使用 UUID 队列，连续写入不会互相覆盖
     func testSharedActionQueuePreservesMultipleEvents() throws {
-        try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
-        try? FileManager.default.removeItem(at: storage.pendingActionURL)
-        try? FileManager.default.removeItem(at: storage.inFlightActionsDirectoryURL)
+        try TestStorage.removeIfPresent(storage.pendingActionsDirectoryURL)
+        try TestStorage.removeIfPresent(storage.pendingActionURL)
+        try TestStorage.removeIfPresent(storage.inFlightActionsDirectoryURL)
 
         _ = try storage.enqueueAction(actionId: "guyue.action.newfile.txt", paths: [tempDirectory.path])
         _ = try storage.enqueueAction(actionId: "guyue.action.newfile.md", paths: [tempDirectory.path])
@@ -243,9 +245,9 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 15. 无法解析的队列事件应隔离到 FailedActions，便于诊断而不是静默丢弃
     func testMalformedQueueEventsAreQuarantined() throws {
-        try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
-        try? FileManager.default.removeItem(at: storage.failedActionsDirectoryURL)
-        try? FileManager.default.removeItem(at: storage.inFlightActionsDirectoryURL)
+        try TestStorage.removeIfPresent(storage.pendingActionsDirectoryURL)
+        try TestStorage.removeIfPresent(storage.failedActionsDirectoryURL)
+        try TestStorage.removeIfPresent(storage.inFlightActionsDirectoryURL)
 
         let malformedURL = storage.pendingActionsDirectoryURL.appendingPathComponent("malformed.json")
         try Data("{ invalid json".utf8).write(to: malformedURL)

@@ -8,26 +8,98 @@ import XCTest
 final class SharedStorageManagerLeaseTests: XCTestCase {
 
     private var manager: SharedStorageManager!
-    private var sandboxRoot: URL!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        (manager, sandboxRoot) = try TestStorage.make()
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: sandboxRoot)
-        manager = nil
-        sandboxRoot = nil
-        try super.tearDownWithError()
+        let storage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(storage.root)
+        }
+        manager = storage.manager
     }
 
     func testInjectedStorageNeverUsesProductionContainer() throws {
-        let (manager, root) = try TestStorage.make()
-        defer { try? FileManager.default.removeItem(at: root) }
+        let storage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(storage.root)
+        }
 
-        XCTAssertEqual(manager.sharedContainerURL.standardizedFileURL, root.standardizedFileURL)
-        XCTAssertFalse(manager.sharedContainerURL.path.contains("/Library/Containers/"))
+        XCTAssertEqual(
+            storage.manager.sharedContainerURL.standardizedFileURL,
+            storage.root.standardizedFileURL
+        )
+        XCTAssertFalse(storage.manager.sharedContainerURL.path.contains("/Library/Containers/"))
+    }
+
+    func testStorageRejectsSymlinkResolvingIntoContainersBeforeCreation() throws {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RightClickAssistantUnsafePathTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let containersRoot = fixtureRoot
+            .appendingPathComponent("Library/Containers", isDirectory: true)
+        let linkedRoot = fixtureRoot.appendingPathComponent("linked-root", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: containersRoot, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(fixtureRoot)
+        }
+        try FileManager.default.createSymbolicLink(at: linkedRoot, withDestinationURL: containersRoot)
+
+        XCTAssertThrowsError(
+            try TestStorage.make(testCaseName: #function, baseDirectory: linkedRoot)
+        ) { error in
+            guard case TestStorageError.unsafeContainerPath(let resolvedURL) = error else {
+                return XCTFail("应抛出 unsafeContainerPath，实际为 \(error)")
+            }
+            XCTAssertTrue(resolvedURL.path.contains("/Library/Containers/"))
+        }
+    }
+
+    func testInjectedConfigurationBypassesAppGroupDefaults() throws {
+        let storage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(storage.root)
+        }
+
+        let suiteName = "guyue.RightClickAssistantTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let boolKey = "isolated_bool"
+        let arrayKey = "isolated_array"
+        defaults.set(false, forKey: boolKey)
+        defaults.set(["app-group"], forKey: arrayKey)
+
+        let manager = SharedStorageManager(
+            sharedContainerURLOverride: storage.root,
+            usesAppGroup: true,
+            sharedDefaults: defaults
+        )
+
+        manager.setBool(true, forKey: boolKey)
+        manager.setStringArray(["temporary", "temporary"], forKey: arrayKey)
+
+        XCTAssertTrue(manager.getBool(forKey: boolKey, defaultValue: false))
+        XCTAssertEqual(manager.getStringArray(forKey: arrayKey), ["temporary"])
+        XCTAssertFalse(defaults.bool(forKey: boolKey))
+        XCTAssertEqual(defaults.stringArray(forKey: arrayKey), ["app-group"])
+
+        let configData = try Data(contentsOf: manager.configURL)
+        let config = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: configData) as? [String: Any]
+        )
+        XCTAssertEqual(config[boolKey] as? Bool, true)
+        XCTAssertEqual(config[arrayKey] as? [String], ["temporary"])
+
+        manager.removeValue(forKey: boolKey)
+        manager.removeValue(forKey: arrayKey)
+
+        XCTAssertTrue(manager.getBool(forKey: boolKey, defaultValue: true))
+        XCTAssertEqual(manager.getStringArray(forKey: arrayKey, defaultValue: ["default"]), ["default"])
+        XCTAssertFalse(defaults.bool(forKey: boolKey))
+        XCTAssertEqual(defaults.stringArray(forKey: arrayKey), ["app-group"])
     }
 
     func testLeaseRoundTripAndAckRemovesInFlight() throws {
