@@ -11,14 +11,16 @@ import Foundation
 /// - 收到 `configChanged` 分布式通知或主 App 写配置后，调用 `invalidate()`
 /// - 读路径全部 O(1) 内存查询
 public final class ActionConfigCache {
-    public nonisolated(unsafe) static let shared = ActionConfigCache()
+    public nonisolated(unsafe) static let shared = ActionConfigCache(storage: SharedStorageManager.shared)
 
     private let queue = DispatchQueue(label: "guyue.ActionConfigCache", attributes: .concurrent)
+    private let storage: SharedStorageManager
     private var enableMap: [String: Bool] = [:]
     private var favoriteSet: Set<String> = []
     private var cachedMenuLayoutMode: MenuLayoutMode = .flat
 
-    private init() {
+    init(storage: SharedStorageManager) {
+        self.storage = storage
         DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("guyue.RightClickAssistant.configChanged"),
             object: nil,
@@ -32,8 +34,8 @@ public final class ActionConfigCache {
     public func preheat() {
         queue.sync(flags: .barrier) {
             self.enableMap.removeAll(keepingCapacity: true)
-            self.favoriteSet = Set(SharedStorageManager.shared.favoriteActionIds)
-            self.cachedMenuLayoutMode = SharedStorageManager.shared.menuLayoutMode
+            self.favoriteSet = Set(storage.favoriteActionIds)
+            self.cachedMenuLayoutMode = storage.menuLayoutMode
         }
     }
 
@@ -41,8 +43,8 @@ public final class ActionConfigCache {
     public func invalidate() {
         queue.sync(flags: .barrier) {
             self.enableMap.removeAll(keepingCapacity: true)
-            self.favoriteSet = Set(SharedStorageManager.shared.favoriteActionIds)
-            self.cachedMenuLayoutMode = SharedStorageManager.shared.menuLayoutMode
+            self.favoriteSet = Set(storage.favoriteActionIds)
+            self.cachedMenuLayoutMode = storage.menuLayoutMode
         }
     }
 
@@ -51,7 +53,7 @@ public final class ActionConfigCache {
         if let cached = queue.sync(execute: { enableMap[actionId] }) {
             return cached
         }
-        let v = SharedStorageManager.shared.getBool(forKey: "enable_action_\(actionId)", defaultValue: defaultValue)
+        let v = storage.getBool(forKey: "enable_action_\(actionId)", defaultValue: defaultValue)
         // 必须 sync barrier：menu(for:) 主路径会在毫秒级内对同一 actionId 连续读多次，
         // 异步 barrier 会让"第二次读"在 barrier 落库前看不到首次回源结果，从而再次穿透到底层 IO。
         queue.sync(flags: .barrier) { self.enableMap[actionId] = v }

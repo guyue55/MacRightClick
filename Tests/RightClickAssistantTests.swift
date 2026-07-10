@@ -5,19 +5,26 @@ import AppKit
 final class RightClickAssistantTests: XCTestCase {
     
     var tempDirectory: URL!
+    var storage: SharedStorageManager!
+    var storageRoot: URL!
     
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         // 创建一个独立的临时目录作为测试运行沙盒，避免对用户磁盘产生脏数据
         let uniqueName = UUID().uuidString
         tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(uniqueName)
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true, attributes: nil)
+        (storage, storageRoot) = try TestStorage.make()
     }
     
-    override func tearDown() {
+    override func tearDownWithError() throws {
         // 清理测试临时目录下的所有测试生成物
         try? FileManager.default.removeItem(at: tempDirectory)
-        super.tearDown()
+        try? FileManager.default.removeItem(at: storageRoot)
+        tempDirectory = nil
+        storage = nil
+        storageRoot = nil
+        try super.tearDownWithError()
     }
     
     /// 1. 测试动作派发器能否正常注册和检索动作
@@ -114,7 +121,6 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 6. 测试共享动作通道使用 UUID 队列，连续写入不会互相覆盖
     func testSharedActionQueuePreservesMultipleEvents() throws {
-        let storage = SharedStorageManager.shared
         try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
         try? FileManager.default.removeItem(at: storage.pendingActionURL)
         try? FileManager.default.removeItem(at: storage.inFlightActionsDirectoryURL)
@@ -151,7 +157,6 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 8. 托盘中的高风险动作必须复用共享启用策略，默认不暴露给用户
     func testHighRiskStatusMenuActionRequiresExplicitEnablement() {
-        let storage = SharedStorageManager.shared
         let toggleHiddenFiles = UtilityAction(type: .toggleHiddenFiles)
         let key = "enable_action_\(toggleHiddenFiles.actionId)"
 
@@ -166,8 +171,6 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 9. 生产日志默认关闭详细调试，避免右键渲染时持续写入用户路径
     func testDebugLoggingDefaultsToDisabled() {
-        let storage = SharedStorageManager.shared
-
         storage.removeValue(forKey: SharedStorageManager.Keys.enableDebugLogging)
         XCTAssertFalse(storage.isDebugLoggingEnabled)
 
@@ -201,7 +204,6 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 12. 收藏动作通过共享配置持久化，供 Finder 菜单生成常用区
     func testFavoriteActionIdsRoundTrip() {
-        let storage = SharedStorageManager.shared
         let action = NewFileAction(fileType: .txt)
 
         storage.setAction(action, favorite: false)
@@ -241,7 +243,6 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 15. 无法解析的队列事件应隔离到 FailedActions，便于诊断而不是静默丢弃
     func testMalformedQueueEventsAreQuarantined() throws {
-        let storage = SharedStorageManager.shared
         try? FileManager.default.removeItem(at: storage.pendingActionsDirectoryURL)
         try? FileManager.default.removeItem(at: storage.failedActionsDirectoryURL)
         try? FileManager.default.removeItem(at: storage.inFlightActionsDirectoryURL)
@@ -259,8 +260,7 @@ final class RightClickAssistantTests: XCTestCase {
     /// 16. ActionConfigCache 命中后不应再穿透到 SharedStorageManager.getBool
     /// 这是 menu(for:) 主热路径的性能与同步 IO 抑制保障。
     func testFinderSyncUsesCacheNoSyncIO() {
-        let cache = ActionConfigCache.shared
-        let storage = SharedStorageManager.shared
+        let cache = ActionConfigCache(storage: storage)
         let actionId = "guyue.action.test.cache.no_sync_io"
         let key = "enable_action_\(actionId)"
 
@@ -328,8 +328,6 @@ final class RightClickAssistantTests: XCTestCase {
 
     /// 19. 菜单布局模式默认应为直接显示，贴近 Windows 风格一级右键体验
     func testMenuLayoutModeDefaultsToFlat() {
-        let storage = SharedStorageManager.shared
-
         storage.removeValue(forKey: SharedStorageManager.Keys.menuLayoutMode)
 
         XCTAssertEqual(storage.menuLayoutMode, .flat)

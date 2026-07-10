@@ -62,13 +62,16 @@ public final class SharedStorageManager {
     private let appGroupIdentifier = "group.guyue.RightClickAssistant"
     private let extensionBundleIdentifier = "guyue.RightClickAssistant.Extension"
     private let configQueue = DispatchQueue(label: "guyue.RightClickAssistant.config")
+    private let sharedContainerURLOverride: URL?
 
     /// 仅供测试注入：每次 `getBool(forKey:)` 被调用都会先回调此 closure。
     /// 用于验证菜单渲染主路径是否真的命中了 ActionConfigCache，没有穿透到底层 IO。
     /// 生产代码不要依赖此属性。
     public var observeGetBoolForTesting: ((String) -> Void)?
 
-    private init() {}
+    public init(sharedContainerURLOverride: URL? = nil) {
+        self.sharedContainerURLOverride = sharedContainerURLOverride
+    }
     
     /// 获取真实的物理 Home 目录。
     private func getRealHomeDirectory() -> String {
@@ -90,6 +93,11 @@ public final class SharedStorageManager {
     /// - MAS 路线：必须走 App Group 容器；若不可写视为配置错误，记 error 并兜底到主 App 自身 NSHomeDirectory
     /// - website 路线：直接走 Extension Container（~/Library/Containers/<extBundle>/Data），主 App 非 sandbox 时可正常读写
     public var sharedContainerURL: URL {
+        if let override = sharedContainerURLOverride {
+            try? FileManager.default.createDirectory(at: override, withIntermediateDirectories: true)
+            return override
+        }
+
         if Distribution.usesAppGroup {
             if let appGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
                 let testDir = appGroupURL.appendingPathComponent(".test_write")

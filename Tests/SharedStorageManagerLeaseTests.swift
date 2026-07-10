@@ -10,16 +10,24 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
     private var manager: SharedStorageManager!
     private var sandboxRoot: URL!
 
-    override func setUp() {
-        super.setUp()
-        manager = SharedStorageManager.shared
-        sandboxRoot = manager.sharedContainerURL
-        // 清场：移除可能残留的 PendingActions / InFlightActions / FailedActions 内容，
-        // 避免历史用例污染。
-        for sub in ["PendingActions", "InFlightActions", "FailedActions"] {
-            let url = sandboxRoot.appendingPathComponent(sub, isDirectory: true)
-            try? FileManager.default.removeItem(at: url)
-        }
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        (manager, sandboxRoot) = try TestStorage.make()
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: sandboxRoot)
+        manager = nil
+        sandboxRoot = nil
+        try super.tearDownWithError()
+    }
+
+    func testInjectedStorageNeverUsesProductionContainer() throws {
+        let (manager, root) = try TestStorage.make()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertEqual(manager.sharedContainerURL.standardizedFileURL, root.standardizedFileURL)
+        XCTAssertFalse(manager.sharedContainerURL.path.contains("/Library/Containers/"))
     }
 
     func testLeaseRoundTripAndAckRemovesInFlight() throws {

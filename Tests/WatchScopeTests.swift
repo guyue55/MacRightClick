@@ -9,13 +9,22 @@ import XCTest
 /// 4. 切换会即时反映，无需重启进程。
 final class WatchScopeTests: XCTestCase {
 
-    private let storage = SharedStorageManager.shared
+    private var storage: SharedStorageManager!
+    private var storageRoot: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        (storage, storageRoot) = try TestStorage.make()
         // 清场：每个用例从默认值起步。
         storage.removeValue(forKey: SharedStorageManager.Keys.watchScope)
         storage.removeValue(forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: storageRoot)
+        storage = nil
+        storageRoot = nil
+        try super.tearDownWithError()
     }
 
     func testDefaultScopeIsEverywhere() {

@@ -21,14 +21,16 @@ final class PendingActionStressTests: XCTestCase {
     private var manager: SharedStorageManager!
     private var sandboxRoot: URL!
 
-    override func setUp() {
-        super.setUp()
-        manager = SharedStorageManager.shared
-        sandboxRoot = manager.sharedContainerURL
-        for sub in ["PendingActions", "InFlightActions", "FailedActions"] {
-            let url = sandboxRoot.appendingPathComponent(sub, isDirectory: true)
-            try? FileManager.default.removeItem(at: url)
-        }
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        (manager, sandboxRoot) = try TestStorage.make()
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: sandboxRoot)
+        manager = nil
+        sandboxRoot = nil
+        try super.tearDownWithError()
     }
 
     /// 200 条事件由多线程并发 enqueue，consume 必须一次性全拿到、不丢不重。
