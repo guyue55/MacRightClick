@@ -21,6 +21,7 @@ Package.resolved
 build/
 DerivedData/
 .worktrees/
+.superpowers/
 *.xcodeproj/
 *.xcworkspace/
 !*.xcodeproj/project.pbxproj
