@@ -11,7 +11,7 @@ public struct SharedActionEvent: Codable, Equatable, Identifiable {
 
 /// dispatcher 消费一个 PendingAction 时拿到的「租约」凭证（P1-2 事务化）：
 /// - `event` 是真正要执行的动作；
-/// - `inFlightURL` 指向已被搬到 InFlightActions/<pid>/ 的实体文件；
+/// - `inFlightURL` 指向已被搬到 InFlightActions/<owner>/ 的实体文件；
 /// - 跑完动作后必须调用 `SharedStorageManager.acknowledge(_:)` 删除 InFlight 文件，
 ///   否则进程崩溃后会被 `reclaimAbandonedInFlightActions` 复活重跑。
 /// `inFlightURL == nil` 仅用于旧版兼容路径（pending_action.json）。
@@ -49,6 +49,7 @@ public enum SharedLogLevel {
 /// 集中处理宿主主程序与 FinderSync 扩展之间的配置、队列和诊断数据。
 public final class SharedStorageManager {
     public nonisolated(unsafe) static let shared = SharedStorageManager()
+    private static let processInstanceIdentifier = UUID().uuidString
 
     public enum Keys {
         public static let enableDebugLogging = "enable_debug_logging"
@@ -87,10 +88,12 @@ public final class SharedStorageManager {
     init(
         sharedContainerURLOverride: URL?,
         usesAppGroup: Bool,
-        sharedDefaults: UserDefaults?
+        sharedDefaults: UserDefaults?,
+        allowAppGroupDefaultsWithContainerOverride: Bool = false
     ) {
         self.sharedContainerURLOverride = sharedContainerURLOverride
-        self.shouldUseAppGroupDefaults = sharedContainerURLOverride == nil && usesAppGroup
+        self.shouldUseAppGroupDefaults = usesAppGroup
+            && (sharedContainerURLOverride == nil || allowAppGroupDefaultsWithContainerOverride)
         self.sharedDefaults = sharedDefaults
     }
     
@@ -178,24 +181,30 @@ public final class SharedStorageManager {
         return url
     }
 
-    /// 「已被某进程 lease、但还没确认完成」的事件目录。每个进程独占一个 PID 子目录，
-    /// 这样多实例（极端情况下）互不踩，并且 reclaim 时只搬「不是当前进程的」目录。
+    /// 「已被某进程 lease、但还没确认完成」的事件目录。每次进程启动使用
+    /// `<pid>-<instance-id>` 独占子目录，避免 PID 复用时碰到旧进程的租约。
     /// 设计目标（P1-2）：
     /// - 旧实现 decode 之后立即 unconditional 删除，dispatcher 中途崩溃就丢事件；
-    /// - 改成「PendingActions/X.json → InFlightActions/<pid>/X.json」的原子 rename，
+    /// - 改成「PendingActions/X.json → InFlightActions/<owner>/X.json」的原子 rename，
     ///   dispatcher 跑完才 ack 删除 InFlight 文件；
     /// - 启动时调用 `reclaimAbandonedInFlightActions`：把不属于当前进程的 InFlight
-    ///   文件搬回 PendingActions，再清理空 PID 目录。
+    ///   文件搬回 PendingActions，再清理空 owner 目录。
     public var inFlightActionsDirectoryURL: URL {
         let url = sharedContainerURL.appendingPathComponent("InFlightActions", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
         return url
     }
 
-    /// 当前进程独占的 InFlight 子目录。
+    private var currentProcessOwnerDirectoryName: String {
+        "\(ProcessInfo.processInfo.processIdentifier)-\(Self.processInstanceIdentifier)"
+    }
+
+    /// 当前进程实例独占的 InFlight 子目录。
     private var currentProcessInFlightDirectoryURL: URL {
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let url = inFlightActionsDirectoryURL.appendingPathComponent(String(pid), isDirectory: true)
+        let url = inFlightActionsDirectoryURL.appendingPathComponent(
+            currentProcessOwnerDirectoryName,
+            isDirectory: true
+        )
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
         return url
     }
@@ -381,7 +390,7 @@ public final class SharedStorageManager {
     }
 
     /// 消费队列中所有待处理动作的 lease 形式（P1-2 事务化）：
-    /// 1. 把 PendingActions/*.json 原子 rename 到 InFlightActions/<pid>/，
+    /// 1. 把 PendingActions/*.json 原子 rename 到 InFlightActions/<owner>/，
     ///    避免「decode 成功 → 立即删除 → dispatcher 崩溃」之间丢事件；
     /// 2. dispatcher 跑完后必须显式 `acknowledge`，否则下次启动 `reclaimAbandonedInFlightActions`
     ///    会把它搬回 PendingActions 重跑（at-least-once）；
@@ -463,10 +472,11 @@ public final class SharedStorageManager {
     }
 
     /// 可注入存活检查的回收入口，供测试和受控调用使用。
-    /// 当前进程、其他存活进程以及无效 PID 目录均不会被回收。
+    /// 当前进程实例、其他存活进程以及无效 owner 目录均不会被回收。
     public func reclaimAbandonedInFlightActions(processIsAlive: (Int32) -> Bool) {
         let parent = inFlightActionsDirectoryURL
         let currentPID = ProcessInfo.processInfo.processIdentifier
+        let currentOwnerName = currentProcessOwnerDirectoryName
 
         let pidDirs = (try? FileManager.default.contentsOfDirectory(
             at: parent,
@@ -478,10 +488,12 @@ public final class SharedStorageManager {
             let isDir = (try? pidDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             guard isDir else { continue }
             let ownerName = pidDir.lastPathComponent
-            guard ownerName.allSatisfy(\.isNumber),
-                  let ownerPID = Int32(ownerName),
+            guard ownerName != currentOwnerName,
+                  let ownerPID = Self.ownerPID(from: ownerName),
                   ownerPID > 0 else { continue }
-            if ownerPID == currentPID || processIsAlive(ownerPID) { continue }
+            // 同 PID 但不同 instance-id 的目录属于本次启动前留下的旧租约。
+            // 新进程只会写自己的 instance-id 目录，因此可以安全回收旧目录。
+            if ownerPID != currentPID && processIsAlive(ownerPID) { continue }
 
             let orphanFiles = (try? FileManager.default.contentsOfDirectory(
                 at: pidDir,
@@ -490,6 +502,10 @@ public final class SharedStorageManager {
             )) ?? []
 
             for orphan in orphanFiles where orphan.pathExtension == "json" {
+                // 兼容旧版纯 PID owner：移动每个文件前再次检查，缩小旧版本进程
+                // 恰好复用该 PID 并开始写入时的竞态窗口。
+                if ownerPID != currentPID && processIsAlive(ownerPID) { break }
+
                 let target = pendingActionsDirectoryURL.appendingPathComponent(orphan.lastPathComponent)
                 try? FileManager.default.removeItem(at: target)
                 do {
@@ -500,9 +516,26 @@ public final class SharedStorageManager {
                 }
             }
 
-            // 清空 PID 目录后清理（保持 InFlight 树整洁）。
-            try? FileManager.default.removeItem(at: pidDir)
+            // 只删除真正为空的 owner 目录；若存活状态在回收期间变化，或目录里有
+            // 非事件文件，绝不能递归删除仍可能被使用的内容。
+            let remainingItems = try? FileManager.default.contentsOfDirectory(atPath: pidDir.path)
+            if remainingItems?.isEmpty == true {
+                try? FileManager.default.removeItem(at: pidDir)
+            }
         }
+    }
+
+    private static func ownerPID(from directoryName: String) -> Int32? {
+        let pidComponent = directoryName.split(
+            separator: "-",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )[0]
+        guard !pidComponent.isEmpty,
+              pidComponent.allSatisfy({ $0 >= "0" && $0 <= "9" }) else {
+            return nil
+        }
+        return Int32(pidComponent)
     }
 
     private static func isProcessAlive(_ pid: Int32) -> Bool {
@@ -559,10 +592,9 @@ public final class SharedStorageManager {
     }
 
     /// 仅允许在 `configQueue` 内调用。
-    private func saveConfigUnlocked(_ config: [String: Any]) {
-        if let data = try? JSONSerialization.data(withJSONObject: config, options: .prettyPrinted) {
-            try? data.write(to: configURL, options: .atomic)
-        }
+    private func saveConfigUnlocked(_ config: [String: Any]) throws {
+        let data = try JSONSerialization.data(withJSONObject: config, options: .prettyPrinted)
+        try data.write(to: configURL, options: .atomic)
     }
 
     private func loadConfig() -> [String: Any] {
@@ -571,55 +603,71 @@ public final class SharedStorageManager {
         }
     }
 
+    @discardableResult
     private func mutateConfig(
-        sharedDefaultsMutation: ((UserDefaults) -> Void)? = nil,
-        _ mutation: (inout [String: Any]) -> Void
-    ) {
+        update: (inout [String: Any], UserDefaults?) -> Void,
+        mirrorToSharedDefaults: ((UserDefaults, [String: Any]) -> Void)? = nil
+    ) -> Bool {
         configQueue.sync {
-            if shouldUseAppGroupDefaults,
-               let sharedDefaults,
-               let sharedDefaultsMutation {
-                sharedDefaultsMutation(sharedDefaults)
-                sharedDefaults.synchronize()
+            let defaults = shouldUseAppGroupDefaults ? sharedDefaults : nil
+            var config = loadConfigUnlocked()
+            update(&config, defaults)
+
+            do {
+                try saveConfigUnlocked(config)
+            } catch {
+                AppLog.error(
+                    "共享配置写入失败：\(error.localizedDescription)",
+                    category: .storage
+                )
+                return false
             }
 
-            var config = loadConfigUnlocked()
-            mutation(&config)
-            saveConfigUnlocked(config)
+            guard let defaults,
+                  let mirrorToSharedDefaults else {
+                return true
+            }
+
+            mirrorToSharedDefaults(defaults, config)
+            let synchronized = defaults.synchronize()
+            if !synchronized {
+                AppLog.error("App Group 偏好同步失败，config.json 已保留权威值", category: .storage)
+            }
+            return synchronized
         }
     }
     
     /// 获取指定菜单项是否启用
-    /// 路由：仅在 App Group 路线（MAS）下尝试读 group UserDefaults；website 路线下直接走
-    /// config.json，避免触发 cfprefsd 的 "kCFPreferencesAnyUser with a container is only allowed
+    /// `config.json` 是两条分发路线的权威值；MAS 的 App Group UserDefaults 仅作为旧配置兜底。
+    /// website 路线不访问 suite defaults，避免触发 cfprefsd 的 "kCFPreferencesAnyUser with a container is only allowed
     /// for System Containers, detaching from cfprefsd" 错误链——一旦 detach，后续任何 CFPreferences
     /// 同步 XPC（含 NSWorkspace.accessibility 探测）会变成无人接的 mach_msg 等待，启动期最早被
     /// SwiftUI 的 NSHostingView.viewDidMoveToWindow 触发，进程死锁（压测捕获）。
     /// 注入共享目录时始终只读写该目录下的 config.json，避免测试接触真实 App Group 偏好。
     public func getBool(forKey key: String, defaultValue: Bool = true) -> Bool {
         observeGetBoolForTesting?(key)
+        let config = loadConfig()
+        if let value = config[key] as? Bool {
+            return value
+        }
+
         if shouldUseAppGroupDefaults,
            let sharedDefaults,
            sharedDefaults.object(forKey: key) != nil {
             return sharedDefaults.bool(forKey: key)
         }
-
-        let config = loadConfig()
-        if let val = config[key] as? Bool {
-            return val
-        }
         return defaultValue
     }
 
     public func getStringArray(forKey key: String, defaultValue: [String] = []) -> [String] {
-        if shouldUseAppGroupDefaults,
-           let sharedDefaults,
-           let values = sharedDefaults.stringArray(forKey: key) {
+        let config = loadConfig()
+        if let values = config[key] as? [String] {
             return values
         }
 
-        let config = loadConfig()
-        if let values = config[key] as? [String] {
+        if shouldUseAppGroupDefaults,
+           let sharedDefaults,
+           let values = sharedDefaults.stringArray(forKey: key) {
             return values
         }
         return defaultValue
@@ -641,57 +689,86 @@ public final class SharedStorageManager {
     /// 写入指定菜单项的启用状态（在宿主设置界面变更配置时调用）
     /// 仅在 App Group 路线下双写到 group UserDefaults；website 路线只写 config.json，
     /// 注入共享目录同样只写 config.json；见 getBool 注释。
-    public func setBool(_ value: Bool, forKey key: String) {
-        mutateConfig(sharedDefaultsMutation: { defaults in
-            defaults.set(value, forKey: key)
-        }) { config in
-            config[key] = value
-        }
+    @discardableResult
+    public func setBool(_ value: Bool, forKey key: String) -> Bool {
+        mutateConfig(
+            update: { config, _ in
+                config[key] = value
+            },
+            mirrorToSharedDefaults: { defaults, _ in
+                defaults.set(value, forKey: key)
+            }
+        )
     }
 
-    public func setStringArray(_ values: [String], forKey key: String) {
+    @discardableResult
+    public func setStringArray(_ values: [String], forKey key: String) -> Bool {
         let uniqueValues = Array(NSOrderedSet(array: values)).compactMap { $0 as? String }
 
-        mutateConfig(sharedDefaultsMutation: { defaults in
-            defaults.set(uniqueValues, forKey: key)
-        }) { config in
-            config[key] = uniqueValues
-        }
+        return mutateConfig(
+            update: { config, _ in
+                config[key] = uniqueValues
+            },
+            mirrorToSharedDefaults: { defaults, _ in
+                defaults.set(uniqueValues, forKey: key)
+            }
+        )
     }
 
     /// 一次配置事务写入全部动作开关，避免设置页批量保存时产生中间状态。
-    public func setActionEnabledStates(_ states: [String: Bool]) {
-        guard !states.isEmpty else { return }
+    @discardableResult
+    public func setActionEnabledStates(_ states: [String: Bool]) -> Bool {
+        guard !states.isEmpty else { return true }
 
-        mutateConfig(sharedDefaultsMutation: { defaults in
-            for (actionID, enabled) in states {
-                defaults.set(enabled, forKey: "enable_action_\(actionID)")
+        return mutateConfig(
+            update: { config, _ in
+                for (actionID, enabled) in states {
+                    config["enable_action_\(actionID)"] = enabled
+                }
+            },
+            mirrorToSharedDefaults: { defaults, _ in
+                for (actionID, enabled) in states {
+                    defaults.set(enabled, forKey: "enable_action_\(actionID)")
+                }
             }
-        }) { config in
-            for (actionID, enabled) in states {
-                config["enable_action_\(actionID)"] = enabled
-            }
-        }
+        )
     }
 
-    public func setAction(_ action: MenuAction, favorite: Bool) {
-        var ids = favoriteActionIds
-        if favorite {
-            if !ids.contains(action.actionId) {
-                ids.append(action.actionId)
+    @discardableResult
+    public func setAction(_ action: MenuAction, favorite: Bool) -> Bool {
+        let actionID = action.actionId
+        return mutateConfig(
+            update: { config, defaults in
+                let storedIDs = config[Keys.favoriteActionIds] as? [String]
+                    ?? defaults?.stringArray(forKey: Keys.favoriteActionIds)
+                    ?? []
+                var ids = Array(NSOrderedSet(array: storedIDs)).compactMap { $0 as? String }
+                if favorite {
+                    if !ids.contains(actionID) {
+                        ids.append(actionID)
+                    }
+                } else {
+                    ids.removeAll { $0 == actionID }
+                }
+                config[Keys.favoriteActionIds] = ids
+            },
+            mirrorToSharedDefaults: { defaults, config in
+                let ids = config[Keys.favoriteActionIds] as? [String] ?? []
+                defaults.set(ids, forKey: Keys.favoriteActionIds)
             }
-        } else {
-            ids.removeAll { $0 == action.actionId }
-        }
-        setStringArray(ids, forKey: Keys.favoriteActionIds)
+        )
     }
 
     /// 移除指定配置值，让后续读取回到默认值。用于恢复默认设置和测试隔离。
-    public func removeValue(forKey key: String) {
-        mutateConfig(sharedDefaultsMutation: { defaults in
-            defaults.removeObject(forKey: key)
-        }) { config in
-            config.removeValue(forKey: key)
-        }
+    @discardableResult
+    public func removeValue(forKey key: String) -> Bool {
+        mutateConfig(
+            update: { config, _ in
+                config.removeValue(forKey: key)
+            },
+            mirrorToSharedDefaults: { defaults, _ in
+                defaults.removeObject(forKey: key)
+            }
+        )
     }
 }

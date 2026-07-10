@@ -217,6 +217,29 @@ final class RightClickAssistantTests: XCTestCase {
         storage.setAction(action, favorite: false)
     }
 
+    func testConcurrentFavoriteMutationsPreserveEveryAction() {
+        storage.removeValue(forKey: SharedStorageManager.Keys.favoriteActionIds)
+        let storageBox = TestSendableBox(storage!)
+        let actionIDs = (0..<64).map { "test.favorite.concurrent.\($0)" }
+        let group = DispatchGroup()
+
+        for actionID in actionIDs {
+            group.enter()
+            DispatchQueue.global().async {
+                let action = TestMenuAction(
+                    id: actionID,
+                    title: actionID,
+                    category: .utility
+                )
+                storageBox.value.setAction(action, favorite: true)
+                group.leave()
+            }
+        }
+        group.wait()
+
+        XCTAssertEqual(Set(storage.favoriteActionIds), Set(actionIDs))
+    }
+
     /// 13. 默认监听目录不应包含或创建用户项目目录
     func testDefaultWatchedDirectoriesDoNotIncludeGitProject() {
         let paths = SharedStorageManager.defaultWatchedDirectoryPaths(

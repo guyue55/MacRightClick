@@ -41,3 +41,13 @@ enum TestStorage {
         }
     }
 }
+
+/// 测试用并发捕获盒。调用方必须保证被包装对象的生命周期覆盖全部并发任务，
+/// 并且只调用该对象明确声明为线程安全的接口。
+final class TestSendableBox<Value>: @unchecked Sendable {
+    let value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+}

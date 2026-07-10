@@ -63,13 +63,16 @@ final class PendingActionStressTests: XCTestCase {
         let consumedIds = Set(leases.map { $0.event.id })
         XCTAssertEqual(consumedIds.count, total, "lease.event.id 必须互不重复")
 
-        // ack 后 InFlight/<pid>/ 应当清空。
+        let ownerDirectories = Set(leases.compactMap {
+            $0.inFlightURL?.deletingLastPathComponent()
+        })
+        XCTAssertEqual(ownerDirectories.count, 1)
+
+        // ack 后当前进程实例的 InFlight owner 目录应当清空。
         leases.forEach { manager.acknowledge($0) }
-        let inflightLeft = (try? FileManager.default.contentsOfDirectory(
-            atPath: manager.inFlightActionsDirectoryURL
-                .appendingPathComponent(String(ProcessInfo.processInfo.processIdentifier))
-                .path
-        )) ?? []
+        let inflightLeft = ownerDirectories.flatMap { directory in
+            (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        }
         XCTAssertTrue(inflightLeft.filter { $0.hasSuffix(".json") }.isEmpty)
     }
 
@@ -94,7 +97,7 @@ final class PendingActionStressTests: XCTestCase {
             try data.write(to: url)
         }
 
-        manager.reclaimAbandonedInFlightActions()
+        manager.reclaimAbandonedInFlightActions(processIsAlive: { _ in false })
 
         // bogus PID 子目录被清理。
         XCTAssertFalse(FileManager.default.fileExists(atPath: bogusDir.path))

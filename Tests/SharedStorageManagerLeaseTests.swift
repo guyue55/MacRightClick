@@ -110,6 +110,63 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
         XCTAssertEqual(defaults.stringArray(forKey: arrayKey), ["app-group"])
     }
 
+    func testMASConfigurationMirrorsCanonicalConfigToInjectedDefaults() throws {
+        let storage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(storage.root)
+        }
+
+        let suiteName = "guyue.RightClickAssistantTests.mas.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let manager = SharedStorageManager(
+            sharedContainerURLOverride: storage.root,
+            usesAppGroup: true,
+            sharedDefaults: defaults,
+            allowAppGroupDefaultsWithContainerOverride: true
+        )
+
+        XCTAssertTrue(manager.setBool(true, forKey: "mas_bool"))
+        XCTAssertTrue(manager.setStringArray(["one", "two"], forKey: "mas_array"))
+        XCTAssertTrue(manager.setActionEnabledStates(["mas.action": false]))
+
+        XCTAssertTrue(defaults.bool(forKey: "mas_bool"))
+        XCTAssertEqual(defaults.stringArray(forKey: "mas_array"), ["one", "two"])
+        XCTAssertFalse(defaults.bool(forKey: "enable_action_mas.action"))
+
+        // config.json 是权威值；即使旧偏好残留冲突值，读取也不能回退到旧状态。
+        defaults.set(false, forKey: "mas_bool")
+        XCTAssertTrue(manager.getBool(forKey: "mas_bool", defaultValue: false))
+    }
+
+    func testConfigurationWriteFailureIsReportedBeforeDefaultsAreMirrored() throws {
+        let storage = try TestStorage.make()
+        addTeardownBlock {
+            try TestStorage.removeIfPresent(storage.root)
+        }
+
+        let suiteName = "guyue.RightClickAssistantTests.write-failure.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set(false, forKey: "write_failure")
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let manager = SharedStorageManager(
+            sharedContainerURLOverride: storage.root,
+            usesAppGroup: true,
+            sharedDefaults: defaults,
+            allowAppGroupDefaultsWithContainerOverride: true
+        )
+        try FileManager.default.createDirectory(at: manager.configURL, withIntermediateDirectories: true)
+
+        XCTAssertFalse(manager.setBool(true, forKey: "write_failure"))
+        XCTAssertFalse(defaults.bool(forKey: "write_failure"))
+    }
+
     func testSetActionEnabledStatesWritesAllStatesInOneConfigurationMutation() throws {
         manager.setStringArray(["keep"], forKey: "unrelated")
 
@@ -129,11 +186,12 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
             try TestStorage.removeIfPresent(storage.root)
         }
 
+        let managerBox = TestSendableBox(storage.manager)
         let group = DispatchGroup()
         for index in 0..<100 {
             group.enter()
             DispatchQueue.global().async {
-                storage.manager.setBool(true, forKey: "parallel_\(index)")
+                managerBox.value.setBool(true, forKey: "parallel_\(index)")
                 group.leave()
             }
         }
@@ -183,8 +241,8 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
         let orphanURL = bogusDir.appendingPathComponent("\(Int64(event.createdAt*1000))-\(event.id).json")
         try data.write(to: orphanURL)
 
-        // reclaim 应当把孤儿搬回 PendingActions。
-        manager.reclaimAbandonedInFlightActions()
+        // reclaim 应当把已确认死亡 owner 的孤儿搬回 PendingActions。
+        manager.reclaimAbandonedInFlightActions(processIsAlive: { _ in false })
 
         let recovered = manager.consumePendingActionLeases()
         XCTAssertEqual(recovered.count, 1)
@@ -215,15 +273,37 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
     }
 
     func testReclaimSkipsCurrentProcessEvenWhenLivenessCheckReturnsFalse() throws {
-        let currentDirectory = manager.inFlightActionsDirectoryURL
-            .appendingPathComponent(String(ProcessInfo.processInfo.processIdentifier), isDirectory: true)
-        try FileManager.default.createDirectory(at: currentDirectory, withIntermediateDirectories: true)
-        let eventURL = currentDirectory.appendingPathComponent("current.json")
-        try Data("current".utf8).write(to: eventURL)
+        _ = try manager.enqueueAction(actionId: "test.current-owner", paths: ["/tmp/current"])
+        let lease = try XCTUnwrap(manager.consumePendingActionLeases().first)
+        let eventURL = try XCTUnwrap(lease.inFlightURL)
 
         manager.reclaimAbandonedInFlightActions(processIsAlive: { _ in false })
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: eventURL.path))
+        manager.acknowledge(lease)
+    }
+
+    func testReclaimRestoresStaleDirectoryAfterPIDReuse() throws {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let staleDirectory = manager.inFlightActionsDirectoryURL
+            .appendingPathComponent("\(currentPID)-previous-instance", isDirectory: true)
+        try FileManager.default.createDirectory(at: staleDirectory, withIntermediateDirectories: true)
+
+        let event = SharedActionEvent(
+            id: UUID().uuidString,
+            createdAt: Date().timeIntervalSince1970,
+            actionId: "test.reused-pid",
+            paths: ["/tmp/reused-pid"]
+        )
+        let eventURL = staleDirectory.appendingPathComponent("stale.json")
+        try JSONEncoder().encode(event).write(to: eventURL)
+
+        manager.reclaimAbandonedInFlightActions(processIsAlive: { _ in true })
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: eventURL.path))
+        let recovered = manager.consumePendingActionLeases()
+        XCTAssertEqual(recovered.map(\.event.actionId), ["test.reused-pid"])
+        recovered.forEach { manager.acknowledge($0) }
     }
 
     func testReclaimIgnoresNonNumericAndInvalidPIDDirectories() throws {
