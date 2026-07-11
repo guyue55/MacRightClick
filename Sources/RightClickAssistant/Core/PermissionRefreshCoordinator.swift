@@ -21,7 +21,9 @@ public enum PermissionRefreshCoordinator {
         public var isSuccess: Bool {
             switch choice {
             case .relaunchAppAndRestartFinder:
-                return relaunchResult?.isSuccess == true && restartFinderResult?.isSuccess == true
+                // Finder 由携带 permission-refresh 参数的新进程在完成初始化后重启。
+                // 旧进程只能确认新实例是否成功拉起，不能伪造新进程的最终刷新结果。
+                return relaunchResult?.isSuccess == true
             case .restartFinderOnly:
                 return restartFinderResult?.isSuccess == true
             case .later:
@@ -73,11 +75,10 @@ public enum PermissionRefreshCoordinator {
             switch choice {
             case .relaunchAppAndRestartFinder:
                 let relaunchResult = relaunchAppForPermissionRefresh(bundleURL: bundleURL)
-                let restartResult = relaunchResult.isSuccess ? restartFinderOnly() : nil
                 outcome = ReloadOutcome(
                     choice: choice,
                     relaunchResult: relaunchResult,
-                    restartFinderResult: restartResult
+                    restartFinderResult: nil
                 )
             case .restartFinderOnly:
                 outcome = ReloadOutcome(

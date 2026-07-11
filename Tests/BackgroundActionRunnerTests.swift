@@ -44,21 +44,37 @@ final class BackgroundActionRunnerTests: XCTestCase {
             actionLabel: "test.bg.C",
             ioQueueLabel: "test.bg.C.io"
         )
-        let lock = NSLock()
-        var order: [Int] = []
+        let order = LockedOrderRecorder()
         let exp = expectation(description: "两次 submit 串行")
         exp.expectedFulfillmentCount = 2
 
         runner.submit {
             Thread.sleep(forTimeInterval: 0.1)
-            lock.lock(); order.append(1); lock.unlock()
+            order.append(1)
             exp.fulfill()
         }
         runner.submit {
-            lock.lock(); order.append(2); lock.unlock()
+            order.append(2)
             exp.fulfill()
         }
         wait(for: [exp], timeout: 2.0)
-        XCTAssertEqual(order, [1, 2], "FIFO 必须保证；第一笔慢任务必须先于第二笔结束")
+        XCTAssertEqual(order.snapshot, [1, 2], "FIFO 必须保证；第一笔慢任务必须先于第二笔结束")
+    }
+}
+
+private final class LockedOrderRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Int] = []
+
+    func append(_ value: Int) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    var snapshot: [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
     }
 }

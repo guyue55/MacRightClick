@@ -537,6 +537,22 @@ final class RightClickAssistantTests: XCTestCase {
         )
     }
 
+    func testPermissionRefreshRelaunchDefersFinderRestartToNewProcess() {
+        let relaunch = SystemCommandResult(
+            executablePath: "/usr/bin/open",
+            arguments: [],
+            terminationStatus: 0
+        )
+        let outcome = PermissionRefreshCoordinator.ReloadOutcome(
+            choice: .relaunchAppAndRestartFinder,
+            relaunchResult: relaunch,
+            restartFinderResult: nil
+        )
+
+        XCTAssertTrue(outcome.isSuccess)
+        XCTAssertNil(outcome.restartFinderResult)
+    }
+
     func testPermissionRefreshCoordinatorPromptsOnlyOnFreshGrantTransition() {
         XCTAssertTrue(PermissionRefreshCoordinator.shouldPromptAfterGrant(
             previous: false,

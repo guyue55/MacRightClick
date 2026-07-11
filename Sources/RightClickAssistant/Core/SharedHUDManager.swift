@@ -137,7 +137,8 @@ public final class SharedHUDManager {
             let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
             // 10. 用户主动关闭通道：点击 HUD 任意位置或按 Esc 都立刻关闭。
-            let dismiss: @MainActor () -> Void = {
+            let dismiss: @MainActor () -> Void = { [weak panel] in
+                guard let panel else { return }
                 dismissPanel(panel, animated: !reduceMotion)
             }
             let clickRecognizer = HUDClickRecognizer(target: nil, action: nil, dismiss: dismiss)

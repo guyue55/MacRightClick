@@ -594,9 +594,8 @@ struct PermissionsSettingsView: View {
         ) { outcome in
             guard outcome.isSuccess else {
                 SharedHUDManager.show(
-                    title: outcome.relaunchResult?.isSuccess == true ? "Finder 重启失败" : "重新打开失败",
-                    content: outcome.restartFinderResult?.errorDescription
-                        ?? outcome.relaunchResult?.errorDescription
+                    title: "重新打开失败",
+                    content: outcome.relaunchResult?.errorDescription
                         ?? "请手动退出并重新打开右键助手，然后重启 Finder",
                     isSuccess: false
                 )
@@ -865,15 +864,18 @@ struct DiagnosticsSettingsView: View {
             isRepairRunning = false
             guard outcome.isSuccess else {
                 SharedHUDManager.show(
-                    title: outcome.relaunchResult?.isSuccess == true ? "Finder 重启失败" : "重新打开失败",
-                    content: outcome.restartFinderResult?.errorDescription
-                        ?? outcome.relaunchResult?.errorDescription
+                    title: "重新打开失败",
+                    content: outcome.relaunchResult?.errorDescription
                         ?? "请手动退出并重新打开右键助手",
                     isSuccess: false
                 )
                 return
             }
-            SharedHUDManager.show(title: "正在重新打开", content: "Finder 已刷新，当前进程即将退出", isSuccess: true)
+            SharedHUDManager.show(
+                title: "正在重新打开",
+                content: "新进程将刷新 Finder，当前进程即将退出",
+                isSuccess: true
+            )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 NSApplication.shared.terminate(nil)
             }
@@ -1726,15 +1728,18 @@ struct ExtensionStatusBanner: View {
             isRepairRunning = false
             guard outcome.isSuccess else {
                 SharedHUDManager.show(
-                    title: outcome.relaunchResult?.isSuccess == true ? "Finder 重启失败" : "重新打开失败",
-                    content: outcome.restartFinderResult?.errorDescription
-                        ?? outcome.relaunchResult?.errorDescription
+                    title: "重新打开失败",
+                    content: outcome.relaunchResult?.errorDescription
                         ?? "请手动退出并重新打开右键助手",
                     isSuccess: false
                 )
                 return
             }
-            SharedHUDManager.show(title: "正在重新打开", content: "Finder 已刷新，当前进程即将退出", isSuccess: true)
+            SharedHUDManager.show(
+                title: "正在重新打开",
+                content: "新进程将刷新 Finder，当前进程即将退出",
+                isSuccess: true
+            )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 NSApplication.shared.terminate(nil)
             }
