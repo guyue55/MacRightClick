@@ -1,7 +1,15 @@
 import SwiftUI
 
 struct AdvancedSettingsView: View {
+    private enum ResetKind: String, Identifiable {
+        case actions
+        case all
+
+        var id: String { rawValue }
+    }
+
     @State private var refreshID = UUID()
+    @State private var pendingReset: ResetKind?
 
     private var advancedItems: [ActionItem] {
         ActionDispatcher.shared.allActions
@@ -11,84 +19,137 @@ struct AdvancedSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("高级动作默认关闭，开启后仍会在执行前确认。")
-                .font(.body)
-                .foregroundColor(.secondary)
-
-            ActionListGroupView(
-                title: "高级功能",
-                iconName: "exclamationmark.triangle",
-                items: advancedItems,
-                footer: "包含永久删除、跨目录复制/移动、重启 Finder 等动作。"
-            )
+        Form {
+            Section {
+                ForEach(advancedItems) { item in
+                    ActionRowView(action: item.action)
+                }
+            } header: {
+                Text("高级动作")
+            } footer: {
+                Text("高级动作默认关闭，可能永久删除文件或改变系统状态；启用后仍会在执行前确认。")
+            }
             .id(refreshID)
 
-            ExternalToolsManagerView()
+            Section("外部工具") {
+                ExternalToolsManagerView()
+            }
 
-            GroupBox(label: Label("恢复", systemImage: "arrow.counterclockwise")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("仅恢复动作启用状态")
-                                .font(.body)
-                            Text("移除所有动作启用状态配置，恢复为内置默认值。")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Button("恢复") { resetActionDefaults() }
-                            .buttonStyle(.bordered)
+            Section {
+                LabeledContent {
+                    Button {
+                        pendingReset = .actions
+                    } label: {
+                        Label("恢复", systemImage: "arrow.counterclockwise")
                     }
-
-                    Divider()
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("恢复全部默认设置")
-                                .font(.body)
-                            Text("除动作启用状态外，同时清空收藏、监听目录、提示开关与调试日志开关。")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Button("全部恢复") { resetAllDefaults() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("恢复动作默认状态")
+                        Text("重置普通与高级动作开关，并切回精简档案。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 8)
+
+                LabeledContent {
+                    Button(role: .destructive) {
+                        pendingReset = .all
+                    } label: {
+                        Label("全部恢复", systemImage: "trash")
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("恢复全部默认设置")
+                        Text("同时重置收藏、菜单布局、Finder 范围、提示、调试日志与静默启动。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("恢复")
+            } footer: {
+                Text("恢复操作不会卸载外部工具，也不会修改登录项状态。")
             }
+        }
+        .formStyle(.grouped)
+        .confirmationDialog(
+            resetDialogTitle,
+            isPresented: Binding(
+                get: { pendingReset != nil },
+                set: { if !$0 { pendingReset = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let pendingReset {
+                Button(resetConfirmationTitle(pendingReset), role: .destructive) {
+                    performReset(pendingReset)
+                    self.pendingReset = nil
+                }
+            }
+            Button("取消", role: .cancel) {
+                pendingReset = nil
+            }
+        } message: {
+            Text(resetDialogMessage)
+        }
+    }
+
+    private var resetDialogTitle: String {
+        pendingReset == .all ? "恢复全部默认设置？" : "恢复动作默认状态？"
+    }
+
+    private var resetDialogMessage: String {
+        switch pendingReset {
+        case .actions:
+            return "普通与高级动作的自定义开关会被清除，并恢复为精简档案；收藏和其他设置不变。"
+        case .all:
+            return "普通与高级动作、收藏、菜单布局、Finder 范围、提示、调试日志和静默启动都会恢复默认。此操作不可撤销。"
+        case .none:
+            return ""
+        }
+    }
+
+    private func resetConfirmationTitle(_ kind: ResetKind) -> String {
+        kind == .all ? "确认全部恢复" : "确认恢复动作"
+    }
+
+    private func performReset(_ kind: ResetKind) {
+        switch kind {
+        case .actions: resetActionDefaults()
+        case .all: resetAllDefaults()
         }
     }
 
     private func resetActionDefaults() {
         let actionKeys = ActionDispatcher.shared.allActions.map { "enable_action_\($0.actionId)" }
-        guard SharedStorageManager.shared.applyConfigurationChanges(removingKeys: actionKeys) else {
+        guard SharedStorageManager.shared.applyConfigurationChanges(
+            stringArrayValues: [
+                SharedStorageManager.Keys.actionProfile: [ActionProfile.essential.rawValue]
+            ],
+            removingKeys: actionKeys
+        ) else {
             showConfigurationSaveFailure("动作默认设置")
             return
         }
-        postConfigChanged()
-        refreshID = UUID()
-        SharedHUDManager.show(title: "已恢复默认", content: "右键动作将按内置默认值显示", isSuccess: true)
+        finishReset(content: "普通与高级动作已恢复为精简档案")
     }
 
-    /// 全量恢复：在 resetActionDefaults 基础上，再清空收藏、提示开关、监听目录、调试日志开关。
-    /// 与 resetActionDefaults 分两档的原因：用户最常见诉求是"我把某个动作关错了，给我退回默认"，
-    /// 不该顺带把收藏列表和监听目录一起清掉。
     private func resetAllDefaults() {
         let actionKeys = ActionDispatcher.shared.allActions.map { "enable_action_\($0.actionId)" }
         let preferenceKeys = [
             "shouldEnableiCloudMenu",
             "enable_success_hud",
             SharedStorageManager.Keys.enableDebugLogging,
-            SharedStorageManager.Keys.menuLayoutMode
+            SharedStorageManager.Keys.menuLayoutMode,
+            SharedStorageManager.Keys.watchScope,
+            LaunchPresentationPolicy.silentLaunchKey
         ]
         let defaultDirectories = SharedStorageManager.defaultWatchedDirectoryPaths(
             homePath: NSHomeDirectory()
         )
         guard SharedStorageManager.shared.applyConfigurationChanges(
             stringArrayValues: [
+                SharedStorageManager.Keys.actionProfile: [ActionProfile.essential.rawValue],
                 SharedStorageManager.Keys.favoriteActionIds: [],
                 SharedStorageManager.Keys.watchedDirectoryPaths: defaultDirectories
             ],
@@ -98,13 +159,13 @@ struct AdvancedSettingsView: View {
             return
         }
 
+        finishReset(content: "动作、收藏、菜单、Finder 范围与提示设置均已重置")
+    }
+
+    private func finishReset(content: String) {
         postConfigChanged()
         refreshID = UUID()
-        SharedHUDManager.show(
-            title: "已恢复全部默认",
-            content: "动作、收藏、监听目录、提示开关均已重置",
-            isSuccess: true
-        )
+        SharedHUDManager.show(title: "已恢复默认", content: content, isSuccess: true)
     }
 }
 
@@ -115,48 +176,42 @@ struct ExternalToolsManagerView: View {
     @State private var runningOperation: ExternalToolOperation?
 
     var body: some View {
-        GroupBox(label: Label("外部工具", systemImage: "hammer")) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("终端与编辑器依赖")
-                            .font(.body)
-                        Text(brewPath == nil
-                             ? "未检测到 Homebrew。安装 Homebrew 后，可在这里直接安装或更新可选工具。"
-                             : "已检测到 Homebrew：\(brewPath ?? "")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    if brewPath == nil {
-                        Button("打开 Homebrew") {
-                            NSWorkspace.shared.open(ExternalToolManager.homebrewWebsiteURL)
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("复制安装命令") {
-                            copyHomebrewInstallCommand()
-                        }
-                        .buttonStyle(.bordered)
-                    } else {
-                        Button("重新检测") { refresh() }
-                            .buttonStyle(.bordered)
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(brewPath == nil ? "未检测到 Homebrew" : "Homebrew 已就绪")
+                    Text(brewPath ?? "安装 Homebrew 后可直接安装或更新可选工具。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
 
-                Divider()
+                Spacer(minLength: 12)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(ManagedExternalTool.allCases) { tool in
-                        externalToolRow(tool)
+                if brewPath == nil {
+                    Button {
+                        NSWorkspace.shared.open(ExternalToolManager.homebrewWebsiteURL)
+                    } label: {
+                        Label("Homebrew", systemImage: "safari")
+                    }
+                    Button(action: copyHomebrewInstallCommand) {
+                        Label("复制命令", systemImage: "doc.on.doc")
+                    }
+                } else {
+                    Button(action: refresh) {
+                        Label("重新检测", systemImage: "arrow.clockwise")
                     }
                 }
             }
-            .padding(.vertical, 8)
+
+            ForEach(ManagedExternalTool.allCases) { tool in
+                Divider()
+                externalToolRow(tool)
+            }
         }
-        .onAppear { refresh() }
+        .padding(.vertical, 4)
+        .onAppear(perform: refresh)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
             refresh()
         }
@@ -170,35 +225,32 @@ struct ExternalToolsManagerView: View {
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(tool.displayName)
-                    .font(.callout)
-                    .fontWeight(.medium)
                 Text("brew \(operation == .install ? "install" : "upgrade") --cask \(tool.caskName)")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
             Text(isInstalled ? "已安装" : "未安装")
                 .font(.caption)
-                .foregroundColor(isInstalled ? .green : .secondary)
+                .foregroundStyle(isInstalled ? Color.green : Color.secondary)
 
             Button(action: { run(operation, for: tool) }) {
-                HStack(spacing: 6) {
-                    if isRunning {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .frame(width: 14, height: 14)
-                    }
-                    Text(isRunning ? "\(runningOperation?.title ?? operation.title)中…" : operation.title)
+                if isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 52)
+                } else {
+                    Text(operation.title)
+                        .frame(minWidth: 40)
                 }
-                .frame(minWidth: 72)
             }
-            .buttonStyle(.bordered)
             .disabled(brewPath == nil || runningTool != nil)
+            .accessibilityLabel("\(operation.title) \(tool.displayName)")
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 2)
     }
 
     private func refresh() {
@@ -251,19 +303,13 @@ struct ExternalToolsManagerView: View {
                 runningOperation = nil
                 refresh()
 
-                if outcome.isSuccess {
-                    SharedHUDManager.show(
-                        title: "\(operation.title)完成",
-                        content: "\(tool.displayName) 已处理完成",
-                        isSuccess: true
-                    )
-                } else {
-                    SharedHUDManager.show(
-                        title: "\(operation.title)失败",
-                        content: operationErrorDescription(outcome),
-                        isSuccess: false
-                    )
-                }
+                SharedHUDManager.show(
+                    title: outcome.isSuccess ? "\(operation.title)完成" : "\(operation.title)失败",
+                    content: outcome.isSuccess
+                        ? "\(tool.displayName) 已处理完成"
+                        : operationErrorDescription(outcome),
+                    isSuccess: outcome.isSuccess
+                )
             }
         }
     }

@@ -77,15 +77,9 @@ public struct ContentView: View {
         case .permissions:
             PermissionsSettingsView()
         case .diagnostics:
-            ScrollView {
-                DiagnosticsSettingsView()
-                    .padding(20)
-            }
+            DiagnosticsSettingsView()
         case .advanced:
-            ScrollView {
-                AdvancedSettingsView()
-                    .padding(20)
-            }
+            AdvancedSettingsView()
         }
     }
 }

@@ -67,6 +67,71 @@ func postConfigChanged() {
     SystemReloader.postConfigChanged()
 }
 
+enum SettingsStatusLevel {
+    case normal
+    case warning
+    case critical
+
+    var color: Color {
+        switch self {
+        case .normal: return .green
+        case .warning: return .orange
+        case .critical: return .red
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .normal: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.circle.fill"
+        case .critical: return "xmark.circle.fill"
+        }
+    }
+}
+
+struct SettingsStatusRow: View {
+    let title: String
+    let value: String
+    let detail: String?
+    let level: SettingsStatusLevel
+
+    init(
+        title: String,
+        value: String,
+        detail: String? = nil,
+        level: SettingsStatusLevel
+    ) {
+        self.title = title
+        self.value = value
+        self.detail = detail
+        self.level = level
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: level.iconName)
+                .foregroundStyle(level.color)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 3)
+    }
+}
+
 // MARK: - Finder extension management
 struct ExtensionRegistrationBox: View {
     @State private var isRegistering = false

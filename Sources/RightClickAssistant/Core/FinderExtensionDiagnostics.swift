@@ -78,6 +78,77 @@ public struct RightClickMenuHealthSnapshot: Equatable, Sendable {
         }
         return .healthy
     }
+
+    /// 隐私安全的支持报告：只包含版本、枚举状态、计数与时长，不包含用户路径。
+    public func diagnosticSummary(appVersion: String) -> String {
+        let operatingSystem = ProcessInfo.processInfo.operatingSystemVersionString
+        let heartbeat: String
+        switch heartbeatState {
+        case .recent(let count): heartbeat = "recent(\(count))"
+        case .stale: heartbeat = "stale"
+        case .missing: heartbeat = "missing"
+        }
+        let oldestAge = oldestPendingAge.map { String(Int($0)) } ?? "none"
+
+        return [
+            "RightClickAssistant Diagnostics",
+            "App Version: \(appVersion)",
+            "macOS: \(operatingSystem)",
+            "Menu Service: \(menuServiceLevel.summaryValue)",
+            "Full Disk Access: \(fullDiskAccessState.summaryValue)",
+            "Extension Registration: \(finderExtensionState.summaryValue)",
+            "Finder Controller Enabled: \(finderSyncControllerEnabled)",
+            "Heartbeat: \(heartbeat)",
+            "Watch Scope: \(watchScope.rawValue)",
+            "Observed Paths: \(observedPathCount)",
+            "Pending: \(pendingActionCount)",
+            "Oldest Pending Seconds: \(oldestAge)",
+            "Failed: \(failedActionCount)",
+            "Recommended Repair: \(recommendedRepairAction.summaryValue)"
+        ].joined(separator: "\n")
+    }
+}
+
+private extension RightClickMenuServiceLevel {
+    var summaryValue: String {
+        switch self {
+        case .healthy: return "healthy"
+        case .unverified: return "unverified"
+        case .unavailable: return "unavailable"
+        }
+    }
+}
+
+private extension FullDiskAccessState {
+    var summaryValue: String {
+        switch self {
+        case .granted: return "granted"
+        case .denied: return "denied"
+        }
+    }
+}
+
+private extension FinderExtensionRegistrationState {
+    var summaryValue: String {
+        switch self {
+        case .enabled: return "enabled"
+        case .registeredButNotEnabled: return "registered-but-disabled"
+        case .notRegistered: return "not-registered"
+        case .unknown: return "unknown"
+        }
+    }
+}
+
+private extension RecommendedRepairAction {
+    var summaryValue: String {
+        switch self {
+        case .none: return "none"
+        case .openFullDiskAccessSettings: return "open-full-disk-access"
+        case .registerExtension: return "register-extension"
+        case .restartFinder: return "restart-finder"
+        case .relaunchAppAndRestartFinder: return "relaunch-app-and-finder"
+        }
+    }
 }
 
 public enum FinderExtensionDiagnostics {

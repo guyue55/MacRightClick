@@ -986,6 +986,25 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(snapshot.recommendedRepairAction, .restartFinder)
     }
 
+    func testDiagnosticSummaryContainsNoUserPaths() {
+        let snapshot = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: true,
+            finderSyncControllerEnabled: true,
+            pluginKitState: .enabled,
+            heartbeatState: .recent(observedPathCount: 7),
+            watchScope: .custom,
+            pendingActionCount: 2,
+            oldestPendingAge: 12,
+            failedActionCount: 1
+        )
+
+        let summary = snapshot.diagnosticSummary(appVersion: "1.2.0")
+
+        XCTAssertFalse(summary.contains("/Users/"))
+        XCTAssertTrue(summary.contains("Pending: 2"))
+        XCTAssertTrue(summary.contains("App Version: 1.2.0"))
+    }
+
     func testExtensionHeartbeatStoreThrottlesWritesAndDetectsStaleState() throws {
         let heartbeatURL = tempDirectory.appendingPathComponent("heartbeat.json")
         let store = ExtensionHeartbeatStore(

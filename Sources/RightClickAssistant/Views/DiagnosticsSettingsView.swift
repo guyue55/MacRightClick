@@ -2,124 +2,123 @@ import SwiftUI
 import FinderSync
 
 struct DiagnosticsSettingsView: View {
+    private static let consoleURL = URL(fileURLWithPath: "/System/Applications/Utilities/Console.app")
+    private static let logQuery = "subsystem == \"guyue.RightClickAssistant\""
+
     @State private var snapshot: RightClickMenuHealthSnapshot?
     @State private var isDebugLoggingEnabled = false
     @State private var isRepairRunning = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            GroupBox(label: Label("状态", systemImage: "waveform.path.ecg")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let snapshot {
-                        HStack {
-                            Label(healthTitle(snapshot), systemImage: healthIcon(snapshot))
-                                .foregroundColor(healthColor(snapshot))
-                            Spacer()
-                            Button("重新检测") { refresh() }
-                        }
-
-                        Divider()
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            diagnosticRow(
-                                title: "完全磁盘访问",
-                                value: snapshot.fullDiskAccessState == .granted ? "已授权" : "尚未授权",
-                                isHealthy: snapshot.fullDiskAccessState == .granted
-                            )
-                            diagnosticRow(
-                                title: "Finder 扩展注册",
-                                value: extensionStateTitle(snapshot.finderExtensionState),
-                                isHealthy: snapshot.finderExtensionState == .enabled
-                            )
-                            diagnosticRow(
-                                title: "扩展运行心跳",
-                                value: heartbeatStateTitle(snapshot.heartbeatState),
-                                isHealthy: snapshot.menuServiceLevel == .healthy
-                            )
-                            diagnosticRow(
-                                title: "右键菜单作用范围",
-                                value: snapshot.watchScope == .everywhere
-                                    ? "所有目录，监听 \(snapshot.observedPathCount) 个入口"
-                                    : "自定义目录，监听 \(snapshot.observedPathCount) 个入口",
-                                isHealthy: snapshot.menuServiceLevel == .healthy
-                            )
-                            diagnosticRow(
-                                title: "动作队列",
-                                value: actionQueueTitle(snapshot),
-                                isHealthy: snapshot.failedActionCount == 0
-                                    && snapshot.oldestPendingAge.map { $0 < 60 } != false
-                            )
-                        }
-
-                        repairButtons(snapshot)
-                    } else {
-                        ProgressView("正在检测右键菜单状态…")
-                    }
+        Form {
+            Section("运行状态") {
+                if let snapshot {
+                    SettingsStatusRow(
+                        title: "右键菜单服务",
+                        value: menuServiceValue(snapshot),
+                        detail: menuServiceDetail(snapshot),
+                        level: menuServiceLevel(snapshot)
+                    )
+                    SettingsStatusRow(
+                        title: "文件访问",
+                        value: snapshot.fullDiskAccessState == .granted ? "已授权" : "受限",
+                        detail: "完全磁盘访问只影响受保护文件，不决定菜单是否出现。",
+                        level: snapshot.fullDiskAccessState == .granted ? .normal : .warning
+                    )
+                    SettingsStatusRow(
+                        title: "动作队列",
+                        value: queueValue(snapshot),
+                        detail: queueDetail(snapshot),
+                        level: queueLevel(snapshot)
+                    )
+                } else {
+                    ProgressView("正在检测右键菜单状态…")
                 }
-                .padding(.vertical, 8)
+
+                Button(action: refresh) {
+                    Label("重新检测", systemImage: "arrow.clockwise")
+                }
+                .disabled(isRepairRunning)
             }
 
-            GroupBox(label: Label("日志", systemImage: "doc.text.magnifyingglass")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("启用详细调试日志", isOn: Binding(
-                        get: { isDebugLoggingEnabled },
-                        set: { newValue in
-                            guard SharedStorageManager.shared.setBool(
-                                newValue,
-                                forKey: SharedStorageManager.Keys.enableDebugLogging
-                            ) else {
-                                showConfigurationSaveFailure("详细调试日志")
-                                return
-                            }
-                            isDebugLoggingEnabled = newValue
-                        }
-                    ))
-                    .toggleStyle(.checkbox)
-
-                    Text("默认关闭。开启后会记录菜单渲染、路径监听和动作过滤细节。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack {
-                        Button("打开日志文件夹") {
-                            NSWorkspace.shared.open(SharedStorageManager.shared.logFileURL.deletingLastPathComponent())
-                        }
-                        Button("导出旧日志（如有）") {
-                            // 旧版 1.0.x 把日志写在 extension.log；切到 OSLog 后该文件不再追加。
-                            // 这里仅做兼容：若文件还存在，定位到 Finder；若不存在，明示用户走 Console.app 看 OSLog。
-                            let url = SharedStorageManager.shared.logFileURL
-                            if FileManager.default.fileExists(atPath: url.path) {
-                                NSWorkspace.shared.activateFileViewerSelecting([url])
+            Section("建议修复") {
+                if let snapshot {
+                    if snapshot.recommendedRepairAction == .none {
+                        Label("当前无需修复", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button {
+                            runRecommendedAction(snapshot.recommendedRepairAction)
+                        } label: {
+                            if isRepairRunning {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("修复中…")
+                                }
                             } else {
-                                SharedHUDManager.show(
-                                    title: "无旧日志",
-                                    content: "OSLog 已生效，可在 Console.app 按 subsystem=guyue.RightClickAssistant 过滤",
-                                    isSuccess: true
+                                Label(
+                                    repairButtonTitle(snapshot.recommendedRepairAction),
+                                    systemImage: repairButtonIcon(snapshot.recommendedRepairAction)
                                 )
                             }
                         }
-                        Button("显示共享目录") {
-                            NSWorkspace.shared.open(SharedStorageManager.shared.sharedContainerURL)
-                        }
-                        Button("运行快速诊断") {
-                            refresh { updatedSnapshot in
-                                SharedHUDManager.show(
-                                    title: "诊断完成",
-                                    content: healthTitle(updatedSnapshot),
-                                    isSuccess: updatedSnapshot.healthLevel == .healthy
-                                )
-                            }
-                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isRepairRunning)
+
+                        Text(repairHint(snapshot.recommendedRepairAction))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                } else {
+                    Text("完成检测后会显示最优先的修复动作。")
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 8)
+            }
+
+            Section("支持工具") {
+                Button(action: copyDiagnosticReport) {
+                    Label("复制诊断报告", systemImage: "doc.on.doc")
+                }
+                .disabled(snapshot == nil)
+
+                Button(action: copyLogQuery) {
+                    Label("复制 Console 查询条件", systemImage: "line.3.horizontal.decrease.circle")
+                }
+
+                Button(action: openConsole) {
+                    Label("打开 Console", systemImage: "terminal")
+                }
+
+                Button(action: showSharedDirectory) {
+                    Label("显示共享目录", systemImage: "folder")
+                }
+
+                Button(action: clearFailedActions) {
+                    Label("清空失败动作", systemImage: "trash")
+                }
+                .disabled((snapshot?.failedActionCount ?? 0) == 0)
+            }
+
+            Section("日志") {
+                Toggle("启用详细调试日志", isOn: Binding(
+                    get: { isDebugLoggingEnabled },
+                    set: saveDebugLogging
+                ))
+
+                Text("默认关闭。仅在排查问题时开启，完成后建议关闭。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
-        .onAppear { refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in refresh() }
+        .formStyle(.grouped)
+        .onAppear(perform: refresh)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            refresh()
+        }
     }
 
-    private func refresh(completion: ((RightClickMenuHealthSnapshot) -> Void)? = nil) {
+    private func refresh() {
         isDebugLoggingEnabled = SharedStorageManager.shared.isDebugLoggingEnabled
         let finderSyncEnabled = FIFinderSyncController.isExtensionEnabled
         DispatchQueue.global(qos: .userInitiated).async {
@@ -128,74 +127,26 @@ struct DiagnosticsSettingsView: View {
             )
             DispatchQueue.main.async {
                 snapshot = nextSnapshot
-                completion?(nextSnapshot)
             }
         }
     }
 
-    @ViewBuilder
-    private func diagnosticRow(title: String, value: String, isHealthy: Bool) -> some View {
-        HStack {
-            Label(title, systemImage: isHealthy ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundColor(isHealthy ? .green : .orange)
-            Spacer()
-            Text(value)
-                .foregroundColor(.secondary)
-        }
-        .font(.callout)
-    }
-
-    @ViewBuilder
-    private func repairButtons(_ snapshot: RightClickMenuHealthSnapshot) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                repairButtonRow
+    private func runRecommendedAction(_ action: RecommendedRepairAction) {
+        switch action {
+        case .none:
+            refresh()
+        case .openFullDiskAccessSettings:
+            if let url = URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+            ) {
+                NSWorkspace.shared.open(url)
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Button("一键注册扩展") { registerExtension() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isRepairRunning)
-
-                    Button("重启 Finder") { restartFinder() }
-                        .buttonStyle(.bordered)
-                        .disabled(isRepairRunning)
-                }
-                HStack(spacing: 10) {
-                    Button("重新打开并重启 Finder") { relaunchAppAndRestartFinder() }
-                        .buttonStyle(.bordered)
-                        .disabled(isRepairRunning)
-
-                    Button("打开扩展设置") { openFinderExtensionSettings() }
-                        .buttonStyle(.bordered)
-                }
-            }
-        }
-
-        if snapshot.recommendedRepairAction != .none {
-            Text(repairHint(snapshot.recommendedRepairAction))
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var repairButtonRow: some View {
-        Group {
-            Button("一键注册扩展") { registerExtension() }
-                .buttonStyle(.borderedProminent)
-                .disabled(isRepairRunning)
-
-            Button("重启 Finder") { restartFinder() }
-                .buttonStyle(.bordered)
-                .disabled(isRepairRunning)
-
-            Button("重新打开并重启 Finder") { relaunchAppAndRestartFinder() }
-                .buttonStyle(.bordered)
-                .disabled(isRepairRunning)
-
-            Button("打开扩展设置") { openFinderExtensionSettings() }
-                .buttonStyle(.bordered)
+        case .registerExtension:
+            registerExtension()
+        case .restartFinder:
+            restartFinder()
+        case .relaunchAppAndRestartFinder:
+            relaunchAppAndRestartFinder()
         }
     }
 
@@ -218,15 +169,13 @@ struct DiagnosticsSettingsView: View {
             bundleURL: Bundle.main.bundleURL
         ) { outcome in
             isRepairRunning = false
-            if outcome.isSuccess {
-                SharedHUDManager.show(title: "Finder 已重启", content: "右键菜单会按最新状态加载", isSuccess: true)
-            } else {
-                SharedHUDManager.show(
-                    title: "Finder 重启失败",
-                    content: outcome.restartFinderResult?.errorDescription ?? "请手动重启 Finder 或重新登录后再试",
-                    isSuccess: false
-                )
-            }
+            SharedHUDManager.show(
+                title: outcome.isSuccess ? "Finder 已重启" : "Finder 重启失败",
+                content: outcome.isSuccess
+                    ? "右键菜单会按最新状态加载"
+                    : outcome.restartFinderResult?.errorDescription ?? "请手动重启 Finder 后重试",
+                isSuccess: outcome.isSuccess
+            )
             refresh()
         }
     }
@@ -241,70 +190,139 @@ struct DiagnosticsSettingsView: View {
             guard outcome.isSuccess else {
                 SharedHUDManager.show(
                     title: "重新打开失败",
-                    content: outcome.relaunchResult?.errorDescription
-                        ?? "请手动退出并重新打开右键助手",
+                    content: outcome.relaunchResult?.errorDescription ?? "请手动退出并重新打开右键助手",
                     isSuccess: false
                 )
                 return
             }
-            SharedHUDManager.show(
-                title: "正在重新打开",
-                content: "新进程将刷新 Finder，当前进程即将退出",
-                isSuccess: true
-            )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 NSApplication.shared.terminate(nil)
             }
         }
     }
 
-    private func healthTitle(_ snapshot: RightClickMenuHealthSnapshot) -> String {
-        switch snapshot.healthLevel {
-        case .healthy: return "右键菜单状态正常"
-        case .warning: return "右键菜单需要刷新"
-        case .critical: return "右键菜单需要修复"
+    private func copyDiagnosticReport() {
+        guard let snapshot else { return }
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "unknown"
+        copyToPasteboard(
+            snapshot.diagnosticSummary(appVersion: appVersion),
+            title: "诊断报告已复制"
+        )
+    }
+
+    private func copyLogQuery() {
+        copyToPasteboard(Self.logQuery, title: "Console 查询条件已复制")
+    }
+
+    private func copyToPasteboard(_ value: String, title: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        SharedHUDManager.show(title: title, content: "可直接粘贴使用", isSuccess: true)
+    }
+
+    private func openConsole() {
+        guard FileManager.default.fileExists(atPath: Self.consoleURL.path) else {
+            SharedHUDManager.show(
+                title: "无法打开 Console",
+                content: "系统未找到 Console.app",
+                isSuccess: false
+            )
+            return
+        }
+        NSWorkspace.shared.open(Self.consoleURL)
+    }
+
+    private func showSharedDirectory() {
+        NSWorkspace.shared.open(SharedStorageManager.shared.sharedContainerURL)
+    }
+
+    private func clearFailedActions() {
+        do {
+            try SharedStorageManager.shared.clearFailedActions()
+            SharedHUDManager.show(title: "失败动作已清空", content: "动作队列状态已刷新", isSuccess: true)
+            refresh()
+        } catch {
+            SharedHUDManager.show(
+                title: "清空失败",
+                content: error.localizedDescription,
+                isSuccess: false
+            )
         }
     }
 
-    private func healthIcon(_ snapshot: RightClickMenuHealthSnapshot) -> String {
-        switch snapshot.healthLevel {
-        case .healthy: return "checkmark.circle.fill"
-        case .warning: return "arrow.clockwise.circle.fill"
-        case .critical: return "exclamationmark.triangle.fill"
+    private func saveDebugLogging(_ enabled: Bool) {
+        guard SharedStorageManager.shared.setBool(
+            enabled,
+            forKey: SharedStorageManager.Keys.enableDebugLogging
+        ) else {
+            showConfigurationSaveFailure("详细调试日志")
+            return
+        }
+        isDebugLoggingEnabled = enabled
+    }
+
+    private func menuServiceLevel(_ snapshot: RightClickMenuHealthSnapshot) -> SettingsStatusLevel {
+        switch snapshot.menuServiceLevel {
+        case .healthy: return .normal
+        case .unverified: return .warning
+        case .unavailable: return .critical
         }
     }
 
-    private func healthColor(_ snapshot: RightClickMenuHealthSnapshot) -> Color {
-        switch snapshot.healthLevel {
-        case .healthy: return .green
-        case .warning: return .orange
-        case .critical: return .red
+    private func menuServiceValue(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        switch snapshot.menuServiceLevel {
+        case .healthy: return "可用"
+        case .unverified: return "待确认"
+        case .unavailable: return "不可用"
         }
     }
 
-    private func extensionStateTitle(_ state: FinderExtensionRegistrationState) -> String {
-        switch state {
-        case .enabled: return "已启用"
-        case .registeredButNotEnabled: return "已注册但未启用"
-        case .notRegistered: return "未注册"
-        case .unknown: return "无法确认"
+    private func menuServiceDetail(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        let registration: String
+        switch snapshot.finderExtensionState {
+        case .enabled: registration = "扩展已启用"
+        case .registeredButNotEnabled: registration = "扩展已注册但未启用"
+        case .notRegistered: registration = "扩展未注册"
+        case .unknown: registration = "扩展注册状态未知"
+        }
+        let scope = snapshot.watchScope == .everywhere ? "所有目录" : "自定义目录"
+        return "\(registration)；\(scope)，实际监听 \(snapshot.observedPathCount) 个入口。"
+    }
+
+    private func queueLevel(_ snapshot: RightClickMenuHealthSnapshot) -> SettingsStatusLevel {
+        if snapshot.failedActionCount > 0 { return .critical }
+        if snapshot.oldestPendingAge.map({ $0 >= 60 }) == true { return .warning }
+        return .normal
+    }
+
+    private func queueValue(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        "待处理 \(snapshot.pendingActionCount)，失败 \(snapshot.failedActionCount)"
+    }
+
+    private func queueDetail(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        guard let age = snapshot.oldestPendingAge else { return "当前没有等待中的动作。" }
+        return "最久等待 \(Int(age)) 秒。失败动作可在下方清理。"
+    }
+
+    private func repairButtonTitle(_ action: RecommendedRepairAction) -> String {
+        switch action {
+        case .none: return "重新检测"
+        case .openFullDiskAccessSettings: return "打开完全磁盘访问设置"
+        case .registerExtension: return "一键注册扩展"
+        case .restartFinder: return "重启 Finder"
+        case .relaunchAppAndRestartFinder: return "重新打开并重启 Finder"
         }
     }
 
-    private func heartbeatStateTitle(_ state: ExtensionHeartbeatState) -> String {
-        switch state {
-        case .recent(let count): return "最近活跃，实际监听 \(count) 个入口"
-        case .stale: return "已过期"
-        case .missing: return "尚未收到"
+    private func repairButtonIcon(_ action: RecommendedRepairAction) -> String {
+        switch action {
+        case .none: return "arrow.clockwise"
+        case .openFullDiskAccessSettings: return "lock.open"
+        case .registerExtension: return "puzzlepiece.extension"
+        case .restartFinder: return "arrow.clockwise"
+        case .relaunchAppAndRestartFinder: return "power"
         }
-    }
-
-    private func actionQueueTitle(_ snapshot: RightClickMenuHealthSnapshot) -> String {
-        var title = "待处理 \(snapshot.pendingActionCount)，失败 \(snapshot.failedActionCount)"
-        if let age = snapshot.oldestPendingAge {
-            title += "，最久等待 \(Int(age)) 秒"
-        }
-        return title
     }
 
     private func repairHint(_ action: RecommendedRepairAction) -> String {
@@ -312,13 +330,13 @@ struct DiagnosticsSettingsView: View {
         case .none:
             return "当前无需修复。"
         case .openFullDiskAccessSettings:
-            return "请先授予完全磁盘访问；若刚授权仍未生效，请重新打开并重启 Finder。"
+            return "完全磁盘访问影响受保护文件操作；授权后若仍未生效，请回到 Finder 页重新检测。"
         case .registerExtension:
-            return "Finder 扩展未处于可用状态，建议先执行一键注册扩展。"
+            return "Finder 扩展未处于可用状态，将重新注册、启用并刷新 Finder。"
         case .restartFinder:
-            return "扩展已注册，但 Finder 可能仍使用旧会话，建议重启 Finder。"
+            return "扩展已注册，但当前 Finder 会话尚未报告有效心跳。"
         case .relaunchAppAndRestartFinder:
-            return "建议重新打开右键助手并重启 Finder，让主程序和扩展同时刷新。"
+            return "主程序和 Finder 都需要重新加载，当前窗口会在新进程启动后关闭。"
         }
     }
 }
