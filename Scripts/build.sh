@@ -230,6 +230,8 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/ExternalToolManager.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
+    Sources/RightClickAssistant/Core/Actions/PathCopyService.swift \
+    Sources/RightClickAssistant/Core/Actions/PathCopyAction.swift \
     Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \
     Sources/RightClickAssistant/Core/Actions/DeletionRequestCoordinator.swift \
     Sources/RightClickAssistant/Core/Actions/InteractiveActionRunner.swift \
@@ -258,6 +260,8 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/ExtensionHeartbeat.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
+    Sources/RightClickAssistant/Core/Actions/PathCopyService.swift \
+    Sources/RightClickAssistant/Core/Actions/PathCopyAction.swift \
     Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \
     Sources/RightClickAssistant/Core/Actions/DeletionRequestCoordinator.swift \
     Sources/RightClickAssistant/Core/Actions/InteractiveActionRunner.swift \

@@ -13,7 +13,9 @@ public enum DefaultActionRegistry {
             FileManageAction(type: .copyPath),
             FileManageAction(type: .copyName),
             FileManageAction(type: .copyTo),
-            FileManageAction(type: .moveTo)
+            FileManageAction(type: .moveTo),
+            PathCopyAction(kind: .shellEscaped),
+            PathCopyAction(kind: .gitRelative)
         ]
         let terminalActions: [MenuAction] = TerminalEditorType.allCases.map {
             TerminalOpenAction(type: $0)
