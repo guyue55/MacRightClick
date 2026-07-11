@@ -30,3 +30,12 @@ public enum ActionProfile: String, Codable, CaseIterable, Sendable {
         }
     }
 }
+
+public enum ActionSearch {
+    public static func matches(title: String, actionID: String, query: String) -> Bool {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return true }
+        return title.localizedCaseInsensitiveContains(normalizedQuery)
+            || actionID.localizedCaseInsensitiveContains(normalizedQuery)
+    }
+}

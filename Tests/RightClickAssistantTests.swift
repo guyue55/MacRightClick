@@ -73,6 +73,32 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertNil(states["guyue.action.filemanage.delete"])
     }
 
+    func testActionSearchMatchesTitleAndIdentifier() {
+        XCTAssertTrue(ActionSearch.matches(
+            title: "新建文本文件",
+            actionID: "guyue.action.newfile.txt",
+            query: "文本"
+        ))
+        XCTAssertTrue(ActionSearch.matches(
+            title: "新建文本文件",
+            actionID: "guyue.action.newfile.txt",
+            query: "newfile.txt"
+        ))
+        XCTAssertFalse(ActionSearch.matches(
+            title: "新建文本文件",
+            actionID: "guyue.action.newfile.txt",
+            query: "二维码"
+        ))
+    }
+
+    func testProfessionalProfileNeverEnablesAdvancedTier() {
+        let actions = DefaultActionRegistry.makeActions()
+        let states = ActionProfile.professional.states(for: actions)
+        let advancedIDs = Set(actions.filter { $0.tier == .advanced }.map(\.actionId))
+
+        XCTAssertTrue(advancedIDs.isDisjoint(with: states.keys))
+    }
+
     func testFreshSettingsMigrationAppliesEssentialProfile() {
         let actions = DefaultActionRegistry.makeActions()
 

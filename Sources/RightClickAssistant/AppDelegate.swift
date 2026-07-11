@@ -231,7 +231,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     private func rebuildStatusMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let settingsItem = NSMenuItem(title: "显示右键助手设置", action: #selector(showSettingsWindow), keyEquivalent: "s")
+        let settingsItem = NSMenuItem(title: "打开设置…", action: #selector(showSettingsWindow), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
