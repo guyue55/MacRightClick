@@ -206,6 +206,12 @@ fi
 HOST_SOURCES="
     Sources/RightClickAssistant/AppDelegate.swift \
     Sources/RightClickAssistant/Views/ContentView.swift \
+    Sources/RightClickAssistant/Views/GeneralSettingsView.swift \
+    Sources/RightClickAssistant/Views/ActionsSettingsView.swift \
+    Sources/RightClickAssistant/Views/FinderSettingsView.swift \
+    Sources/RightClickAssistant/Views/DiagnosticsSettingsView.swift \
+    Sources/RightClickAssistant/Views/AdvancedSettingsView.swift \
+    Sources/RightClickAssistant/Views/SettingsComponents.swift \
     Sources/RightClickAssistant/Core/MenuAction.swift \
     Sources/RightClickAssistant/Core/ActionProfile.swift \
     Sources/RightClickAssistant/Core/DefaultActionRegistry.swift \
