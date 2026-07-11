@@ -365,7 +365,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
 
     @objc private func toggleSilentLaunch(_ sender: NSMenuItem) {
         let newValue = !isSilentLaunchEnabled
-        SharedStorageManager.shared.setBool(newValue, forKey: LaunchPresentationPolicy.silentLaunchKey)
+        guard SharedStorageManager.shared.setBool(
+            newValue,
+            forKey: LaunchPresentationPolicy.silentLaunchKey
+        ) else {
+            sender.state = isSilentLaunchEnabled ? .on : .off
+            SharedHUDManager.show(
+                title: "设置保存失败",
+                content: "无法写入静默启动设置，请检查共享目录权限后重试。",
+                isSuccess: false
+            )
+            return
+        }
         sender.state = newValue ? .on : .off
         SharedHUDManager.show(
             title: newValue ? "静默启动已启用" : "静默启动已关闭",

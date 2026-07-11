@@ -77,11 +77,14 @@ final class PendingActionStressTests: XCTestCase {
     }
 
     /// 没有 ack 的 lease 视作"上一次 dispatch 中途崩溃"。reclaim 之后，那些文件应当
-    /// 出现在别的 PID 子目录里，但当前进程的 reclaim 仅会搬"非自己 PID"的目录。
-    /// 这里直接构造别的 PID 子目录里的孤儿，验证 reclaim 路径。
+    /// 出现在别的进程实例 owner 目录里，但当前进程的 reclaim 不会搬自己的 owner。
+    /// 这里直接构造另一个结构化 owner 里的孤儿，验证 reclaim 路径。
     func testReclaimMovesOrphansFromOtherPIDsBackToPending() throws {
         let bogusPID = 91234
-        let bogusDir = manager.inFlightActionsDirectoryURL.appendingPathComponent("\(bogusPID)", isDirectory: true)
+        let bogusDir = manager.inFlightActionsDirectoryURL.appendingPathComponent(
+            "\(bogusPID)-\(UUID().uuidString)",
+            isDirectory: true
+        )
         try FileManager.default.createDirectory(at: bogusDir, withIntermediateDirectories: true)
 
         let orphanCount = 50

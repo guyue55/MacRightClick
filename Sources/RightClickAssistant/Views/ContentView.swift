@@ -49,6 +49,15 @@ private func showFinderExtensionRegistrationOutcome(_ outcome: FinderExtensionRe
     }
 }
 
+private func showConfigurationSaveFailure(_ settingName: String) {
+    SharedHUDManager.show(
+        title: "设置保存失败",
+        content: "无法写入“\(settingName)”，原设置已保留。请检查共享目录权限后重试。",
+        iconName: "exclamationmark.triangle.fill",
+        isSuccess: false
+    )
+}
+
 /// 侧边栏导航条目
 enum SidebarItem: String, CaseIterable, Identifiable {
     case overview = "overview"
@@ -156,7 +165,15 @@ struct OverviewSettingsView: View {
                 self.isLaunchEnabled = newValue
                 let success = LaunchServiceManager.shared.setEnabled(newValue)
                 if success {
-                    SharedStorageManager.shared.setBool(newValue, forKey: "shouldStartOnLaunch")
+                    guard SharedStorageManager.shared.setBool(
+                        newValue,
+                        forKey: "shouldStartOnLaunch"
+                    ) else {
+                        _ = LaunchServiceManager.shared.setEnabled(!newValue)
+                        self.isLaunchEnabled = LaunchServiceManager.shared.isEnabled
+                        showConfigurationSaveFailure("登录时启动")
+                        return
+                    }
                     SharedHUDManager.show(
                         title: newValue ? "开机自启已启用" : "开机自启已禁用",
                         content: newValue ? "右键助手会随登录启动" : "已从登录项移除",
@@ -197,11 +214,14 @@ struct OverviewSettingsView: View {
                     Toggle("静默启动", isOn: Binding(
                         get: { isSilentLaunchEnabled },
                         set: { newValue in
-                            isSilentLaunchEnabled = newValue
-                            SharedStorageManager.shared.setBool(
+                            guard SharedStorageManager.shared.setBool(
                                 newValue,
                                 forKey: LaunchPresentationPolicy.silentLaunchKey
-                            )
+                            ) else {
+                                showConfigurationSaveFailure("静默启动")
+                                return
+                            }
+                            isSilentLaunchEnabled = newValue
                             SharedHUDManager.show(
                                 title: newValue ? "静默启动已启用" : "静默启动已关闭",
                                 content: newValue ? "登录和后台拉起时仅保留菜单栏图标" : "下次启动会直接显示设置窗口",
@@ -220,7 +240,11 @@ struct OverviewSettingsView: View {
 
                     Toggle("显示成功提示", isOn: Binding(
                         get: { SharedStorageManager.shared.getBool(forKey: "enable_success_hud", defaultValue: true) },
-                        set: { SharedStorageManager.shared.setBool($0, forKey: "enable_success_hud") }
+                        set: { newValue in
+                            if !SharedStorageManager.shared.setBool(newValue, forKey: "enable_success_hud") {
+                                showConfigurationSaveFailure("成功提示")
+                            }
+                        }
                     ))
                     .toggleStyle(.checkbox)
 
@@ -357,8 +381,14 @@ struct PermissionsSettingsView: View {
                     Toggle("额外监听 iCloud、OneDrive 与 CloudStorage", isOn: Binding(
                         get: { shouldEnableiCloudMenu },
                         set: { newValue in
+                            guard SharedStorageManager.shared.setBool(
+                                newValue,
+                                forKey: "shouldEnableiCloudMenu"
+                            ) else {
+                                showConfigurationSaveFailure("云同步盘兼容")
+                                return
+                            }
                             shouldEnableiCloudMenu = newValue
-                            SharedStorageManager.shared.setBool(newValue, forKey: "shouldEnableiCloudMenu")
                             postConfigChanged()
                         }
                     ))
@@ -377,8 +407,14 @@ struct PermissionsSettingsView: View {
                     Picker("作用范围", selection: Binding(
                         get: { watchScope },
                         set: { newValue in
+                            guard SharedStorageManager.shared.setStringArray(
+                                [newValue.rawValue],
+                                forKey: SharedStorageManager.Keys.watchScope
+                            ) else {
+                                showConfigurationSaveFailure("右键菜单作用范围")
+                                return
+                            }
                             watchScope = newValue
-                            SharedStorageManager.shared.watchScope = newValue
                             postConfigChanged()
                         }
                     )) {
@@ -475,14 +511,25 @@ struct PermissionsSettingsView: View {
     }
 
     private func resetWatchedDirectories() {
-        SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
+        guard SharedStorageManager.shared.removeValue(
+            forKey: SharedStorageManager.Keys.watchedDirectoryPaths
+        ) else {
+            showConfigurationSaveFailure("监听目录")
+            return
+        }
         refresh(promptOnFullDiskAccessGrant: false)
         postConfigChanged()
     }
 
     private func saveWatchedDirectories(_ paths: [String]) {
+        guard SharedStorageManager.shared.setStringArray(
+            paths,
+            forKey: SharedStorageManager.Keys.watchedDirectoryPaths
+        ) else {
+            showConfigurationSaveFailure("监听目录")
+            return
+        }
         watchedDirectoryPaths = paths
-        SharedStorageManager.shared.setStringArray(paths, forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
         postConfigChanged()
     }
 
@@ -642,8 +689,14 @@ struct DiagnosticsSettingsView: View {
                     Toggle("启用详细调试日志", isOn: Binding(
                         get: { isDebugLoggingEnabled },
                         set: { newValue in
+                            guard SharedStorageManager.shared.setBool(
+                                newValue,
+                                forKey: SharedStorageManager.Keys.enableDebugLogging
+                            ) else {
+                                showConfigurationSaveFailure("详细调试日志")
+                                return
+                            }
                             isDebugLoggingEnabled = newValue
-                            SharedStorageManager.shared.setBool(newValue, forKey: SharedStorageManager.Keys.enableDebugLogging)
                         }
                     ))
                     .toggleStyle(.checkbox)
@@ -939,8 +992,10 @@ struct AdvancedSettingsView: View {
     }
 
     private func resetActionDefaults() {
-        for action in ActionDispatcher.shared.allActions {
-            SharedStorageManager.shared.removeValue(forKey: "enable_action_\(action.actionId)")
+        let actionKeys = ActionDispatcher.shared.allActions.map { "enable_action_\($0.actionId)" }
+        guard SharedStorageManager.shared.applyConfigurationChanges(removingKeys: actionKeys) else {
+            showConfigurationSaveFailure("动作默认设置")
+            return
         }
         postConfigChanged()
         refreshID = UUID()
@@ -951,22 +1006,26 @@ struct AdvancedSettingsView: View {
     /// 与 resetActionDefaults 分两档的原因：用户最常见诉求是"我把某个动作关错了，给我退回默认"，
     /// 不该顺带把收藏列表和监听目录一起清掉。
     private func resetAllDefaults() {
-        // 1. 复用单档逻辑清动作启用状态
-        for action in ActionDispatcher.shared.allActions {
-            SharedStorageManager.shared.removeValue(forKey: "enable_action_\(action.actionId)")
-        }
-        // 2. 清空收藏
-        SharedStorageManager.shared.setStringArray([], forKey: SharedStorageManager.Keys.favoriteActionIds)
-        // 3. 监听目录回到默认（基于真实 Home 探测）
-        SharedStorageManager.shared.setStringArray(
-            SharedStorageManager.defaultWatchedDirectoryPaths(homePath: NSHomeDirectory()),
-            forKey: SharedStorageManager.Keys.watchedDirectoryPaths
+        let actionKeys = ActionDispatcher.shared.allActions.map { "enable_action_\($0.actionId)" }
+        let preferenceKeys = [
+            "shouldEnableiCloudMenu",
+            "enable_success_hud",
+            SharedStorageManager.Keys.enableDebugLogging,
+            SharedStorageManager.Keys.menuLayoutMode
+        ]
+        let defaultDirectories = SharedStorageManager.defaultWatchedDirectoryPaths(
+            homePath: NSHomeDirectory()
         )
-        // 4. 清掉一组用户偏好开关，让下一次读回默认值
-        SharedStorageManager.shared.removeValue(forKey: "shouldEnableiCloudMenu")
-        SharedStorageManager.shared.removeValue(forKey: "enable_success_hud")
-        SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.enableDebugLogging)
-        SharedStorageManager.shared.removeValue(forKey: SharedStorageManager.Keys.menuLayoutMode)
+        guard SharedStorageManager.shared.applyConfigurationChanges(
+            stringArrayValues: [
+                SharedStorageManager.Keys.favoriteActionIds: [],
+                SharedStorageManager.Keys.watchedDirectoryPaths: defaultDirectories
+            ],
+            removingKeys: actionKeys + preferenceKeys
+        ) else {
+            showConfigurationSaveFailure("全部默认设置")
+            return
+        }
 
         postConfigChanged()
         refreshID = UUID()
@@ -1168,8 +1227,14 @@ struct ActionsHubView: View {
                     Picker("右键菜单展示", selection: Binding(
                         get: { menuLayoutMode },
                         set: { newValue in
+                            guard SharedStorageManager.shared.setStringArray(
+                                [newValue.rawValue],
+                                forKey: SharedStorageManager.Keys.menuLayoutMode
+                            ) else {
+                                showConfigurationSaveFailure("右键菜单展示")
+                                return
+                            }
                             menuLayoutMode = newValue
-                            SharedStorageManager.shared.menuLayoutMode = newValue
                             postConfigChanged()
                             SharedHUDManager.show(
                                 title: "菜单展示已更新",
@@ -1357,12 +1422,12 @@ struct ActionRowView: View {
             .buttonStyle(.plain)
             .help(isFavorite ? "从常用分组移除" : "加入常用分组")
             
-            Toggle("", isOn: $isEnabled)
+            Toggle("", isOn: Binding(
+                get: { isEnabled },
+                set: { saveStateToSharedDefaults($0) }
+            ))
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .onChange(of: isEnabled) { newValue in
-                    saveStateToSharedDefaults(newValue)
-                }
         }
         .padding(.vertical, 6)
         .onAppear {
@@ -1372,16 +1437,27 @@ struct ActionRowView: View {
     }
     
     private func saveStateToSharedDefaults(_ enabled: Bool) {
-        SharedStorageManager.shared.setBool(enabled, forKey: "enable_action_\(action.actionId)")
+        let key = "enable_action_\(action.actionId)"
+        let previousValue = SharedStorageManager.shared.getBool(
+            forKey: key,
+            defaultValue: action.isEnabledByDefault
+        )
+        guard SharedStorageManager.shared.setBool(enabled, forKey: key) else {
+            showConfigurationSaveFailure(action.localizedTitle)
+            isEnabled = previousValue
+            return
+        }
+        isEnabled = enabled
         // 发送分布式通知让 FinderSync 插件知道配置已经发生变动，即时刷新菜单内容
         postConfigChanged()
     }
     
     private func loadStateFromSharedDefaults() {
-        isEnabled = SharedStorageManager.shared.getBool(
+        let storedValue = SharedStorageManager.shared.getBool(
             forKey: "enable_action_\(action.actionId)",
             defaultValue: action.isEnabledByDefault
         )
+        isEnabled = storedValue
     }
 
     private func loadFavoriteState() {
@@ -1389,8 +1465,12 @@ struct ActionRowView: View {
     }
 
     private func toggleFavorite() {
-        isFavorite.toggle()
-        SharedStorageManager.shared.setAction(action, favorite: isFavorite)
+        let newValue = !isFavorite
+        guard SharedStorageManager.shared.setAction(action, favorite: newValue) else {
+            showConfigurationSaveFailure("\(action.localizedTitle)收藏状态")
+            return
+        }
+        isFavorite = newValue
         postConfigChanged()
     }
 }

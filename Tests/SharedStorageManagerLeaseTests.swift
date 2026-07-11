@@ -180,6 +180,21 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
         XCTAssertEqual(manager.getStringArray(forKey: "unrelated"), ["keep"])
     }
 
+    func testApplyConfigurationChangesIsAtomicAndNewValuesWinOverRemoval() {
+        manager.setBool(false, forKey: "replace_bool")
+        manager.setStringArray(["old"], forKey: "replace_array")
+
+        XCTAssertTrue(manager.applyConfigurationChanges(
+            booleanValues: ["replace_bool": true],
+            stringArrayValues: ["replace_array": ["new", "new"]],
+            removingKeys: ["replace_bool", "replace_array", "removed_only"]
+        ))
+
+        XCTAssertTrue(manager.getBool(forKey: "replace_bool", defaultValue: false))
+        XCTAssertEqual(manager.getStringArray(forKey: "replace_array"), ["new"])
+        XCTAssertEqual(manager.getStringArray(forKey: "removed_only"), [])
+    }
+
     func testConcurrentConfigurationMutationsPreserveIndependentKeys() throws {
         let storage = try TestStorage.make()
         addTeardownBlock {
@@ -224,11 +239,10 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
     }
 
     func testReclaimAbandonedInFlightRestoresOrphans() throws {
-        // 模拟「上一次进程崩在 dispatcher 中」：往别的 PID 子目录写孤儿文件。
-        // reclaim 会跳过当前 PID 目录，所以必须用 bogus PID。
+        // 模拟「上一次进程崩在 dispatcher 中」：往别的进程实例 owner 写孤儿文件。
         let bogusPID = 99999
         let bogusDir = manager.inFlightActionsDirectoryURL
-            .appendingPathComponent("\(bogusPID)", isDirectory: true)
+            .appendingPathComponent("\(bogusPID)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: bogusDir, withIntermediateDirectories: true)
 
         let event = SharedActionEvent(
@@ -256,7 +270,7 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
     func testReclaimSkipsInFlightDirectoryOwnedByLiveProcess() throws {
         let livePID: Int32 = 4242
         let liveDirectory = manager.inFlightActionsDirectoryURL
-            .appendingPathComponent(String(livePID), isDirectory: true)
+            .appendingPathComponent("\(livePID)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: liveDirectory, withIntermediateDirectories: true)
         let event = SharedActionEvent(
             id: UUID().uuidString,
@@ -286,7 +300,7 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
     func testReclaimRestoresStaleDirectoryAfterPIDReuse() throws {
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let staleDirectory = manager.inFlightActionsDirectoryURL
-            .appendingPathComponent("\(currentPID)-previous-instance", isDirectory: true)
+            .appendingPathComponent("\(currentPID)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: staleDirectory, withIntermediateDirectories: true)
 
         let event = SharedActionEvent(
@@ -307,7 +321,15 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
     }
 
     func testReclaimIgnoresNonNumericAndInvalidPIDDirectories() throws {
-        let ownerNames = ["not-a-pid", "+1", "0", "-1", "999999999999999999999"]
+        let ownerNames = [
+            "not-a-pid",
+            "+1",
+            "0",
+            "-1",
+            "999999999999999999999",
+            "4242-garbage",
+            "4242-"
+        ]
         let eventURLs = try ownerNames.map { ownerName in
             let directory = manager.inFlightActionsDirectoryURL
                 .appendingPathComponent(ownerName, isDirectory: true)
@@ -322,6 +344,18 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
         for eventURL in eventURLs {
             XCTAssertTrue(FileManager.default.fileExists(atPath: eventURL.path))
         }
+    }
+
+    func testReclaimPreservesLegacyPIDOwnerForManualRecovery() throws {
+        let legacyDirectory = manager.inFlightActionsDirectoryURL
+            .appendingPathComponent("54321", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
+        let eventURL = legacyDirectory.appendingPathComponent("legacy.json")
+        try Data("legacy".utf8).write(to: eventURL)
+
+        manager.reclaimAbandonedInFlightActions(processIsAlive: { _ in false })
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: eventURL.path))
     }
 
     func testClearFailedActionsRemovesContentsButPreservesDirectory() throws {

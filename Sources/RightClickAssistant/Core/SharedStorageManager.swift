@@ -464,9 +464,10 @@ public final class SharedStorageManager {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// 把不属于任何存活进程的 InFlight 文件搬回 PendingActions，让下一轮消费循环重新处理。
+    /// 把不属于任何存活进程实例的 InFlight 文件搬回 PendingActions，让下一轮消费循环重新处理。
     /// 应在 AppDelegate.applicationDidFinishLaunching 启动消费循环之前调用一次。
     /// 默认通过 `kill(pid, 0)` 判断 owner 是否存活；EPERM 表示进程存在但无权发送信号。
+    /// 旧版纯 PID owner 无法可靠区分 PID 复用，保守保留，不做自动恢复。
     public func reclaimAbandonedInFlightActions() {
         reclaimAbandonedInFlightActions(processIsAlive: Self.isProcessAlive)
     }
@@ -489,8 +490,9 @@ public final class SharedStorageManager {
             guard isDir else { continue }
             let ownerName = pidDir.lastPathComponent
             guard ownerName != currentOwnerName,
-                  let ownerPID = Self.ownerPID(from: ownerName),
-                  ownerPID > 0 else { continue }
+                  case .processInstance(let ownerPID, _) = Self.inFlightOwner(from: ownerName) else {
+                continue
+            }
             // 同 PID 但不同 instance-id 的目录属于本次启动前留下的旧租约。
             // 新进程只会写自己的 instance-id 目录，因此可以安全回收旧目录。
             if ownerPID != currentPID && processIsAlive(ownerPID) { continue }
@@ -502,8 +504,8 @@ public final class SharedStorageManager {
             )) ?? []
 
             for orphan in orphanFiles where orphan.pathExtension == "json" {
-                // 兼容旧版纯 PID owner：移动每个文件前再次检查，缩小旧版本进程
-                // 恰好复用该 PID 并开始写入时的竞态窗口。
+                // owner 目录包含本次启动唯一 UUID。即使 PID 在检查后被复用，
+                // 新进程也会写入不同目录；再次检查仅避免搬动刚刚仍存活的旧进程。
                 if ownerPID != currentPID && processIsAlive(ownerPID) { break }
 
                 let target = pendingActionsDirectoryURL.appendingPathComponent(orphan.lastPathComponent)
@@ -525,17 +527,33 @@ public final class SharedStorageManager {
         }
     }
 
-    private static func ownerPID(from directoryName: String) -> Int32? {
-        let pidComponent = directoryName.split(
+    private enum InFlightOwner {
+        case legacyPID(Int32)
+        case processInstance(pid: Int32, identifier: UUID)
+    }
+
+    private static func inFlightOwner(from directoryName: String) -> InFlightOwner? {
+        let components = directoryName.split(
             separator: "-",
             maxSplits: 1,
             omittingEmptySubsequences: false
-        )[0]
+        )
+        let pidComponent = components[0]
         guard !pidComponent.isEmpty,
-              pidComponent.allSatisfy({ $0 >= "0" && $0 <= "9" }) else {
+              pidComponent.allSatisfy({ $0 >= "0" && $0 <= "9" }),
+              let pid = Int32(pidComponent),
+              pid > 0 else {
             return nil
         }
-        return Int32(pidComponent)
+
+        if components.count == 1 {
+            return .legacyPID(pid)
+        }
+
+        guard let identifier = UUID(uuidString: String(components[1])) else {
+            return nil
+        }
+        return .processInstance(pid: pid, identifier: identifier)
     }
 
     private static func isProcessAlive(_ pid: Int32) -> Bool {
@@ -730,6 +748,32 @@ public final class SharedStorageManager {
                 for (actionID, enabled) in states {
                     defaults.set(enabled, forKey: "enable_action_\(actionID)")
                 }
+            }
+        )
+    }
+
+    /// 在一次事务中应用设置页的批量变更。删除先执行，随后写入的新值具有更高优先级。
+    @discardableResult
+    public func applyConfigurationChanges(
+        booleanValues: [String: Bool] = [:],
+        stringArrayValues: [String: [String]] = [:],
+        removingKeys: [String] = []
+    ) -> Bool {
+        let uniqueArrays = stringArrayValues.mapValues { values in
+            Array(NSOrderedSet(array: values)).compactMap { $0 as? String }
+        }
+        let removedKeys = Set(removingKeys)
+
+        return mutateConfig(
+            update: { config, _ in
+                removedKeys.forEach { config.removeValue(forKey: $0) }
+                booleanValues.forEach { config[$0.key] = $0.value }
+                uniqueArrays.forEach { config[$0.key] = $0.value }
+            },
+            mirrorToSharedDefaults: { defaults, _ in
+                removedKeys.forEach { defaults.removeObject(forKey: $0) }
+                booleanValues.forEach { defaults.set($0.value, forKey: $0.key) }
+                uniqueArrays.forEach { defaults.set($0.value, forKey: $0.key) }
             }
         )
     }
