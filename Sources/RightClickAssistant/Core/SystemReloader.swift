@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-public struct SystemCommandResult: Equatable {
+public struct SystemCommandResult: Equatable, Sendable {
     public let executablePath: String
     public let arguments: [String]
     public let terminationStatus: Int32?

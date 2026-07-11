@@ -19,7 +19,7 @@ import Foundation
 /// - 调用方任意线程（含 folder-monitor 串行队列）调用 `submit` 都不会阻塞；
 /// - 同一 Runner 的多次提交在私有 IO 队列上 FIFO 串行执行；
 /// - 不同 Runner 之间互不影响。
-public final class BackgroundActionRunner {
+public final class BackgroundActionRunner: @unchecked Sendable {
     /// 标识本 Runner，仅用于日志归类。
     public let actionLabel: String
 
@@ -34,7 +34,7 @@ public final class BackgroundActionRunner {
     /// 提交一次后台动作。立即返回，不阻塞调用者。
     /// - Parameter perform: 在私有串行队列上执行真正 IO；
     ///                     不应再回主线程做长任务。
-    public func submit(_ perform: @escaping () -> Void) {
+    public func submit(_ perform: @escaping @Sendable () -> Void) {
         ioQueue.async {
             perform()
         }

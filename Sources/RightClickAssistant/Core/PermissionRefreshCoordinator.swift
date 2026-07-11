@@ -7,13 +7,13 @@ import Foundation
 /// repeatable reload path instead of implying that a hot permission change is
 /// always enough.
 public enum PermissionRefreshCoordinator {
-    public enum ReloadChoice: Equatable {
+    public enum ReloadChoice: Equatable, Sendable {
         case relaunchAppAndRestartFinder
         case restartFinderOnly
         case later
     }
 
-    public struct ReloadOutcome: Equatable {
+    public struct ReloadOutcome: Equatable, Sendable {
         public let choice: ReloadChoice
         public let relaunchResult: SystemCommandResult?
         public let restartFinderResult: SystemCommandResult?
@@ -43,6 +43,11 @@ public enum PermissionRefreshCoordinator {
         !currentFullDiskAccess
     }
 
+    public static let permissionRefreshRelaunchArguments = [
+        LaunchPresentationPolicy.permissionRefreshArgument,
+        LaunchPresentationPolicy.userOpenArgument
+    ]
+
     @discardableResult
     public static func restartFinderOnly() -> SystemCommandResult {
         SystemReloader.postConfigChanged()
@@ -54,16 +59,14 @@ public enum PermissionRefreshCoordinator {
         SystemReloader.postConfigChanged()
         return SystemReloader.relaunchApp(
             bundleURL: bundleURL,
-            arguments: [
-                LaunchPresentationPolicy.userOpenArgument
-            ]
+            arguments: permissionRefreshRelaunchArguments
         )
     }
 
     public static func performReload(
         choice: ReloadChoice,
         bundleURL: URL,
-        completion: @escaping (ReloadOutcome) -> Void
+        completion: @escaping @MainActor @Sendable (ReloadOutcome) -> Void
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
             let outcome: ReloadOutcome
@@ -90,7 +93,7 @@ public enum PermissionRefreshCoordinator {
                 )
             }
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 completion(outcome)
             }
         }

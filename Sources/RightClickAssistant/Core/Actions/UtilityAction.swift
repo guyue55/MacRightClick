@@ -369,7 +369,7 @@ extension UtilityAction {
 
     /// 与 transferRunner 通过 InteractiveActionGate 共享 modal 互斥。
     /// toggleHiddenRunner 自带串行 IO 队列：多次切换不会并发抢 Finder。
-    nonisolated(unsafe) static let toggleHiddenRunner = InteractiveActionRunner(
+    static let toggleHiddenRunner = InteractiveActionRunner(
         actionLabel: "utility.toggleHidden",
         ioQueueLabel: "guyue.RightClickAssistant.utility-toggle-hidden-io"
     )

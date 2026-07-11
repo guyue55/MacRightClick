@@ -8,7 +8,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
 
     var window: NSWindow!
     private var folderMonitor: SharedFolderMonitor?
-    private var activityToken: NSObjectProtocol?
     private var statusItem: NSStatusItem?
     /// 替换旧的 objc_sync_enter(self)：
     /// - 旧实现把锁加在 NSObject self 上，和 AppKit 内部隐式锁高度耦合，
@@ -84,13 +83,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         
         print("[App] 右键助手宿主程序启动并初始化完成 (双保险中介链路就绪)")
         
-        // 增加系统级保活机制，降低后台监控与通知消费被 App Nap 影响的概率。
-        self.activityToken = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated, .idleSystemSleepDisabled, .suddenTerminationDisabled],
-            reason: "Keep background folder monitor active for RightClickAssistant"
-        )
-        SharedStorageManager.shared.writeLog("[App] 系统级保活机制启动，App Nap 豁免激活成功")
-        
         // 【生产分发屏蔽】：仿真自检仅作为本地开发自检使用。为了避免用户在正常安装运行时，其 Downloads 目录下莫名凭空产生 txt 测试文件，生产包中默认关闭此仿真调用。
         // self.runLaunchSelfTest()
     }
@@ -150,11 +142,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     
     func applicationWillTerminate(_ aNotification: Notification) {
         folderMonitor?.stop()
-        if let token = activityToken {
-            ProcessInfo.processInfo.endActivity(token)
-            activityToken = nil
-            SharedStorageManager.shared.writeLog("[App] 保活机制已安全结束释放")
-        }
     }
     
     /// 注册默认的一套右键快捷操作

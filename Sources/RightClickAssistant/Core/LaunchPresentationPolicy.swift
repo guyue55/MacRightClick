@@ -11,7 +11,7 @@ public enum LaunchPresentationPolicy {
     public static let permissionRefreshArgument = "--rightclickassistant-permission-refresh"
     public static let silentLaunchKey = "silent_launch_enabled"
 
-    public struct Context: Equatable {
+    public struct Context: Equatable, Sendable {
         public let isBackgroundRequest: Bool
         public let isUserOpenRequest: Bool
         public let isPermissionRefreshRequest: Bool

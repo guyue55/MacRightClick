@@ -10,8 +10,8 @@ import Foundation
 /// - 进程启动时 `preheat()` 把 favoriteActionIds 一次性读入；enable_action_* 按需懒加载
 /// - 收到 `configChanged` 分布式通知或主 App 写配置后，调用 `invalidate()`
 /// - 读路径全部 O(1) 内存查询
-public final class ActionConfigCache {
-    public nonisolated(unsafe) static let shared = ActionConfigCache(storage: SharedStorageManager.shared)
+public final class ActionConfigCache: @unchecked Sendable {
+    public static let shared = ActionConfigCache(storage: SharedStorageManager.shared)
 
     private let queue = DispatchQueue(label: "guyue.ActionConfigCache", attributes: .concurrent)
     private let storage: SharedStorageManager

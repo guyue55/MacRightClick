@@ -5,9 +5,9 @@ import AppKit
 /// 提供带微动画、支持毛玻璃特效的屏幕顶部中央紧凑型通知。
 /// 实现了高内聚低耦合、接口隔离与完全双写配置感知（注2、注4）。
 public final class SharedHUDManager {
-    private nonisolated(unsafe) static weak var activePanel: NSPanel?
+    @MainActor private static weak var activePanel: NSPanel?
     /// HUD 启用 Esc 关闭时，记录当前的 NSEvent 监听 token，便于关闭时移除避免泄漏。
-    private nonisolated(unsafe) static var activeKeyMonitor: Any?
+    @MainActor private static var activeKeyMonitor: Any?
 
     /// 纯函数：从给定屏幕集合里挑出包含 mouseLocation 的 visibleFrame；都不命中时返回 fallback。
     /// 抽出便于单测，不依赖 NSScreen / NSEvent。
@@ -35,7 +35,18 @@ public final class SharedHUDManager {
             return
         }
         
-        DispatchQueue.main.async {
+        Task { @MainActor in
+            showOnMainActor(title: title, content: content, iconName: iconName, isSuccess: isSuccess)
+        }
+    }
+
+    @MainActor
+    private static func showOnMainActor(
+        title: String,
+        content: String,
+        iconName: String?,
+        isSuccess: Bool
+    ) {
             // 2. 经典防冲突重叠机制：如果已有悬浮窗，立即物理关闭并回收
             if let existing = activePanel {
                 existing.close()
@@ -123,19 +134,11 @@ public final class SharedHUDManager {
             
             panel.contentView = visualEffectView
 
-            // 10. 用户主动关闭通道：点击 HUD 任意位置或按 Esc 都立刻淡出
-            let dismiss: () -> Void = {
-                if let m = activeKeyMonitor {
-                    NSEvent.removeMonitor(m)
-                    activeKeyMonitor = nil
-                }
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.2
-                    panel.animator().alphaValue = 0
-                }, completionHandler: {
-                    panel.close()
-                    if activePanel === panel { activePanel = nil }
-                })
+            let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+            // 10. 用户主动关闭通道：点击 HUD 任意位置或按 Esc 都立刻关闭。
+            let dismiss: @MainActor () -> Void = {
+                dismissPanel(panel, animated: !reduceMotion)
             }
             let clickRecognizer = HUDClickRecognizer(target: nil, action: nil, dismiss: dismiss)
             visualEffectView.addGestureRecognizer(clickRecognizer)
@@ -148,8 +151,15 @@ public final class SharedHUDManager {
                 return event
             }
 
-            // 9. 模拟物理回弹的阻尼弹簧入场动画 (Damped Spring/Overshoot Physics)
-            // 初始状态 y + 15，alpha 0。弹性滑落至最终位置 y 轴，在 0.4s 内完成。
+            if reduceMotion {
+                panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+                panel.alphaValue = 1
+                panel.orderFront(nil)
+                scheduleAutomaticDismiss(panel, animated: false)
+                return
+            }
+
+            // 9. 模拟物理回弹的阻尼弹簧入场动画 (Damped Spring/Overshoot Physics)。
             panel.setFrame(NSRect(x: x, y: y + 15, width: width, height: height), display: true)
             panel.alphaValue = 0
             panel.orderFront(nil)
@@ -161,23 +171,47 @@ public final class SharedHUDManager {
                 panel.animator().setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
                 panel.animator().alphaValue = 1.0
             }, completionHandler: {
-                // 停留 2.0 秒后自动淡出并回收销毁
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    NSAnimationContext.runAnimationGroup({ context in
-                        context.duration = 0.3
-                        panel.animator().alphaValue = 0
-                    }, completionHandler: {
-                        panel.close()
-                        if activePanel === panel {
-                            activePanel = nil
-                        }
-                        if let m = activeKeyMonitor {
-                            NSEvent.removeMonitor(m)
-                            activeKeyMonitor = nil
-                        }
-                    })
+                Task { @MainActor in
+                    scheduleAutomaticDismiss(panel, animated: true)
                 }
             })
+    }
+
+    @MainActor
+    private static func scheduleAutomaticDismiss(_ panel: NSPanel, animated: Bool) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard activePanel === panel else { return }
+            dismissPanel(panel, animated: animated)
+        }
+    }
+
+    @MainActor
+    private static func dismissPanel(_ panel: NSPanel, animated: Bool) {
+        guard activePanel === panel else { return }
+        if !animated {
+            closePanel(panel)
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            panel.animator().alphaValue = 0
+        }, completionHandler: {
+            Task { @MainActor in
+                closePanel(panel)
+            }
+        })
+    }
+
+    @MainActor
+    private static func closePanel(_ panel: NSPanel) {
+        guard activePanel === panel else { return }
+        panel.close()
+        activePanel = nil
+        if let monitor = activeKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            activeKeyMonitor = nil
         }
     }
 }
@@ -185,10 +219,11 @@ public final class SharedHUDManager {
 // MARK: - HUD 点击关闭手势
 /// `NSClickGestureRecognizer` 的 closure 版本，专给 HUD 用：
 /// 不绑定 target/action，命中即触发 `dismiss` 闭包。封装在此避免污染 NSView 扩展。
+@MainActor
 private final class HUDClickRecognizer: NSClickGestureRecognizer {
-    private let dismiss: () -> Void
+    private let dismiss: @MainActor () -> Void
 
-    init(target: Any?, action: Selector?, dismiss: @escaping () -> Void) {
+    init(target: Any?, action: Selector?, dismiss: @escaping @MainActor () -> Void) {
         self.dismiss = dismiss
         super.init(target: target, action: action)
     }

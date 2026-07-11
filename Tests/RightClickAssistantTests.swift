@@ -529,6 +529,14 @@ final class RightClickAssistantTests: XCTestCase {
         ))
     }
 
+    func testPermissionRefreshRelaunchUsesRefreshAndForegroundArguments() {
+        XCTAssertEqual(
+            PermissionRefreshCoordinator.permissionRefreshRelaunchArguments,
+            [LaunchPresentationPolicy.permissionRefreshArgument,
+             LaunchPresentationPolicy.userOpenArgument]
+        )
+    }
+
     func testPermissionRefreshCoordinatorPromptsOnlyOnFreshGrantTransition() {
         XCTAssertTrue(PermissionRefreshCoordinator.shouldPromptAfterGrant(
             previous: false,

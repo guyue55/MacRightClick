@@ -294,7 +294,7 @@ extension FileManageAction {
     /// 所有 moveTo/copyTo 共享一个 Runner，
     /// 一来后台 IO 自然串行（前一次没跑完，下一次排队不抢卷头），
     /// 二来与 toggleHidden Runner 通过 InteractiveActionGate 共享 modal 互斥。
-    public nonisolated(unsafe) static let transferRunner = InteractiveActionRunner(
+    public static let transferRunner = InteractiveActionRunner(
         actionLabel: "fileManage.transfer",
         ioQueueLabel: "guyue.RightClickAssistant.filemanage-transfer-io"
     )
@@ -302,7 +302,7 @@ extension FileManageAction {
     /// paste 没有自身弹窗，但跨盘大文件会让 moveItem/crossVolumeMove 长期阻塞队列。
     /// 用 BackgroundActionRunner 把 IO 投到私有串行队列，folder-monitor 队列立刻返回。
     /// 不抢 InteractiveActionGate：paste 与 modal 互斥不在同一层面，不该相互阻塞。
-    nonisolated(unsafe) static let pasteRunner = BackgroundActionRunner(
+    static let pasteRunner = BackgroundActionRunner(
         actionLabel: "fileManage.paste",
         ioQueueLabel: "guyue.RightClickAssistant.filemanage-paste-io"
     )
