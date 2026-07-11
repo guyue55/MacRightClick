@@ -130,6 +130,78 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(storage.actionProfile, .essential)
         XCTAssertTrue(storage.getBool(forKey: deleteKey, defaultValue: false))
     }
+
+    func testLegacyEventDefaultsToItemsInvocation() throws {
+        let data = #"{"id":"1","createdAt":1,"actionId":"test","paths":["/tmp/a"]}"#
+            .data(using: .utf8)!
+
+        let event = try JSONDecoder().decode(SharedActionEvent.self, from: data)
+
+        XCTAssertEqual(event.schemaVersion, 1)
+        XCTAssertEqual(event.invocationKind, .items)
+    }
+
+    func testV2EventRoundTripPreservesContainerInvocation() throws {
+        let eventURL = try storage.enqueueAction(
+            actionId: "test.container",
+            paths: [tempDirectory.path],
+            invocationKind: .container
+        )
+        let data = try Data(contentsOf: eventURL)
+
+        let event = try JSONDecoder().decode(SharedActionEvent.self, from: data)
+
+        XCTAssertEqual(event.schemaVersion, 2)
+        XCTAssertEqual(event.invocationKind, .container)
+    }
+
+    func testDispatcherRejectsDisabledActionEvenWhenEventWasQueued() throws {
+        let target = tempDirectory.appendingPathComponent("enabled-check.txt")
+        try Data().write(to: target)
+        let action = DispatchProbeAction()
+        let dispatcher = ActionDispatcher(isActionEnabled: { _ in false })
+        dispatcher.register(action: action)
+
+        XCTAssertFalse(dispatcher.dispatch(
+            actionId: action.actionId,
+            targetURLs: [target],
+            invocationKind: .items
+        ))
+        XCTAssertFalse(action.didExecute)
+    }
+
+    func testDispatcherRevalidatesInvocationContext() throws {
+        let target = tempDirectory.appendingPathComponent("context-check.txt")
+        try Data().write(to: target)
+        let action = DispatchProbeAction(availableInContainer: true)
+        let dispatcher = ActionDispatcher(isActionEnabled: { _ in true })
+        dispatcher.register(action: action)
+
+        XCTAssertFalse(dispatcher.dispatch(
+            actionId: action.actionId,
+            targetURLs: [target],
+            invocationKind: .items
+        ))
+        XCTAssertTrue(dispatcher.dispatch(
+            actionId: action.actionId,
+            targetURLs: [target],
+            invocationKind: .container
+        ))
+    }
+
+    func testDispatcherAllowsPathIndependentActionWithMissingTarget() {
+        let action = DispatchProbeAction(requiresExistingTargets: false)
+        let dispatcher = ActionDispatcher(isActionEnabled: { _ in true })
+        dispatcher.register(action: action)
+        let missing = tempDirectory.appendingPathComponent("missing")
+
+        XCTAssertTrue(dispatcher.dispatch(
+            actionId: action.actionId,
+            targetURLs: [missing],
+            invocationKind: .items
+        ))
+        XCTAssertTrue(action.didExecute)
+    }
     
     /// 2. 测试新建文件在发生重名时的自增重命名逻辑
     func testNewFileNameCollisionResolution() {
@@ -927,5 +999,32 @@ private final class TestMenuAction: MenuAction {
 
     func execute(targetURLs: [URL]) -> Bool {
         true
+    }
+}
+
+private final class DispatchProbeAction: MenuAction {
+    let actionId = "test.dispatch-probe.\(UUID().uuidString)"
+    let localizedTitle = "Dispatch Probe"
+    let iconName: String? = nil
+    let category: ActionCategory = .utility
+    let requiresExistingTargets: Bool
+    private let availableInContainer: Bool?
+    private(set) var didExecute = false
+
+    init(
+        availableInContainer: Bool? = nil,
+        requiresExistingTargets: Bool = true
+    ) {
+        self.availableInContainer = availableInContainer
+        self.requiresExistingTargets = requiresExistingTargets
+    }
+
+    func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool {
+        availableInContainer.map { $0 == isContainer } ?? true
+    }
+
+    func execute(targetURLs: [URL]) -> Bool {
+        didExecute = true
+        return true
     }
 }

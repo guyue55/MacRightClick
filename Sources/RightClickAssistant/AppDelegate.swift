@@ -130,7 +130,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             // 【线程性能优化】：移除外层强制主线程分发，直接在 SharedFolderMonitor 的高特权后台并发队列中同步执行 I/O 和计算。
             // 这彻底释放了主线程，消除 UI 线程卡顿引起的动作延迟。涉及到 UI 的悬浮 HUD 和二维码窗口在 UtilityAction 内部已安全包装了 DispatchQueue.main.async。
             SharedStorageManager.shared.writeLog("[App] [processPendingAction] 即将由 ActionDispatcher 分发动作 \(event.actionId)...")
-            let success = ActionDispatcher.shared.dispatch(actionId: event.actionId, targetURLs: urls)
+            let success = ActionDispatcher.shared.dispatch(
+                actionId: event.actionId,
+                targetURLs: urls,
+                invocationKind: event.invocationKind
+            )
             SharedStorageManager.shared.writeLog("[App] [processPendingAction] 动作 \(event.actionId) 代理执行结果: \(success ? "成功" : "失败")")
 
             // ack：dispatcher 已 return（不论真假成功），事件已被「认真处理过」，可以删除 InFlight 文件。

@@ -1,12 +1,58 @@
 import Foundation
 import Darwin
 
+public enum ActionInvocationKind: String, Codable, Equatable, Sendable {
+    case items
+    case container
+}
+
 /// FinderSync 扩展写入、宿主 App 消费的右键动作事件。
-public struct SharedActionEvent: Codable, Equatable, Identifiable {
+/// schema 1 没有版本与调用上下文字段，解码时按 items 保持兼容；新事件统一写 schema 2。
+public struct SharedActionEvent: Codable, Equatable, Identifiable, Sendable {
+    public let schemaVersion: Int
     public let id: String
     public let createdAt: TimeInterval
     public let actionId: String
     public let paths: [String]
+    public let invocationKind: ActionInvocationKind
+
+    public init(
+        id: String,
+        createdAt: TimeInterval,
+        actionId: String,
+        paths: [String],
+        invocationKind: ActionInvocationKind = .items,
+        schemaVersion: Int = 2
+    ) {
+        self.schemaVersion = schemaVersion
+        self.id = id
+        self.createdAt = createdAt
+        self.actionId = actionId
+        self.paths = paths
+        self.invocationKind = invocationKind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case id
+        case createdAt
+        case actionId
+        case paths
+        case invocationKind
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        id = try container.decode(String.self, forKey: .id)
+        createdAt = try container.decode(TimeInterval.self, forKey: .createdAt)
+        actionId = try container.decode(String.self, forKey: .actionId)
+        paths = try container.decode([String].self, forKey: .paths)
+        invocationKind = try container.decodeIfPresent(
+            ActionInvocationKind.self,
+            forKey: .invocationKind
+        ) ?? .items
+    }
 }
 
 /// dispatcher 消费一个 PendingAction 时拿到的「租约」凭证（P1-2 事务化）：
@@ -375,12 +421,17 @@ public final class SharedStorageManager {
 
     /// 将一个右键动作加入共享队列。
     @discardableResult
-    public func enqueueAction(actionId: String, paths: [String]) throws -> URL {
+    public func enqueueAction(
+        actionId: String,
+        paths: [String],
+        invocationKind: ActionInvocationKind = .items
+    ) throws -> URL {
         let event = SharedActionEvent(
             id: UUID().uuidString,
             createdAt: Date().timeIntervalSince1970,
             actionId: actionId,
-            paths: paths
+            paths: paths,
+            invocationKind: invocationKind
         )
 
         let timestamp = Int64(event.createdAt * 1000)
@@ -596,7 +647,9 @@ public final class SharedStorageManager {
             id: "legacy-\(UUID().uuidString)",
             createdAt: Date().timeIntervalSince1970,
             actionId: actionId,
-            paths: paths
+            paths: paths,
+            invocationKind: .items,
+            schemaVersion: 1
         )
     }
     

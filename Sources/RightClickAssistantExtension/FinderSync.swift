@@ -9,22 +9,31 @@ class FinderSync: FIFinderSync {
     
     // MARK: - ActionTagMapper (双向唯一整数 Tag 映射表)
     // 使用稳定的整数 tag 传递菜单动作标识，避免依赖 representedObject。
-    private static var tagToActionId: [Int: String] = [:]
+    private struct MenuSelection: Equatable {
+        let actionId: String
+        let invocationKind: ActionInvocationKind
+    }
+
+    private static var tagToSelection: [Int: MenuSelection] = [:]
     private static var nextTag: Int = 1000
     private var lastCutBadgePaths: Set<String> = []
     
-    private static func getTag(for actionId: String) -> Int {
-        if let existingTag = tagToActionId.first(where: { $0.value == actionId })?.key {
+    private static func getTag(
+        for actionId: String,
+        invocationKind: ActionInvocationKind
+    ) -> Int {
+        let selection = MenuSelection(actionId: actionId, invocationKind: invocationKind)
+        if let existingTag = tagToSelection.first(where: { $0.value == selection })?.key {
             return existingTag
         }
         let assignedTag = nextTag
-        tagToActionId[assignedTag] = actionId
+        tagToSelection[assignedTag] = selection
         nextTag += 1
         return assignedTag
     }
     
-    private static func getActionId(for tag: Int) -> String? {
-        return tagToActionId[tag]
+    private static func getSelection(for tag: Int) -> MenuSelection? {
+        return tagToSelection[tag]
     }
     
     /// 当用户点击菜单项时的回调函数。
@@ -32,17 +41,20 @@ class FinderSync: FIFinderSync {
         let tag = sender.tag
         logToSharedContainer("[FinderSync] [actionMenuItemSelected] 收到菜单点击事件，Tag: \(tag)", level: .debug)
         
-        guard let actionId = FinderSync.getActionId(for: tag) else {
+        guard let selection = FinderSync.getSelection(for: tag) else {
             logToSharedContainer("[FinderSync] [actionMenuItemSelected] 错误: 无法根据 Tag \(tag) 映射出动作 ID")
             return
         }
-        
+
+        let actionId = selection.actionId
         // 实时获取当前选中的文件/目录路径，避免使用创建菜单时的静态路径数据。
-        var targets = FIFinderSyncController.default().selectedItemURLs() ?? []
-        if targets.isEmpty {
-            if let targetedURL = FIFinderSyncController.default().targetedURL() {
-                targets = [targetedURL]
-            }
+        let controller = FIFinderSyncController.default()
+        let targets: [URL]
+        switch selection.invocationKind {
+        case .items:
+            targets = controller.selectedItemURLs() ?? []
+        case .container:
+            targets = controller.targetedURL().map { [$0] } ?? []
         }
         
         guard !targets.isEmpty else {
@@ -56,7 +68,11 @@ class FinderSync: FIFinderSync {
         let paths = targets.map { $0.path }
 
         do {
-            let eventURL = try SharedStorageManager.shared.enqueueAction(actionId: actionId, paths: paths)
+            let eventURL = try SharedStorageManager.shared.enqueueAction(
+                actionId: actionId,
+                paths: paths,
+                invocationKind: selection.invocationKind
+            )
             logToSharedContainer("[FinderSync] [actionMenuItemSelected] 成功向中介队列写入动作参数: \(eventURL.lastPathComponent)", level: .debug)
         } catch {
             logToSharedContainer("[FinderSync] [actionMenuItemSelected] 错误: 写入共享动作队列失败: \(error.localizedDescription)")
@@ -264,7 +280,10 @@ class FinderSync: FIFinderSync {
         
         logToSharedContainer("[FinderSync] 右键菜单触发渲染, 类型: \(menuKind == .contextualMenuForItems ? "Items" : "Container"), 目标路径: \(targetURLs.map { $0.path })", level: .debug)
         
-        let isContainer = (menuKind == .contextualMenuForContainer)
+        let invocationKind: ActionInvocationKind = menuKind == .contextualMenuForContainer
+            ? .container
+            : .items
+        let isContainer = invocationKind == .container
         
         let menu = NSMenu(title: "开源右键助手")
         
@@ -297,20 +316,28 @@ class FinderSync: FIFinderSync {
             }
         )
 
-        render(sections: sections, into: menu, dispatcher: dispatcher)
+        render(
+            sections: sections,
+            into: menu,
+            dispatcher: dispatcher,
+            invocationKind: invocationKind
+        )
         
         logToSharedContainer("[FinderSync] 菜单渲染完毕，主菜单 Items 数量: \(menu.items.count)", level: .debug)
         // 若全部为空则不展示任何项
         return menu.items.isEmpty ? nil : menu
     }
 
-    private func makeMenuItem(for action: MenuAction) -> NSMenuItem {
+    private func makeMenuItem(
+        for action: MenuAction,
+        invocationKind: ActionInvocationKind
+    ) -> NSMenuItem {
         let item = NSMenuItem(
             title: action.localizedTitle,
             action: #selector(actionMenuItemSelected(_:)),
             keyEquivalent: ""
         )
-        item.tag = FinderSync.getTag(for: action.actionId)
+        item.tag = FinderSync.getTag(for: action.actionId, invocationKind: invocationKind)
         item.target = self
 
         if let iconName = action.iconName {
@@ -323,14 +350,15 @@ class FinderSync: FIFinderSync {
     private func render(
         sections: [FinderMenuLayoutSection],
         into menu: NSMenu,
-        dispatcher: ActionDispatcher
+        dispatcher: ActionDispatcher,
+        invocationKind: ActionInvocationKind
     ) {
         for section in sections {
             switch section {
             case .directItems(let actionIds):
                 for actionId in actionIds {
                     guard let action = dispatcher.action(forId: actionId) else { continue }
-                    menu.addItem(makeMenuItem(for: action))
+                    menu.addItem(makeMenuItem(for: action, invocationKind: invocationKind))
                     logToSharedContainer("[FinderSync] 成功添加一级菜单项: [\(action.localizedTitle)]", level: .debug)
                 }
             case .submenu(let title, let actionIds):
@@ -338,7 +366,7 @@ class FinderSync: FIFinderSync {
                 let submenu = NSMenu(title: title)
                 for actionId in actionIds {
                     guard let action = dispatcher.action(forId: actionId) else { continue }
-                    submenu.addItem(makeMenuItem(for: action))
+                    submenu.addItem(makeMenuItem(for: action, invocationKind: invocationKind))
                     logToSharedContainer("[FinderSync] 成功添加子菜单项: [\(action.localizedTitle)]", level: .debug)
                 }
                 if !submenu.items.isEmpty {

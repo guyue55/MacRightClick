@@ -46,6 +46,9 @@ public protocol MenuAction {
     /// 动作能力层级，用于档案批量开关与设置页分组。
     var tier: ActionTier { get }
 
+    /// 执行前是否必须至少有一个仍存在的目标路径。
+    var requiresExistingTargets: Bool { get }
+
     /// 是否默认启用。破坏性或会重启系统组件的动作应默认关闭，由用户显式开启。
     var isEnabledByDefault: Bool { get }
 
@@ -92,6 +95,10 @@ public extension MenuAction {
 
     var tier: ActionTier {
         return isHighRisk ? .advanced : .professional
+    }
+
+    var requiresExistingTargets: Bool {
+        return true
     }
 
     var isEnabledByDefault: Bool {

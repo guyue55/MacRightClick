@@ -52,6 +52,15 @@ public final class UtilityAction: MenuAction, Sendable {
         return tier == .advanced
     }
 
+    public var requiresExistingTargets: Bool {
+        switch utilityType {
+        case .toggleHiddenFiles, .textToQRCode:
+            return false
+        case .calculateMD5, .calculateSHA256, .convertToPNG, .convertToJPEG:
+            return true
+        }
+    }
+
     public var isEnabledByDefault: Bool {
         return tier == .essential
     }

@@ -130,4 +130,34 @@ final class PendingActionStressTests: XCTestCase {
         XCTAssertEqual(manager.pendingActionCount, 0, "Pending 必须排空")
         XCTAssertEqual(manager.failedActionCount, 5, "5 条 malformed 必须精准 quarantine")
     }
+
+    func testConcurrentV2EventsPreserveInvocationKinds() {
+        let total = 100
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "test.concurrent.v2", attributes: .concurrent)
+        let managerBox = TestSendableBox(manager!)
+
+        for index in 0..<total {
+            group.enter()
+            queue.async {
+                _ = try? managerBox.value.enqueueAction(
+                    actionId: "test.v2.\(index)",
+                    paths: ["/tmp/v2-\(index)"],
+                    invocationKind: index.isMultiple(of: 2) ? .items : .container
+                )
+                group.leave()
+            }
+        }
+        group.wait()
+
+        let leases = manager.consumePendingActionLeases()
+        XCTAssertEqual(leases.count, total)
+        XCTAssertTrue(leases.allSatisfy { $0.event.schemaVersion == 2 })
+        for lease in leases {
+            let index = Int(lease.event.actionId.split(separator: ".").last!)!
+            let expected: ActionInvocationKind = index.isMultiple(of: 2) ? .items : .container
+            XCTAssertEqual(lease.event.invocationKind, expected)
+        }
+        leases.forEach { manager.acknowledge($0) }
+    }
 }
