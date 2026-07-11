@@ -926,6 +926,94 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(enabledButNeedsFinderRestartAndDenied.recommendedRepairAction, .restartFinder)
     }
 
+    func testFDAIsWarningWhenFinderMenuIsHealthy() {
+        let snapshot = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: false,
+            finderSyncControllerEnabled: true,
+            pluginKitState: .enabled,
+            heartbeatState: .recent(observedPathCount: 7),
+            watchScope: .everywhere,
+            pendingActionCount: 0,
+            oldestPendingAge: nil,
+            failedActionCount: 0
+        )
+
+        XCTAssertEqual(snapshot.healthLevel, .warning)
+        XCTAssertEqual(snapshot.menuServiceLevel, .healthy)
+        XCTAssertEqual(snapshot.recommendedRepairAction, .openFullDiskAccessSettings)
+    }
+
+    func testMissingHeartbeatMakesMenuUnverified() {
+        let snapshot = FinderExtensionDiagnostics.makeSnapshot(
+            fullDiskAccessGranted: true,
+            finderSyncControllerEnabled: true,
+            pluginKitState: .enabled,
+            heartbeatState: .missing,
+            watchScope: .everywhere,
+            pendingActionCount: 0,
+            oldestPendingAge: nil,
+            failedActionCount: 0
+        )
+
+        XCTAssertEqual(snapshot.menuServiceLevel, .unverified)
+        XCTAssertEqual(snapshot.healthLevel, .warning)
+        XCTAssertEqual(snapshot.recommendedRepairAction, .restartFinder)
+    }
+
+    func testExtensionHeartbeatStoreThrottlesWritesAndDetectsStaleState() throws {
+        let heartbeatURL = tempDirectory.appendingPathComponent("heartbeat.json")
+        let store = ExtensionHeartbeatStore(
+            fileURL: heartbeatURL,
+            minimumWriteInterval: 60,
+            freshnessInterval: 120
+        )
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        XCTAssertTrue(store.write(
+            observedPathCount: 7,
+            version: "1.2.0",
+            processID: 42,
+            at: start
+        ))
+        XCTAssertFalse(store.write(
+            observedPathCount: 9,
+            version: "1.2.0",
+            processID: 42,
+            at: start.addingTimeInterval(30)
+        ))
+        XCTAssertEqual(
+            store.state(at: start.addingTimeInterval(90)),
+            .recent(observedPathCount: 7)
+        )
+        XCTAssertEqual(store.state(at: start.addingTimeInterval(121)), .stale)
+    }
+
+    func testOldestPendingActionAgeUsesEventCreationTime() throws {
+        let oldEvent = SharedActionEvent(
+            id: "old",
+            createdAt: 900,
+            actionId: "test.old",
+            paths: ["/tmp/old"]
+        )
+        let newEvent = SharedActionEvent(
+            id: "new",
+            createdAt: 980,
+            actionId: "test.new",
+            paths: ["/tmp/new"]
+        )
+        try JSONEncoder().encode(oldEvent).write(
+            to: storage.pendingActionsDirectoryURL.appendingPathComponent("old.json")
+        )
+        try JSONEncoder().encode(newEvent).write(
+            to: storage.pendingActionsDirectoryURL.appendingPathComponent("new.json")
+        )
+
+        let age = try XCTUnwrap(
+            storage.oldestPendingActionAge(at: Date(timeIntervalSince1970: 1_000))
+        )
+        XCTAssertEqual(age, 100, accuracy: 0.001)
+    }
+
     func testExternalToolManagerFindsHomebrewPathInPriorityOrder() {
         let path = ExternalToolManager.homebrewExecutablePath { candidate in
             candidate == "/usr/local/bin/brew"

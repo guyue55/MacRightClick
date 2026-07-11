@@ -17,6 +17,10 @@ class FinderSync: FIFinderSync {
     private static var tagToSelection: [Int: MenuSelection] = [:]
     private static var nextTag: Int = 1000
     private var lastCutBadgePaths: Set<String> = []
+    private var currentObservedPathCount = 0
+    private lazy var heartbeatStore = ExtensionHeartbeatStore(
+        fileURL: SharedStorageManager.shared.extensionHeartbeatURL
+    )
     
     private static func getTag(
         for actionId: String,
@@ -257,11 +261,31 @@ class FinderSync: FIFinderSync {
         }
         
         FIFinderSyncController.default().directoryURLs = observedURLs
+        currentObservedPathCount = observedURLs.count
+        writeHeartbeat(force: true)
         logToSharedContainer("[FinderSync] 监控目录注册成功，当前激活数量: \(observedURLs.count)")
+    }
+
+    private func writeHeartbeat(force: Bool) {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "unknown"
+        heartbeatStore.record(
+            observedPathCount: currentObservedPathCount,
+            version: version,
+            processID: ProcessInfo.processInfo.processIdentifier,
+            force: force
+        )
     }
     
     // MARK: - 核心：动态渲染右键菜单
     override func menu(for menuKind: FIMenuKind) -> NSMenu? {
+        guard menuKind == .contextualMenuForItems
+                || menuKind == .contextualMenuForContainer else {
+            return nil
+        }
+        writeHeartbeat(force: false)
+
         // 获取当前选中项目或当前所在空项目容器路径
         let targetURLs: [URL]
         if menuKind == .contextualMenuForItems {
@@ -272,9 +296,7 @@ class FinderSync: FIFinderSync {
             } else {
                 targetURLs = []
             }
-        } else {
-            return nil
-        }
+        } else { return nil }
         
         guard !targetURLs.isEmpty else { return nil }
         

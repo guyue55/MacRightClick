@@ -79,7 +79,7 @@ public struct PendingActionLease: Equatable, Sendable {
 /// 之所以做开关而不是直接硬编码 `.everywhere`：
 /// - 方便用户在隐私 / 性能敏感场景下关闭全盘扫描；
 /// - 单一权威：FinderSync 与设置页只读 `watchedDirectoryURLs`，分支收敛在此一处。
-public enum WatchScope: String, Codable, CaseIterable, Equatable {
+public enum WatchScope: String, Codable, CaseIterable, Equatable, Sendable {
     case everywhere
     case custom
 }
@@ -261,10 +261,34 @@ public final class SharedStorageManager: @unchecked Sendable {
     public var configURL: URL {
         return sharedContainerURL.appendingPathComponent("config.json")
     }
+
+    public var extensionHeartbeatURL: URL {
+        return sharedContainerURL.appendingPathComponent("extension-heartbeat.json")
+    }
     
     public var pendingActionCount: Int {
         return (try? FileManager.default.contentsOfDirectory(atPath: pendingActionsDirectoryURL.path))?
             .filter { $0.hasSuffix(".json") }.count ?? 0
+    }
+
+    /// 最老待处理事件的排队时长。只在诊断刷新时读取，不进入 Finder 菜单热路径。
+    public func oldestPendingActionAge(at date: Date = Date()) -> TimeInterval? {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: pendingActionsDirectoryURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let oldestTimestamp = urls
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url -> TimeInterval? in
+                guard let data = try? Data(contentsOf: url),
+                      let event = try? JSONDecoder().decode(SharedActionEvent.self, from: data) else {
+                    return nil
+                }
+                return event.createdAt
+            }
+            .min()
+        return oldestTimestamp.map { max(0, date.timeIntervalSince1970 - $0) }
     }
 
     public var failedActionCount: Int {

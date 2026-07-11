@@ -21,15 +21,20 @@ private func makeRightClickMenuHealthSnapshot(
         commandSucceeded: query.isSuccess,
         bundleIdentifier: rightClickFinderExtensionBundleIdentifier
     )
+    let storage = SharedStorageManager.shared
+    let heartbeatState = ExtensionHeartbeatStore(
+        fileURL: storage.extensionHeartbeatURL
+    ).state()
 
     return FinderExtensionDiagnostics.makeSnapshot(
         fullDiskAccessGranted: FullDiskAccessChecker.hasFullDiskAccess(),
         finderSyncControllerEnabled: finderSyncControllerEnabled,
         pluginKitState: pluginKitState,
-        watchScope: SharedStorageManager.shared.watchScope,
-        observedPathCount: SharedStorageManager.shared.watchedDirectoryURLs.count,
-        pendingActionCount: SharedStorageManager.shared.pendingActionCount,
-        failedActionCount: SharedStorageManager.shared.failedActionCount
+        heartbeatState: heartbeatState,
+        watchScope: storage.watchScope,
+        pendingActionCount: storage.pendingActionCount,
+        oldestPendingAge: storage.oldestPendingActionAge(),
+        failedActionCount: storage.failedActionCount
     )
 }
 
@@ -662,16 +667,22 @@ struct DiagnosticsSettingsView: View {
                                 isHealthy: snapshot.finderExtensionState == .enabled
                             )
                             diagnosticRow(
+                                title: "扩展运行心跳",
+                                value: heartbeatStateTitle(snapshot.heartbeatState),
+                                isHealthy: snapshot.menuServiceLevel == .healthy
+                            )
+                            diagnosticRow(
                                 title: "右键菜单作用范围",
                                 value: snapshot.watchScope == .everywhere
                                     ? "所有目录，监听 \(snapshot.observedPathCount) 个入口"
                                     : "自定义目录，监听 \(snapshot.observedPathCount) 个入口",
-                                isHealthy: snapshot.observedPathCount > 0
+                                isHealthy: snapshot.menuServiceLevel == .healthy
                             )
                             diagnosticRow(
                                 title: "动作队列",
-                                value: "待处理 \(snapshot.pendingActionCount)，失败 \(snapshot.failedActionCount)",
+                                value: actionQueueTitle(snapshot),
                                 isHealthy: snapshot.failedActionCount == 0
+                                    && snapshot.oldestPendingAge.map { $0 < 60 } != false
                             )
                         }
 
@@ -913,6 +924,22 @@ struct DiagnosticsSettingsView: View {
         case .notRegistered: return "未注册"
         case .unknown: return "无法确认"
         }
+    }
+
+    private func heartbeatStateTitle(_ state: ExtensionHeartbeatState) -> String {
+        switch state {
+        case .recent(let count): return "最近活跃，实际监听 \(count) 个入口"
+        case .stale: return "已过期"
+        case .missing: return "尚未收到"
+        }
+    }
+
+    private func actionQueueTitle(_ snapshot: RightClickMenuHealthSnapshot) -> String {
+        var title = "待处理 \(snapshot.pendingActionCount)，失败 \(snapshot.failedActionCount)"
+        if let age = snapshot.oldestPendingAge {
+            title += "，最久等待 \(Int(age)) 秒"
+        }
+        return title
     }
 
     private func repairHint(_ action: RecommendedRepairAction) -> String {

@@ -218,6 +218,7 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/LaunchServiceManager.swift \
     Sources/RightClickAssistant/Core/LaunchPresentationPolicy.swift \
     Sources/RightClickAssistant/Core/FinderExtensionDiagnostics.swift \
+    Sources/RightClickAssistant/Core/ExtensionHeartbeat.swift \
     Sources/RightClickAssistant/Core/SystemReloader.swift \
     Sources/RightClickAssistant/Core/PermissionRefreshCoordinator.swift \
     Sources/RightClickAssistant/Core/ExternalToolManager.swift \
@@ -248,6 +249,7 @@ EXT_SOURCES="
     Sources/RightClickAssistant/Core/SharedHUDManager.swift \
     Sources/RightClickAssistant/Core/FullDiskAccessChecker.swift \
     Sources/RightClickAssistant/Core/LaunchPresentationPolicy.swift \
+    Sources/RightClickAssistant/Core/ExtensionHeartbeat.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/ConfirmationPresenter.swift \
