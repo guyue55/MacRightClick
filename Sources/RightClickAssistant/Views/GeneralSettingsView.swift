@@ -1,9 +1,18 @@
 import SwiftUI
 
 struct OverviewSettingsView: View {
+    private enum UpdateCheckState {
+        case idle
+        case checking
+        case upToDate
+        case available(version: String, releaseURL: URL)
+        case failed(message: String)
+    }
+
     @State private var isLaunchEnabled = false
     @State private var isSilentLaunchEnabled = true
     @State private var showsSuccessHUD = true
+    @State private var updateCheckState: UpdateCheckState = .idle
 
     private var launchEnabledBinding: Binding<Bool> {
         Binding(
@@ -68,6 +77,21 @@ struct OverviewSettingsView: View {
                     Text("无广告 · 无遥测")
                         .foregroundStyle(.secondary)
                 }
+                Button(action: checkForUpdates) {
+                    if case .checking = updateCheckState {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("正在检查更新")
+                        }
+                    } else {
+                        Label("检查更新", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(isCheckingForUpdates)
+
+                updateStatusView
+
                 Button {
                     if let url = URL(string: "https://github.com/guyue55/MacRightClick") {
                         NSWorkspace.shared.open(url)
@@ -94,6 +118,66 @@ struct OverviewSettingsView: View {
             forKey: "enable_success_hud",
             defaultValue: true
         )
+    }
+
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updateCheckState {
+        case .idle, .checking:
+            EmptyView()
+        case .upToDate:
+            Label("当前已是最新版本", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .available(let version, let releaseURL):
+            HStack {
+                Label("发现新版本 \(version)", systemImage: "arrow.down.circle.fill")
+                    .foregroundStyle(.blue)
+                Spacer()
+                Button {
+                    NSWorkspace.shared.open(releaseURL)
+                } label: {
+                    Label("查看版本", systemImage: "arrow.up.right.square")
+                }
+            }
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.circle.fill")
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private var isCheckingForUpdates: Bool {
+        if case .checking = updateCheckState { return true }
+        return false
+    }
+
+    private func checkForUpdates() {
+        guard !isCheckingForUpdates else { return }
+        updateCheckState = .checking
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+            ?? "0.0.0"
+
+        Task {
+            let result = await AppUpdateChecker().check(currentVersion: currentVersion)
+            switch result {
+            case .success(.upToDate):
+                updateCheckState = .upToDate
+            case .success(.updateAvailable(let version, let releaseURL)):
+                updateCheckState = .available(version: version, releaseURL: releaseURL)
+            case .failure(let failure):
+                updateCheckState = .failed(message: updateFailureMessage(failure))
+            }
+        }
+    }
+
+    private func updateFailureMessage(_ failure: UpdateCheckFailure) -> String {
+        switch failure {
+        case .network:
+            return "网络连接失败，请稍后重试"
+        case .httpStatus(let status):
+            return "更新服务暂不可用（HTTP \(status)）"
+        case .invalidResponse:
+            return "更新信息格式无效"
+        }
     }
 
     private func saveSilentLaunch(_ enabled: Bool) {

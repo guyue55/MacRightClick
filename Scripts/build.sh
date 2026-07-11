@@ -228,6 +228,7 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/SystemReloader.swift \
     Sources/RightClickAssistant/Core/PermissionRefreshCoordinator.swift \
     Sources/RightClickAssistant/Core/ExternalToolManager.swift \
+    Sources/RightClickAssistant/Core/AppUpdateChecker.swift \
     Sources/RightClickAssistant/Core/Actions/NewFileAction.swift \
     Sources/RightClickAssistant/Core/Actions/FileManageAction.swift \
     Sources/RightClickAssistant/Core/Actions/PathCopyService.swift \
