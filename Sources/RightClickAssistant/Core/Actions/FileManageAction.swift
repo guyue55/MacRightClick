@@ -7,40 +7,121 @@ import AppKit
 // 这里只剩"接到事件 → 委托 Coordinator"的薄壳，
 // 彻底切断 folder-monitor 队列 main.sync 弹窗带来的死锁链。
 
-/// 文件剪切板单例，用于在进程内存中管理“剪切”状态
-public final class FileCutClipboard {
-    public nonisolated(unsafe) static let shared = FileCutClipboard()
-    private init() {}
+public struct CutClipboardSnapshot: Codable, Equatable, Sendable {
+    public let id: UUID
+    public let urls: [URL]
+
+    public init(id: UUID = UUID(), urls: [URL]) {
+        self.id = id
+        self.urls = urls
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case paths
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        let paths = try container.decode([String].self, forKey: .paths)
+        urls = paths.map { URL(fileURLWithPath: $0) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(urls.map(\.path), forKey: .paths)
+    }
+}
+
+/// 持久化文件剪切状态。快照 ID 提供 compare-and-replace 语义，防止旧粘贴任务
+/// 完成时清除用户随后创建的新剪切状态。
+public final class FileCutClipboard: @unchecked Sendable {
+    public static let shared = FileCutClipboard()
 
     private let queue = DispatchQueue(label: "guyue.cutboard")
+    private let storageManager: SharedStorageManager
+
+    public init(storageManager: SharedStorageManager = .shared) {
+        self.storageManager = storageManager
+    }
     
     private var clipboardURL: URL {
-        return SharedStorageManager.shared.sharedContainerURL.appendingPathComponent("clipboard.json")
+        storageManager.sharedContainerURL.appendingPathComponent("clipboard.json")
+    }
+
+    public var snapshot: CutClipboardSnapshot? {
+        queue.sync { loadSnapshotUnlocked() }
     }
     
     public var cutURLs: [URL] {
-        get {
-            queue.sync {
-                guard let data = try? Data(contentsOf: clipboardURL),
-                      let paths = try? JSONDecoder().decode([String].self, from: data) else {
-                    return []
-                }
-                return paths.map { URL(fileURLWithPath: $0) }
+        get { snapshot?.urls ?? [] }
+        set { _ = setCutURLs(newValue) }
+    }
+
+    @discardableResult
+    public func setCutURLs(_ urls: [URL]) -> Bool {
+        queue.sync {
+            if urls.isEmpty {
+                return removeSnapshotUnlocked()
             }
+            return writeSnapshotUnlocked(CutClipboardSnapshot(urls: urls))
         }
-        set {
-            queue.sync {
-                let paths = newValue.map { $0.path }
-                if let data = try? JSONEncoder().encode(paths) {
-                    try? data.write(to: clipboardURL, options: .atomic)
-                }
+    }
+
+    /// 仅当当前剪切状态仍是调用方拍下的版本时才替换。
+    @discardableResult
+    public func replace(snapshotID: UUID, remainingURLs: [URL]) -> Bool {
+        queue.sync {
+            guard let current = loadSnapshotUnlocked(), current.id == snapshotID else {
+                return false
             }
+            if remainingURLs.isEmpty {
+                return removeSnapshotUnlocked()
+            }
+            return writeSnapshotUnlocked(CutClipboardSnapshot(id: snapshotID, urls: remainingURLs))
         }
     }
     
     public func clear() {
-        queue.sync {
-            try? FileManager.default.removeItem(at: clipboardURL)
+        queue.sync { _ = removeSnapshotUnlocked() }
+    }
+
+    private func loadSnapshotUnlocked() -> CutClipboardSnapshot? {
+        guard let data = try? Data(contentsOf: clipboardURL) else { return nil }
+        if let snapshot = try? JSONDecoder().decode(CutClipboardSnapshot.self, from: data) {
+            return snapshot
+        }
+
+        // v1.1 兼容：旧格式是裸路径数组。首次读取时立即迁移为带 ID 的对象，
+        // 保证随后 compare-and-replace 使用稳定版本号。
+        guard let paths = try? JSONDecoder().decode([String].self, from: data) else {
+            return nil
+        }
+        let migrated = CutClipboardSnapshot(urls: paths.map { URL(fileURLWithPath: $0) })
+        return writeSnapshotUnlocked(migrated) ? migrated : nil
+    }
+
+    private func writeSnapshotUnlocked(_ snapshot: CutClipboardSnapshot) -> Bool {
+        do {
+            let data = try JSONEncoder().encode(snapshot)
+            try data.write(to: clipboardURL, options: .atomic)
+            return true
+        } catch {
+            AppLog.error("剪切状态写入失败：\(error.localizedDescription)", category: .storage)
+            return false
+        }
+    }
+
+    private func removeSnapshotUnlocked() -> Bool {
+        guard FileManager.default.fileExists(atPath: clipboardURL.path) else { return true }
+        do {
+            try FileManager.default.removeItem(at: clipboardURL)
+            return true
+        } catch {
+            AppLog.error("剪切状态清理失败：\(error.localizedDescription)", category: .storage)
+            return false
         }
     }
 }
@@ -152,7 +233,14 @@ public final class FileManageAction: MenuAction {
         
         switch manageType {
         case .cut:
-            FileCutClipboard.shared.cutURLs = targetURLs
+            guard FileCutClipboard.shared.setCutURLs(targetURLs) else {
+                SharedHUDManager.show(
+                    title: "剪切失败",
+                    content: "无法保存剪切状态，请检查共享目录权限后重试",
+                    isSuccess: false
+                )
+                return false
+            }
             print("[FileManage] 剪切了 \(targetURLs.count) 个文件。")
             SharedHUDManager.show(
                 title: "剪切成功",
@@ -174,17 +262,16 @@ public final class FileManageAction: MenuAction {
             return true
             
         case .paste:
-            let cutFiles = FileCutClipboard.shared.cutURLs
-            guard !cutFiles.isEmpty else { return false }
+            guard let cutSnapshot = FileCutClipboard.shared.snapshot,
+                  !cutSnapshot.urls.isEmpty else { return false }
 
             // 确定粘贴的目的文件夹（在调用线程拍快照即可，FileManager.fileExists 是廉价 stat，
             // 真正的重 IO（moveItem / crossVolumeMove）必须搬到 BackgroundActionRunner 的私有队列上跑，
             // 否则跨盘大文件会让 folder-monitor 串行队列长期持锁，引发 P1-1 卡顿/死锁残余风险）。
             let destinationDir = getDestinationDirectory(from: targetURLs.first!)
-            let snapshotCutFiles = cutFiles
             FileManageAction.pasteRunner.submit {
                 FileManageAction.executePaste(
-                    cutFiles: snapshotCutFiles,
+                    snapshot: cutSnapshot,
                     destinationDir: destinationDir
                 )
             }
@@ -309,9 +396,10 @@ extension FileManageAction {
 
     /// 后台串行队列：批量执行粘贴 + HUD 反馈。
     /// 跨卷 move 会自动降级走 `crossVolumeMove`（copy-then-delete 事务）。
-    static func executePaste(cutFiles: [URL], destinationDir: URL) {
+    static func executePaste(snapshot: CutClipboardSnapshot, destinationDir: URL) {
         var successCount = 0
-        for fileURL in cutFiles {
+        var failedURLs: [URL] = []
+        for fileURL in snapshot.urls {
             let destURL = destinationDir.appendingPathComponent(fileURL.lastPathComponent)
 
             // 同名规避：用「Name N.ext」递增重命名，永不覆盖目标文件。
@@ -337,12 +425,45 @@ extension FileManageAction {
                 )
                 if FileManageAction.crossVolumeMove(from: fileURL, to: finalDestURL) {
                     successCount += 1
+                } else {
+                    failedURLs.append(fileURL)
                 }
             }
         }
 
         AppLog.info("[FileManage] 成功粘贴/移动了 \(successCount) 个文件。", category: .action)
-        FileCutClipboard.shared.clear()
+        let replaced = FileCutClipboard.shared.replace(
+            snapshotID: snapshot.id,
+            remainingURLs: failedURLs
+        )
+        if replaced {
+            postCutStateChanged()
+        }
+
+        if failedURLs.isEmpty {
+            SharedHUDManager.show(
+                title: "粘贴成功",
+                content: "已成功移动并粘贴了 \(successCount) 个项目",
+                isSuccess: true
+            )
+        } else if successCount > 0 {
+            SharedHUDManager.show(
+                title: "粘贴部分成功",
+                content: "成功 \(successCount) 个，失败 \(failedURLs.count) 个；失败项仍保留在剪切板",
+                isSuccess: false
+            )
+        } else {
+            SharedHUDManager.show(
+                title: "粘贴失败",
+                content: replaced
+                    ? "失败项目已保留，请检查目标目录写入权限后重试"
+                    : "请检查目标目录写入权限；新的剪切状态未被本次任务覆盖",
+                isSuccess: false
+            )
+        }
+    }
+
+    private static func postCutStateChanged() {
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name("guyue.RightClickAssistant.configChanged"),
             object: nil,
@@ -355,19 +476,6 @@ extension FileManageAction {
             userInfo: nil,
             deliverImmediately: true
         )
-        if successCount > 0 {
-            SharedHUDManager.show(
-                title: "粘贴成功",
-                content: "已成功移动并粘贴了 \(successCount) 个项目",
-                isSuccess: true
-            )
-        } else {
-            SharedHUDManager.show(
-                title: "粘贴失败",
-                content: "请检查该目录是否有可写的系统或安全权限",
-                isSuccess: false
-            )
-        }
     }
 
     /// 主线程：弹 NSOpenPanel 让用户选目标目录。

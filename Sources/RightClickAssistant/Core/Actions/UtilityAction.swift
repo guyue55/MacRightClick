@@ -10,7 +10,7 @@ import CoreImage
 nonisolated(unsafe) fileprivate var activeQRController: QRCodePanelController?
 
 /// 实用小工具类型
-public enum UtilityType: String, Codable {
+public enum UtilityType: String, Codable, Sendable {
     case calculateMD5 = "calculateMD5"
     case calculateSHA256 = "calculateSHA256"
     case toggleHiddenFiles = "toggleHiddenFiles"
@@ -19,14 +19,23 @@ public enum UtilityType: String, Codable {
     case convertToJPEG = "convertToJPG"
 }
 
-public final class UtilityAction: MenuAction {
+public final class UtilityAction: MenuAction, Sendable {
     public let actionId: String
     public let localizedTitle: String
     public let iconName: String?
     public let category: ActionCategory = .utility
     
     public let utilityType: UtilityType
-    private let imageConverter: ImageConverterProtocol
+    private let imageConverter: any ImageConverterProtocol
+
+    private static let hashRunner = BackgroundActionRunner(
+        actionLabel: "utility.hash",
+        ioQueueLabel: "guyue.RightClickAssistant.utility-hash-io"
+    )
+    private static let imageConversionRunner = BackgroundActionRunner(
+        actionLabel: "utility.image-conversion",
+        ioQueueLabel: "guyue.RightClickAssistant.utility-image-conversion-io"
+    )
 
     public var isHighRisk: Bool {
         return utilityType == .toggleHiddenFiles
@@ -48,7 +57,7 @@ public final class UtilityAction: MenuAction {
         return nil
     }
     
-    public init(type: UtilityType, imageConverter: ImageConverterProtocol = DefaultImageConverter()) {
+    public init(type: UtilityType, imageConverter: any ImageConverterProtocol = DefaultImageConverter()) {
         self.utilityType = type
         self.imageConverter = imageConverter
         self.actionId = "guyue.action.utility.\(type.rawValue)"
@@ -132,64 +141,23 @@ public final class UtilityAction: MenuAction {
             return generateQRCodeFromClipboard()
             
         case .convertToPNG, .convertToJPEG:
-            let isPNG = (utilityType == .convertToPNG)
-            let formatStr = isPNG ? "PNG" : "JPEG"
-            
-            var successCount = 0
-            var failureCount = 0
-            var lastErrorMsg = "未知错误"
-            let totalCount = targetURLs.count
-            
-            for (index, url) in targetURLs.enumerated() {
-                // 批量转换进度反馈：每处理一张图片更新 HUD，避免用户无感知等待
-                if totalCount > 1 {
-                    SharedHUDManager.show(
-                        title: "正在转换图片",
-                        content: "进度: \(index + 1) / \(totalCount)",
-                        isSuccess: true
-                    )
-                }
-                
-                let result = imageConverter.convert(url: url, toFormat: formatStr)
-                switch result {
-                case .success(let destURL):
-                    successCount += 1
-                    print("[UtilityAction] 图片转换成功: \(destURL.path)")
-                case .failure(let error):
-                    failureCount += 1
-                    lastErrorMsg = error.localizedDescription
-                    print("[UtilityAction] 图片转换失败: \(error.localizedDescription)")
-                }
-            }
-            
-            if totalCount > 0 {
-                if failureCount == 0 {
-                    SharedHUDManager.show(
-                        title: "批量转换完成",
-                        content: "已成功将 \(successCount) 张图片转换为 \(formatStr) 格式",
-                        isSuccess: true
-                    )
-                } else if successCount == 0 {
-                    SharedHUDManager.show(
-                        title: "批量转换失败",
-                        content: "转换失败。原因：\(lastErrorMsg)",
-                        isSuccess: false
-                    )
-                } else {
-                    SharedHUDManager.show(
-                        title: "转换部分成功",
-                        content: "成功转换 \(successCount) 张，失败 \(failureCount) 张。最近错误：\(lastErrorMsg)",
-                        isSuccess: false
-                    )
-                }
-            } else {
+            guard !targetURLs.isEmpty else {
                 SharedHUDManager.show(
                     title: "转换无效",
                     content: "未选中任何有效的图片文件进行转换",
                     isSuccess: false
                 )
+                return false
             }
-            return failureCount == 0
+
+            let isPNG = (utilityType == .convertToPNG)
+            let formatStr = isPNG ? "PNG" : "JPEG"
+            let urls = targetURLs
+            let converter = imageConverter
+            Self.imageConversionRunner.submit {
+                Self.convertImages(urls, toFormat: formatStr, using: converter)
+            }
+            return true
         }
     }
 
@@ -201,18 +169,84 @@ public final class UtilityAction: MenuAction {
     private func calculateHash(for url: URL) -> Bool {
         let algorithm: HashAlgorithm = utilityType == .calculateSHA256 ? .sha256 : .md5
         let label = utilityType == .calculateSHA256 ? "SHA256" : "MD5"
-        // 大文件哈希可能耗时较长，提前展示"正在计算"让用户感知进度
+        // 大文件哈希可能耗时较长，提前展示"正在计算"让用户感知进度。
         SharedHUDManager.show(title: "正在计算 \(label)", content: url.lastPathComponent, isSuccess: true)
-        do {
-            let hashString = try FileHashCalculator.hashFile(at: url, algorithm: algorithm)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(hashString, forType: .string)
-            SharedHUDManager.show(title: "\(label) 计算完成", content: "已复制到剪贴板", isSuccess: true)
-            return true
-        } catch {
-            print("[UtilityAction] 流式计算 \(label) 失败: \(error.localizedDescription)")
-            SharedHUDManager.show(title: "\(label) 计算失败", content: error.localizedDescription, isSuccess: false)
-            return false
+        Self.hashRunner.submit {
+            do {
+                let hashString = try FileHashCalculator.hashFile(at: url, algorithm: algorithm)
+                Task { @MainActor in
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(hashString, forType: .string)
+                    SharedHUDManager.show(
+                        title: "\(label) 计算完成",
+                        content: "已复制到剪贴板",
+                        isSuccess: true
+                    )
+                }
+            } catch {
+                let description = error.localizedDescription
+                AppLog.error("流式计算 \(label) 失败: \(description)", category: .action)
+                Task { @MainActor in
+                    SharedHUDManager.show(
+                        title: "\(label) 计算失败",
+                        content: description,
+                        isSuccess: false
+                    )
+                }
+            }
+        }
+        return true
+    }
+
+    private static func convertImages(
+        _ urls: [URL],
+        toFormat format: String,
+        using converter: any ImageConverterProtocol
+    ) {
+        var successCount = 0
+        var failureCount = 0
+        var lastErrorMessage = "未知错误"
+        let totalCount = urls.count
+
+        for (index, url) in urls.enumerated() {
+            if totalCount > 1 {
+                SharedHUDManager.show(
+                    title: "正在转换图片",
+                    content: "进度: \(index + 1) / \(totalCount)",
+                    isSuccess: true
+                )
+            }
+
+            switch converter.convert(url: url, toFormat: format) {
+            case .success(let destinationURL):
+                successCount += 1
+                AppLog.info("图片转换成功: \(destinationURL.path)", category: .action)
+            case .failure(let error):
+                failureCount += 1
+                lastErrorMessage = error.localizedDescription
+                AppLog.error("图片转换失败: \(lastErrorMessage)", category: .action)
+            }
+        }
+
+        let title: String
+        let content: String
+        let isSuccess: Bool
+        if failureCount == 0 {
+            title = "批量转换完成"
+            content = "已成功将 \(successCount) 张图片转换为 \(format) 格式"
+            isSuccess = true
+        } else if successCount == 0 {
+            title = "批量转换失败"
+            content = "转换失败。原因：\(lastErrorMessage)"
+            isSuccess = false
+        } else {
+            title = "转换部分成功"
+            content = "成功转换 \(successCount) 张，失败 \(failureCount) 张。最近错误：\(lastErrorMessage)"
+            isSuccess = false
+        }
+
+        Task { @MainActor in
+            SharedHUDManager.show(title: title, content: content, isSuccess: isSuccess)
         }
     }
     
@@ -308,7 +342,7 @@ public extension Data {
 
 // MARK: - 5. 图片格式转换接口与默认实现
 /// 图像转换服务协议，方便后续灵活变更转换实现或支持更多格式
-public protocol ImageConverterProtocol {
+public protocol ImageConverterProtocol: Sendable {
     func convert(url: URL, toFormat format: String) -> Result<URL, Error>
 }
 

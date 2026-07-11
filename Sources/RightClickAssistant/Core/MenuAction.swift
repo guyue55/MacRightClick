@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 /// 表示右键动作分类
-public enum ActionCategory: String, Codable, CaseIterable, Identifiable {
+public enum ActionCategory: String, Codable, CaseIterable, Identifiable, Sendable {
     case newFile = "newFile"          // 新建文件
     case fileManage = "fileManage"    // 文件管理（复制、剪切、彻底删除等）
     case terminal = "terminal"        // 终端与编辑器联动

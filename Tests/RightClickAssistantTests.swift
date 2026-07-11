@@ -266,6 +266,24 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(try FileHashCalculator.hashFile(at: fileURL, algorithm: .sha256), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
 
+    func testHashReadFailureIsNotConvertedIntoPrefixDigest() throws {
+        let fileURL = tempDirectory.appendingPathComponent("hash-read-error.txt")
+        try Data("abcdef".utf8).write(to: fileURL)
+        var reads = 0
+
+        XCTAssertThrowsError(try FileHashCalculator.hashFile(
+            at: fileURL,
+            algorithm: .sha256,
+            readChunk: { handle, count in
+                reads += 1
+                if reads > 1 {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                return try handle.read(upToCount: min(count, 3))
+            }
+        ))
+    }
+
     /// 15. 无法解析的队列事件应隔离到 FailedActions，便于诊断而不是静默丢弃
     func testMalformedQueueEventsAreQuarantined() throws {
         try TestStorage.removeIfPresent(storage.pendingActionsDirectoryURL)
