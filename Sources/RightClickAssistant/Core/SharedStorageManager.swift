@@ -651,7 +651,9 @@ public final class SharedStorageManager {
             if !synchronized {
                 AppLog.error("App Group 偏好同步失败，config.json 已保留权威值", category: .storage)
             }
-            return synchronized
+            // config.json 已成功提交且是权威源；镜像失败不能让调用方回滚 UI
+            // 或压制 configChanged，否则界面会与下一次读取到的权威值相反。
+            return true
         }
     }
     
