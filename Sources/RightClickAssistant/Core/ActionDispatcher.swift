@@ -58,38 +58,96 @@ public final class ActionDispatcher: @unchecked Sendable {
         targetURLs: [URL],
         invocationKind: ActionInvocationKind = .items
     ) -> Bool {
+        guard let prepared = prepare(
+            actionId: actionId,
+            targetURLs: targetURLs,
+            invocationKind: invocationKind
+        ) else { return false }
+
+        print("[Dispatcher] 执行动作: \(prepared.action.localizedTitle) (ID: \(actionId)) 对目标: \(prepared.targetURLs.map { $0.lastPathComponent })")
+
+        // 2. 物理防崩安全屏障：通过上方 targetURLs 精密健康度过滤完成大部分 IO 防护后，
+        // 直接执行核心动作，并保持调度入口简单可预测。
+        return prepared.action.execute(targetURLs: prepared.targetURLs)
+    }
+
+    /// 提交动作。completion 对成功、失败、取消和拒绝路径均最多触发一次。
+    @discardableResult
+    public func submit(
+        actionId: String,
+        targetURLs: [URL],
+        invocationKind: ActionInvocationKind = .items,
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission {
+        let completionOnce = ActionCompletionOnce(completion)
+        guard let prepared = prepare(
+            actionId: actionId,
+            targetURLs: targetURLs,
+            invocationKind: invocationKind
+        ) else {
+            completionOnce.call(.failed)
+            return .rejected
+        }
+
+        let submission = prepared.action.submit(
+            targetURLs: prepared.targetURLs,
+            completion: { status in completionOnce.call(status) }
+        )
+        if submission == .rejected {
+            completionOnce.call(.failed)
+        }
+        return submission
+    }
+
+    private func prepare(
+        actionId: String,
+        targetURLs: [URL],
+        invocationKind: ActionInvocationKind
+    ) -> (action: MenuAction, targetURLs: [URL])? {
         guard let action = action(forId: actionId) else {
             print("[Dispatcher] 错误: 动作 ID '\(actionId)' 未注册")
-            return false
+            return nil
         }
 
         guard isActionEnabled(action) else {
             print("[Dispatcher] 拒绝执行已禁用动作: \(actionId)")
-            return false
+            return nil
         }
 
-        // 1. 物理健康度自检：在多进程并发或路径瞬间移动时，物理过滤掉已被删除的“脏数据”路径
         let healthyURLs = targetURLs.filter { url in
             FileManager.default.fileExists(atPath: url.path)
         }
-
         if action.requiresExistingTargets && healthyURLs.isEmpty {
             print("[Dispatcher] 错误: 动作需要的目标路径已不存在")
             SharedHUDManager.show(title: "操作无效", content: "目标项目在磁盘上已不存在", isSuccess: false)
-            return false
+            return nil
         }
 
         let finalURLs = action.requiresExistingTargets ? healthyURLs : targetURLs
-        let isContainer = invocationKind == .container
-        guard action.isAvailable(for: finalURLs, isContainer: isContainer) else {
+        guard action.isAvailable(
+            for: finalURLs,
+            isContainer: invocationKind == .container
+        ) else {
             print("[Dispatcher] 警告: 动作 '\(action.localizedTitle)' 不适用于当前右键上下文")
-            return false
+            return nil
         }
+        return (action, finalURLs)
+    }
+}
 
-        print("[Dispatcher] 执行动作: \(action.localizedTitle) (ID: \(actionId)) 对目标: \(finalURLs.map { $0.lastPathComponent })")
-        
-        // 2. 物理防崩安全屏障：通过上方 targetURLs 精密健康度过滤完成大部分 IO 防护后，
-        // 直接执行核心动作，并保持调度入口简单可预测。
-        return action.execute(targetURLs: finalURLs)
+private final class ActionCompletionOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completion: (@Sendable (ActionCompletionStatus) -> Void)?
+
+    init(_ completion: @escaping @Sendable (ActionCompletionStatus) -> Void) {
+        self.completion = completion
+    }
+
+    func call(_ status: ActionCompletionStatus) {
+        lock.lock()
+        let callback = completion
+        completion = nil
+        lock.unlock()
+        callback?(status)
     }
 }

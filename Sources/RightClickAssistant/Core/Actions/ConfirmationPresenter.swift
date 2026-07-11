@@ -4,7 +4,7 @@ import AppKit
 // MARK: - DestructiveChoice
 /// 破坏性确认的三态结果。`fileprivate` 不再合适——
 /// `DeletionRequestCoordinator` 与未来的单测都需要可见，所以提升为 public。
-public enum DestructiveChoice {
+public enum DestructiveChoice: Equatable, Sendable {
     case cancel
     case recoverable
     case destructive
@@ -24,7 +24,10 @@ public protocol ConfirmationPresenter {
     ///   - targets: 受影响的文件/目录列表（仅用于摘要展示）。
     ///   - completion: 用户做出选择后回调，必定在主线程。
     @MainActor
-    func present(targets: [URL], completion: @escaping (DestructiveChoice) -> Void)
+    func present(
+        targets: [URL],
+        completion: @escaping @Sendable (DestructiveChoice) -> Void
+    )
 }
 
 // MARK: - MainThreadAlertPresenter
@@ -60,7 +63,10 @@ public final class MainThreadAlertPresenter: ConfirmationPresenter {
     }
 
     @MainActor
-    public func present(targets: [URL], completion: @escaping (DestructiveChoice) -> Void) {
+    public func present(
+        targets: [URL],
+        completion: @escaping @Sendable (DestructiveChoice) -> Void
+    ) {
         // 强约束：必须主线程调用。Coordinator 已保证；这里多一道断言防止误用。
         dispatchPrecondition(condition: .onQueue(.main))
 

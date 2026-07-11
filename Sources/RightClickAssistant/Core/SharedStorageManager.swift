@@ -61,7 +61,7 @@ public struct SharedActionEvent: Codable, Equatable, Identifiable, Sendable {
 /// - 跑完动作后必须调用 `SharedStorageManager.acknowledge(_:)` 删除 InFlight 文件，
 ///   否则进程崩溃后会被 `reclaimAbandonedInFlightActions` 复活重跑。
 /// `inFlightURL == nil` 仅用于旧版兼容路径（pending_action.json）。
-public struct PendingActionLease: Equatable {
+public struct PendingActionLease: Equatable, Sendable {
     public let event: SharedActionEvent
     public let inFlightURL: URL?
 
@@ -93,8 +93,8 @@ public enum SharedLogLevel {
 
 /// 共享存储管理器，作为宿主主程序与插件扩展之间的数据交换与配置共享层。
 /// 集中处理宿主主程序与 FinderSync 扩展之间的配置、队列和诊断数据。
-public final class SharedStorageManager {
-    public nonisolated(unsafe) static let shared = SharedStorageManager()
+public final class SharedStorageManager: @unchecked Sendable {
+    public static let shared = SharedStorageManager()
     private static let processInstanceIdentifier = UUID().uuidString
 
     public enum Keys {

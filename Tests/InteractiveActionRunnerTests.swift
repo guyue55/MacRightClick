@@ -95,4 +95,62 @@ final class InteractiveActionRunnerTests: XCTestCase {
         }
         wait(for: [exp], timeout: 1.0)
     }
+
+    func testCancelEmitsCancelledCompletionExactlyOnce() {
+        let runner = InteractiveActionRunner(
+            actionLabel: "test.cancel-completion",
+            ioQueueLabel: "test.cancel-completion.io"
+        )
+        let exp = expectation(description: "cancel completion")
+        let recorder = CompletionRecorder()
+
+        let outcome = runner.run(
+            prompt: { () -> Int? in nil },
+            perform: { _ in .succeeded },
+            completion: { status in
+                recorder.append(status)
+                exp.fulfill()
+            }
+        )
+
+        XCTAssertEqual(outcome, .accepted)
+        wait(for: [exp], timeout: 1.0)
+        XCTAssertEqual(recorder.snapshot, [.cancelled])
+    }
+
+    func testGateRejectionEmitsFailedCompletionExactlyOnce() {
+        XCTAssertTrue(InteractiveActionGate.shared.tryAcquire(label: "test.held"))
+        defer { InteractiveActionGate.shared.release() }
+        let runner = InteractiveActionRunner(
+            actionLabel: "test.rejected-completion",
+            ioQueueLabel: "test.rejected-completion.io"
+        )
+        let recorder = CompletionRecorder()
+
+        let outcome = runner.run(
+            prompt: { () -> Int? in 1 },
+            perform: { _ in .succeeded },
+            completion: { recorder.append($0) }
+        )
+
+        XCTAssertEqual(outcome, .rejected(reason: .alreadyInteracting))
+        XCTAssertEqual(recorder.snapshot, [.failed])
+    }
+}
+
+private final class CompletionRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [ActionCompletionStatus] = []
+
+    func append(_ value: ActionCompletionStatus) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    var snapshot: [ActionCompletionStatus] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
 }

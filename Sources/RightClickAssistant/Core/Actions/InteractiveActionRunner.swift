@@ -46,6 +46,23 @@ public final class InteractiveActionRunner: @unchecked Sendable {
         prompt: @escaping @MainActor () -> Prompt?,
         perform: @escaping @Sendable (Prompt) -> Void
     ) -> Outcome {
+        run(
+            prompt: prompt,
+            perform: { value in
+                perform(value)
+                return .succeeded
+            },
+            completion: { _ in }
+        )
+    }
+
+    /// 带真实终态回调的交互式动作。取消和闸门拒绝也各回调一次。
+    @discardableResult
+    public func run<Prompt: Sendable>(
+        prompt: @escaping @MainActor () -> Prompt?,
+        perform: @escaping @Sendable (Prompt) -> ActionCompletionStatus,
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> Outcome {
         guard InteractiveActionGate.shared.tryAcquire(label: actionLabel) else {
             // 拒绝路径：HUD 必须切主线程。
             DispatchQueue.main.async {
@@ -55,12 +72,14 @@ public final class InteractiveActionRunner: @unchecked Sendable {
                     isSuccess: false
                 )
             }
+            completion(.failed)
             return .rejected(reason: .alreadyInteracting)
         }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
                 InteractiveActionGate.shared.release()
+                completion(.failed)
                 return
             }
             // prompt 完成 == modal 已关闭。这一刻立刻释放全局闸门，
@@ -70,10 +89,11 @@ public final class InteractiveActionRunner: @unchecked Sendable {
 
             guard let value = result else {
                 AppLog.info("[Interactive] \(self.actionLabel) 用户取消", category: .action)
+                completion(.cancelled)
                 return
             }
             self.ioQueue.async {
-                perform(value)
+                completion(perform(value))
             }
         }
         return .accepted
@@ -92,8 +112,8 @@ public final class InteractiveActionRunner: @unchecked Sendable {
 // MARK: - InteractiveActionGate
 /// 全局闸门：跨 Runner 共享，确保任何时刻只有 1 个交互对话。
 /// 与 `DeletionRequestCoordinator` 的内部锁是并列关系，可以渐进迁移。
-public final class InteractiveActionGate {
-    public nonisolated(unsafe) static let shared = InteractiveActionGate()
+public final class InteractiveActionGate: @unchecked Sendable {
+    public static let shared = InteractiveActionGate()
 
     private var lock = os_unfair_lock()
     private var inflightLabel: String?

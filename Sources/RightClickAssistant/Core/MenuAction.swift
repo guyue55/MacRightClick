@@ -26,6 +26,17 @@ public enum SettingsActionGroup: String, Codable, Sendable {
     case advanced
 }
 
+public enum ActionCompletionStatus: Equatable, Sendable {
+    case succeeded
+    case failed
+    case cancelled
+}
+
+public enum ActionSubmission: Equatable, Sendable {
+    case accepted
+    case rejected
+}
+
 /// 统一的右键动作抽象接口
 public protocol MenuAction {
     /// 唯一标识符，用于分发调度
@@ -75,6 +86,12 @@ public protocol MenuAction {
     /// - Parameter targetURLs: 用户右键选中的资源列表
     /// - Returns: 是否执行成功
     func execute(targetURLs: [URL]) -> Bool
+
+    /// 提交动作并在真实终态回调。异步动作必须覆盖默认实现。
+    func submit(
+        targetURLs: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission
 }
 
 // 提供默认实现
@@ -115,5 +132,13 @@ public extension MenuAction {
 
     var settingsGroup: SettingsActionGroup {
         return isHighRisk ? .advanced : .standard
+    }
+
+    func submit(
+        targetURLs: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission {
+        completion(execute(targetURLs: targetURLs) ? .succeeded : .failed)
+        return .accepted
     }
 }

@@ -14,9 +14,12 @@ final class DeletionRequestCoordinatorTests: XCTestCase {
     /// 而是把 completion 暂存起来，让测试自由决定何时"用户做出选择"。
     final class FakePresenter: ConfirmationPresenter {
         var presentedCount = 0
-        private var pendingCompletion: ((DestructiveChoice) -> Void)?
+        private var pendingCompletion: (@Sendable (DestructiveChoice) -> Void)?
 
-        func present(targets: [URL], completion: @escaping (DestructiveChoice) -> Void) {
+        func present(
+            targets: [URL],
+            completion: @escaping @Sendable (DestructiveChoice) -> Void
+        ) {
             presentedCount += 1
             pendingCompletion = completion
         }
@@ -27,6 +30,16 @@ final class DeletionRequestCoordinatorTests: XCTestCase {
             pendingCompletion = nil
             cb?(choice)
         }
+    }
+
+    override func setUp() {
+        super.setUp()
+        InteractiveActionGate.shared.release()
+    }
+
+    override func tearDown() {
+        InteractiveActionGate.shared.release()
+        super.tearDown()
     }
 
     func testFirstRequestAccepted() {
@@ -105,5 +118,70 @@ final class DeletionRequestCoordinatorTests: XCTestCase {
             exp.fulfill()
         }
         wait(for: [exp], timeout: 1.0)
+    }
+
+    func testCancelEmitsCancelledCompletion() {
+        let presenter = FakePresenter()
+        let coordinator = DeletionRequestCoordinator(presenter: presenter)
+        let exp = expectation(description: "cancel completion")
+        let recorder = DeletionCompletionRecorder()
+
+        XCTAssertEqual(coordinator.requestDeletion(
+            targets: [URL(fileURLWithPath: "/tmp/cancel.txt")],
+            completion: {
+                recorder.append($0)
+                exp.fulfill()
+            }
+        ), .accepted)
+        DispatchQueue.main.async { presenter.resolve(with: .cancel) }
+
+        wait(for: [exp], timeout: 1.0)
+        XCTAssertEqual(recorder.snapshot, [.cancelled])
+    }
+
+    func testPermanentDeletionCompletionReflectsSuccessAndFailure() throws {
+        let presenter = FakePresenter()
+        let coordinator = DeletionRequestCoordinator(presenter: presenter)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DeletionCompletion-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let existing = root.appendingPathComponent("existing.txt")
+        try Data().write(to: existing)
+
+        let success = expectation(description: "success completion")
+        XCTAssertEqual(coordinator.requestDeletion(targets: [existing]) { status in
+            XCTAssertEqual(status, .succeeded)
+            success.fulfill()
+        }, .accepted)
+        DispatchQueue.main.async { presenter.resolve(with: .destructive) }
+        wait(for: [success], timeout: 2.0)
+
+        let failure = expectation(description: "failure completion")
+        XCTAssertEqual(coordinator.requestDeletion(
+            targets: [root.appendingPathComponent("missing.txt")]
+        ) { status in
+            XCTAssertEqual(status, .failed)
+            failure.fulfill()
+        }, .accepted)
+        DispatchQueue.main.async { presenter.resolve(with: .destructive) }
+        wait(for: [failure], timeout: 2.0)
+    }
+}
+
+private final class DeletionCompletionRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [ActionCompletionStatus] = []
+
+    func append(_ value: ActionCompletionStatus) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    var snapshot: [ActionCompletionStatus] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
     }
 }

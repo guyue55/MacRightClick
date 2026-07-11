@@ -60,6 +60,25 @@ final class BackgroundActionRunnerTests: XCTestCase {
         wait(for: [exp], timeout: 2.0)
         XCTAssertEqual(order.snapshot, [1, 2], "FIFO 必须保证；第一笔慢任务必须先于第二笔结束")
     }
+
+    func testCompletionReportsRealTerminalStatus() {
+        let runner = BackgroundActionRunner(
+            actionLabel: "test.bg.completion",
+            ioQueueLabel: "test.bg.completion.io"
+        )
+        let exp = expectation(description: "completion")
+        let recorder = LockedCompletionRecorder()
+
+        runner.submit({
+            .failed
+        }, completion: { status in
+            recorder.append(status)
+            exp.fulfill()
+        })
+
+        wait(for: [exp], timeout: 1.0)
+        XCTAssertEqual(recorder.snapshot, [.failed])
+    }
 }
 
 private final class LockedOrderRecorder: @unchecked Sendable {
@@ -73,6 +92,23 @@ private final class LockedOrderRecorder: @unchecked Sendable {
     }
 
     var snapshot: [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+private final class LockedCompletionRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [ActionCompletionStatus] = []
+
+    func append(_ value: ActionCompletionStatus) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    var snapshot: [ActionCompletionStatus] {
         lock.lock()
         defer { lock.unlock() }
         return values

@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 /// 支持的终端或编辑器类型
-public enum TerminalEditorType: String, Codable, CaseIterable {
+public enum TerminalEditorType: String, Codable, CaseIterable, Sendable {
     case terminal = "terminal"
     case iterm2 = "iterm2"
     case warp = "warp"
@@ -33,7 +33,7 @@ public enum TerminalEditorType: String, Codable, CaseIterable {
     }
 }
 
-public final class TerminalOpenAction: MenuAction {
+public final class TerminalOpenAction: MenuAction, @unchecked Sendable {
     public let actionId: String
     public let localizedTitle: String
     public let iconName: String?
@@ -78,7 +78,17 @@ public final class TerminalOpenAction: MenuAction {
     }
     
     public func execute(targetURLs: [URL]) -> Bool {
-        guard let targetURL = targetURLs.first else { return false }
+        return submit(targetURLs: targetURLs, completion: { _ in }) == .accepted
+    }
+
+    public func submit(
+        targetURLs: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission {
+        guard let targetURL = targetURLs.first else {
+            completion(.failed)
+            return .rejected
+        }
         
         // 确定需要打开的文件夹路径
         let pathURL = getDirectoryURL(for: targetURL)
@@ -87,7 +97,8 @@ public final class TerminalOpenAction: MenuAction {
         // 该方式避免额外的 AppleScript 自动化权限请求。
         guard let appURL = InstalledAppRegistry.shared.url(for: appType.bundleIdentifier) else {
             AppLog.error("找不到应用: \(self.appType.displayName)", category: .action)
-            return false
+            completion(.failed)
+            return .rejected
         }
         
         let configuration = NSWorkspace.OpenConfiguration()
@@ -104,18 +115,20 @@ public final class TerminalOpenAction: MenuAction {
                     content: "无法启动 \(self.appType.displayName)",
                     isSuccess: false
                 )
+                completion(.failed)
             } else {
                 SharedHUDManager.show(
                     title: "拉起成功",
                     content: "已在 \(self.appType.displayName) 中打开目录",
                     isSuccess: true
                 )
+                completion(.succeeded)
             }
         }
         
         // 立即返回，不等待异步结果。HUD 会在回调中展示成功/失败。
         // 调用方 ActionDispatcher 不依赖返回值做关键路径决策。
-        return true
+        return .accepted
     }
     
     private func getDirectoryURL(for url: URL) -> URL {

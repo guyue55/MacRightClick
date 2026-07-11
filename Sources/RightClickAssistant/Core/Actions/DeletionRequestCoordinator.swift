@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import os.lock
 
 // MARK: - DeletionRequestCoordinator
 ///
@@ -11,7 +10,7 @@ import os.lock
 /// - 同一时刻只允许 1 个 in-flight 弹窗。后续请求在 modal 关闭前直接拒绝并 HUD 提示，
 ///   彻底切断 "modal 期间堆积事件 → 重启后再次弹窗" 的复发链。
 /// - 弹窗结果在主线程拿到后，**真正的删除/移到废纸篓 IO 切回后台串行队列**，主线程立刻空闲。
-/// - 所有共享状态用 `os_unfair_lock` 保护，避免 `objc_sync_enter(self)` 与 AppKit 内部隐式锁混淆。
+/// - 与其他交互动作共用 `InteractiveActionGate`，跨动作也不会同时弹出 modal。
 ///
 /// 与 `FileManageAction` 的协作：
 /// - `FileManageAction.permanentDelete` 不再自己跑 modal，只把 targets 交给本类。
@@ -23,8 +22,6 @@ public final class DeletionRequestCoordinator: @unchecked Sendable {
     )
 
     private let presenter: ConfirmationPresenter
-    private var unfairLock = os_unfair_lock()
-    private var isPresenting = false
     /// 用于 IO 执行的串行后台队列。和 folder-monitor 解耦，避免任何反向 main.sync。
     private let ioQueue = DispatchQueue(
         label: "guyue.RightClickAssistant.deletion-io",
@@ -40,12 +37,22 @@ public final class DeletionRequestCoordinator: @unchecked Sendable {
     /// - Returns: `accepted` 表示已接管；`rejected` 表示当前有 in-flight 弹窗，请求被合并丢弃。
     @discardableResult
     public func requestDeletion(targets: [URL]) -> Outcome {
-        guard !targets.isEmpty else { return .rejected(reason: .emptyTargets) }
+        requestDeletion(targets: targets, completion: { _ in })
+    }
 
-        // 1. 在锁内决定是否接管，避免双弹窗。
-        os_unfair_lock_lock(&unfairLock)
-        if isPresenting {
-            os_unfair_lock_unlock(&unfairLock)
+    /// 提交删除请求，并在取消或真实文件 IO 完成后回调终态。
+    @discardableResult
+    public func requestDeletion(
+        targets: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> Outcome {
+        guard !targets.isEmpty else {
+            completion(.failed)
+            return .rejected(reason: .emptyTargets)
+        }
+
+        // 1. 与移动/复制、切换隐藏文件共享全局交互闸门，避免跨动作双弹窗。
+        guard InteractiveActionGate.shared.tryAcquire(label: "fileManage.delete") else {
             // 关键 UX 决策：不排队，直接告诉用户"先处理上一个"，
             // 因为排队会让用户在不知情时连续承担破坏性确认。
             DispatchQueue.main.async {
@@ -55,43 +62,49 @@ public final class DeletionRequestCoordinator: @unchecked Sendable {
                     isSuccess: false
                 )
             }
+            completion(.failed)
             return .rejected(reason: .alreadyPresenting)
         }
-        isPresenting = true
-        os_unfair_lock_unlock(&unfairLock)
 
         // 2. modal 必须在主线程，IO 必须不在主线程。
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                InteractiveActionGate.shared.release()
+                completion(.failed)
+                return
+            }
             self.presenter.present(targets: targets) { choice in
                 // present 内部保证 completion 在主线程。
-                self.handleChoice(choice, targets: targets)
+                self.handleChoice(choice, targets: targets, completion: completion)
             }
         }
         return .accepted
     }
 
     /// 弹窗结果回调：清理 in-flight 标志，并把 IO 派发到后台串行队列。
-    private func handleChoice(_ choice: DestructiveChoice, targets: [URL]) {
-        // 清标志要在 IO 派发之前，让"用户连点取消再点删除"的下一轮请求立刻可被接管。
-        os_unfair_lock_lock(&unfairLock)
-        isPresenting = false
-        os_unfair_lock_unlock(&unfairLock)
+    private func handleChoice(
+        _ choice: DestructiveChoice,
+        targets: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) {
+        // modal 已关闭，立刻释放全局闸门，不让后续交互等待文件 IO。
+        InteractiveActionGate.shared.release()
 
         switch choice {
         case .cancel:
             AppLog.info("[Deletion] 用户取消彻底删除：\(targets.count) 项", category: .action)
+            completion(.cancelled)
             return
         case .recoverable:
-            ioQueue.async { Self.performTrash(targets: targets) }
+            ioQueue.async { completion(Self.performTrash(targets: targets)) }
         case .destructive:
-            ioQueue.async { Self.performPermanentDelete(targets: targets) }
+            ioQueue.async { completion(Self.performPermanentDelete(targets: targets)) }
         }
     }
 
     // MARK: - IO（在后台队列执行）
 
-    private static func performTrash(targets: [URL]) {
+    private static func performTrash(targets: [URL]) -> ActionCompletionStatus {
         var successCount = 0
         for url in targets {
             do {
@@ -112,9 +125,10 @@ public final class DeletionRequestCoordinator: @unchecked Sendable {
                 : "请检查系统权限或文件是否被锁定",
             isSuccess: successCount > 0
         )
+        return successCount == targets.count ? .succeeded : .failed
     }
 
-    private static func performPermanentDelete(targets: [URL]) {
+    private static func performPermanentDelete(targets: [URL]) -> ActionCompletionStatus {
         var successCount = 0
         for url in targets {
             do {
@@ -134,16 +148,17 @@ public final class DeletionRequestCoordinator: @unchecked Sendable {
                 : "请检查系统权限或文件是否被锁定",
             isSuccess: successCount > 0
         )
+        return successCount == targets.count ? .succeeded : .failed
     }
 
     // MARK: - Outcome
 
-    public enum Outcome: Equatable {
+    public enum Outcome: Equatable, Sendable {
         case accepted
         case rejected(reason: RejectionReason)
     }
 
-    public enum RejectionReason: Equatable {
+    public enum RejectionReason: Equatable, Sendable {
         case emptyTargets
         case alreadyPresenting
     }

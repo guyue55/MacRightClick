@@ -402,4 +402,82 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
         let again = manager.consumePendingActionLeases()
         XCTAssertEqual(again.count, 0, "已 ack 的事件不应被 reclaim 复活")
     }
+
+    func testAcceptedAsyncActionKeepsLeaseUntilCompletion() throws {
+        let target = manager.sharedContainerURL.appendingPathComponent("target.txt")
+        try Data().write(to: target)
+        let action = ControllableAsyncAction()
+        let dispatcher = ActionDispatcher(isActionEnabled: { _ in true })
+        dispatcher.register(action: action)
+        _ = try manager.enqueueAction(actionId: action.actionId, paths: [target.path])
+        let lease = try XCTUnwrap(manager.consumePendingActionLeases().first)
+        let leaseURL = try XCTUnwrap(lease.inFlightURL)
+
+        let submission = dispatcher.submit(
+            actionId: action.actionId,
+            targetURLs: [target],
+            invocationKind: .items
+        ) { [manager] _ in
+            manager?.acknowledge(lease)
+        }
+
+        XCTAssertEqual(submission, .accepted)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: leaseURL.path))
+        action.complete(.succeeded)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leaseURL.path))
+    }
+
+    func testRejectedSubmissionAcknowledgesLeaseImmediately() throws {
+        let target = manager.sharedContainerURL.appendingPathComponent("rejected.txt")
+        try Data().write(to: target)
+        let action = ControllableAsyncAction()
+        let dispatcher = ActionDispatcher(isActionEnabled: { _ in false })
+        dispatcher.register(action: action)
+        _ = try manager.enqueueAction(actionId: action.actionId, paths: [target.path])
+        let lease = try XCTUnwrap(manager.consumePendingActionLeases().first)
+        let leaseURL = try XCTUnwrap(lease.inFlightURL)
+
+        let submission = dispatcher.submit(
+            actionId: action.actionId,
+            targetURLs: [target]
+        ) { [manager] status in
+            XCTAssertEqual(status, .failed)
+            manager?.acknowledge(lease)
+        }
+
+        XCTAssertEqual(submission, .rejected)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leaseURL.path))
+    }
+}
+
+private final class ControllableAsyncAction: MenuAction, @unchecked Sendable {
+    let actionId = "test.async"
+    let localizedTitle = "Async"
+    let iconName: String? = nil
+    let category: ActionCategory = .utility
+    let tier: ActionTier = .professional
+    let associatedBundleIdentifier: String? = nil
+
+    private let lock = NSLock()
+    private var pendingCompletion: (@Sendable (ActionCompletionStatus) -> Void)?
+
+    func execute(targetURLs: [URL]) -> Bool { false }
+
+    func submit(
+        targetURLs: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission {
+        lock.lock()
+        pendingCompletion = completion
+        lock.unlock()
+        return .accepted
+    }
+
+    func complete(_ status: ActionCompletionStatus) {
+        lock.lock()
+        let completion = pendingCompletion
+        pendingCompletion = nil
+        lock.unlock()
+        completion?(status)
+    }
 }

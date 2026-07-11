@@ -127,7 +127,7 @@ public final class FileCutClipboard: @unchecked Sendable {
 }
 
 /// 支持的右键文件管理动作子类型
-public enum FileManageType: String, Codable {
+public enum FileManageType: String, Codable, Sendable {
     case cut = "cut"                  // 剪切
     case paste = "paste"              // 粘贴（执行移动）
     case permanentDelete = "delete"   // 彻底删除
@@ -137,7 +137,7 @@ public enum FileManageType: String, Codable {
     case copyTo = "copyTo"            // 复制到...
 }
 
-public final class FileManageAction: MenuAction {
+public final class FileManageAction: MenuAction, @unchecked Sendable {
     public let actionId: String
     public let localizedTitle: String
     public let iconName: String?
@@ -274,7 +274,7 @@ public final class FileManageAction: MenuAction {
             // 否则跨盘大文件会让 folder-monitor 串行队列长期持锁，引发 P1-1 卡顿/死锁残余风险）。
             let destinationDir = getDestinationDirectory(from: targetURLs.first!)
             FileManageAction.pasteRunner.submit {
-                FileManageAction.executePaste(
+                _ = FileManageAction.executePaste(
                     snapshot: cutSnapshot,
                     destinationDir: destinationDir
                 )
@@ -351,7 +351,7 @@ public final class FileManageAction: MenuAction {
                         }
                 },
                 perform: { destinationDir in
-                    FileManageAction.executeTransfer(
+                    _ = FileManageAction.executeTransfer(
                         op: op,
                         targets: snapshotTargets,
                         destination: destinationDir
@@ -359,6 +359,76 @@ public final class FileManageAction: MenuAction {
                 }
             )
             return outcome == .accepted
+        }
+    }
+
+    public func submit(
+        targetURLs: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission {
+        guard !targetURLs.isEmpty else {
+            completion(.failed)
+            return .rejected
+        }
+
+        switch manageType {
+        case .paste:
+            guard let cutSnapshot = FileCutClipboard.shared.snapshot,
+                  !cutSnapshot.urls.isEmpty else {
+                completion(.failed)
+                return .rejected
+            }
+            let destinationDir = getDestinationDirectory(from: targetURLs[0])
+            FileManageAction.pasteRunner.submit({
+                FileManageAction.executePaste(
+                    snapshot: cutSnapshot,
+                    destinationDir: destinationDir
+                )
+            }, completion: completion)
+            return .accepted
+
+        case .permanentDelete:
+            let outcome = DeletionRequestCoordinator.shared.requestDeletion(
+                targets: targetURLs,
+                completion: completion
+            )
+            return outcome == .accepted ? .accepted : .rejected
+
+        case .moveTo, .copyTo:
+            let op: TransferOp = manageType == .copyTo ? .copy : .move
+            let snapshotTargets = targetURLs
+            let preset = customTargetPath
+            let outcome = FileManageAction.transferRunner.run(
+                prompt: { () -> URL? in
+                    if let preset { return preset }
+                    return FileManageAction.chooseDestinationDirectory().flatMap { url in
+                        FileManageAction.confirmTransfer(
+                            op: op,
+                            count: snapshotTargets.count,
+                            destination: url
+                        ) ? url : nil
+                    }
+                },
+                perform: { destinationDir in
+                    FileManageAction.executeTransfer(
+                        op: op,
+                        targets: snapshotTargets,
+                        destination: destinationDir
+                    )
+                },
+                completion: completion
+            )
+            return outcome == .accepted ? .accepted : .rejected
+
+        case .copyPath, .copyName:
+            DispatchQueue.main.async { [self] in
+                completion(execute(targetURLs: targetURLs) ? .succeeded : .failed)
+            }
+            return .accepted
+
+        case .cut:
+            completion(execute(targetURLs: targetURLs) ? .succeeded : .failed)
+            return .accepted
         }
     }
     
@@ -375,7 +445,7 @@ public final class FileManageAction: MenuAction {
 extension FileManageAction {
 
     /// 转移操作语义。把 if/else 都集中在这里，避免 case 分支再次散落。
-    enum TransferOp {
+    enum TransferOp: Sendable {
         case copy
         case move
 
@@ -400,7 +470,10 @@ extension FileManageAction {
 
     /// 后台串行队列：批量执行粘贴 + HUD 反馈。
     /// 跨卷 move 会自动降级走 `crossVolumeMove`（copy-then-delete 事务）。
-    static func executePaste(snapshot: CutClipboardSnapshot, destinationDir: URL) {
+    static func executePaste(
+        snapshot: CutClipboardSnapshot,
+        destinationDir: URL
+    ) -> ActionCompletionStatus {
         var successCount = 0
         var failedURLs: [URL] = []
         for fileURL in snapshot.urls {
@@ -465,6 +538,7 @@ extension FileManageAction {
                 isSuccess: false
             )
         }
+        return failedURLs.isEmpty ? .succeeded : .failed
     }
 
     private static func postCutStateChanged() {
@@ -513,7 +587,11 @@ extension FileManageAction {
 
     /// 后台串行队列：真正搬运/复制 + HUD 反馈。
     /// 跨卷 move 会自动降级走 `crossVolumeMove`。
-    static func executeTransfer(op: TransferOp, targets: [URL], destination destinationDir: URL) {
+    static func executeTransfer(
+        op: TransferOp,
+        targets: [URL],
+        destination destinationDir: URL
+    ) -> ActionCompletionStatus {
         var successCount = 0
         for fileURL in targets {
             let destURL = destinationDir.appendingPathComponent(fileURL.lastPathComponent)
@@ -567,6 +645,7 @@ extension FileManageAction {
                 isSuccess: false
             )
         }
+        return successCount == targets.count ? .succeeded : .failed
     }
 }
 

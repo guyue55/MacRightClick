@@ -39,4 +39,14 @@ public final class BackgroundActionRunner: @unchecked Sendable {
             perform()
         }
     }
+
+    /// 提交带终态的后台动作。completion 与 perform 在同一私有队列上按顺序触发。
+    public func submit(
+        _ perform: @escaping @Sendable () -> ActionCompletionStatus,
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) {
+        ioQueue.async {
+            completion(perform())
+        }
+    }
 }

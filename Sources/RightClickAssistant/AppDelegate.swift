@@ -130,17 +130,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
             // 【线程性能优化】：移除外层强制主线程分发，直接在 SharedFolderMonitor 的高特权后台并发队列中同步执行 I/O 和计算。
             // 这彻底释放了主线程，消除 UI 线程卡顿引起的动作延迟。涉及到 UI 的悬浮 HUD 和二维码窗口在 UtilityAction 内部已安全包装了 DispatchQueue.main.async。
             SharedStorageManager.shared.writeLog("[App] [processPendingAction] 即将由 ActionDispatcher 分发动作 \(event.actionId)...")
-            let success = ActionDispatcher.shared.dispatch(
+            let submission = ActionDispatcher.shared.submit(
                 actionId: event.actionId,
                 targetURLs: urls,
                 invocationKind: event.invocationKind
-            )
-            SharedStorageManager.shared.writeLog("[App] [processPendingAction] 动作 \(event.actionId) 代理执行结果: \(success ? "成功" : "失败")")
-
-            // ack：dispatcher 已 return（不论真假成功），事件已被「认真处理过」，可以删除 InFlight 文件。
-            // 注意 dispatcher 的 return 不代表后台 IO 跑完——交互/后台动作的真实工作已被 InteractiveActionRunner /
-            // BackgroundActionRunner 接管在自己的私有队列上，那部分崩溃风险由 Runner 各自负责，不再属于 PendingAction 队列层语义。
-            SharedStorageManager.shared.acknowledge(lease)
+            ) { status in
+                SharedStorageManager.shared.writeLog(
+                    "[App] [processPendingAction] 动作 \(event.actionId) 到达终态: \(String(describing: status))"
+                )
+                SharedStorageManager.shared.acknowledge(lease)
+            }
+            if submission == .rejected {
+                SharedStorageManager.shared.writeLog(
+                    "[App] [processPendingAction] 动作 \(event.actionId) 未被接管，已按失败终态确认",
+                    level: .error
+                )
+            }
         }
     }
     

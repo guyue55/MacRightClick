@@ -144,17 +144,31 @@ public final class UtilityAction: MenuAction, Sendable {
     }
     
     public func execute(targetURLs: [URL]) -> Bool {
+        submit(targetURLs: targetURLs, completion: { _ in }) == .accepted
+    }
+
+    public func submit(
+        targetURLs: [URL],
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission {
         switch utilityType {
         case .calculateMD5, .calculateSHA256:
-            guard let first = targetURLs.first else { return false }
-            return calculateHash(for: first)
-            
+            guard let first = targetURLs.first else {
+                completion(.failed)
+                return .rejected
+            }
+            submitHash(for: first, completion: completion)
+            return .accepted
+
         case .toggleHiddenFiles:
-            return toggleHiddenSystemFiles()
-            
+            return submitToggleHiddenFiles(completion: completion)
+
         case .textToQRCode:
-            return generateQRCodeFromClipboard()
-            
+            DispatchQueue.main.async { [self] in
+                completion(generateQRCodeFromClipboard() ? .succeeded : .failed)
+            }
+            return .accepted
+
         case .convertToPNG, .convertToJPEG:
             guard !targetURLs.isEmpty else {
                 SharedHUDManager.show(
@@ -162,17 +176,18 @@ public final class UtilityAction: MenuAction, Sendable {
                     content: "未选中任何有效的图片文件进行转换",
                     isSuccess: false
                 )
-                return false
+                completion(.failed)
+                return .rejected
             }
 
             let isPNG = (utilityType == .convertToPNG)
             let formatStr = isPNG ? "PNG" : "JPEG"
             let urls = targetURLs
             let converter = imageConverter
-            Self.imageConversionRunner.submit {
+            Self.imageConversionRunner.submit({
                 Self.convertImages(urls, toFormat: formatStr, using: converter)
-            }
-            return true
+            }, completion: completion)
+            return .accepted
         }
     }
 
@@ -181,7 +196,10 @@ public final class UtilityAction: MenuAction, Sendable {
     // 主线程负责 prompt，后台负责 perform。
     
     // MARK: - 1. 流式哈希计算
-    private func calculateHash(for url: URL) -> Bool {
+    private func submitHash(
+        for url: URL,
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) {
         let algorithm: HashAlgorithm = utilityType == .calculateSHA256 ? .sha256 : .md5
         let label = utilityType == .calculateSHA256 ? "SHA256" : "MD5"
         // 大文件哈希可能耗时较长，提前展示"正在计算"让用户感知进度。
@@ -197,6 +215,7 @@ public final class UtilityAction: MenuAction, Sendable {
                         content: "已复制到剪贴板",
                         isSuccess: true
                     )
+                    completion(.succeeded)
                 }
             } catch {
                 let description = error.localizedDescription
@@ -207,17 +226,17 @@ public final class UtilityAction: MenuAction, Sendable {
                         content: description,
                         isSuccess: false
                     )
+                    completion(.failed)
                 }
             }
         }
-        return true
     }
 
     private static func convertImages(
         _ urls: [URL],
         toFormat format: String,
         using converter: any ImageConverterProtocol
-    ) {
+    ) -> ActionCompletionStatus {
         var successCount = 0
         var failureCount = 0
         var lastErrorMessage = "未知错误"
@@ -263,6 +282,7 @@ public final class UtilityAction: MenuAction, Sendable {
         Task { @MainActor in
             SharedHUDManager.show(title: title, content: content, isSuccess: isSuccess)
         }
+        return failureCount == 0 ? .succeeded : .failed
     }
     
     // MARK: - 2. 显示/隐藏隐藏文件
@@ -270,19 +290,23 @@ public final class UtilityAction: MenuAction, Sendable {
     /// - prompt 主线程弹 critical 确认；
     /// - perform 后台跑 defaults + osascript + sleep + open -a Finder。
     /// folder-monitor 串行队列不再被 Process.waitUntilExit / Thread.sleep 阻塞。
-    private func toggleHiddenSystemFiles() -> Bool {
+    private func submitToggleHiddenFiles(
+        completion: @escaping @Sendable (ActionCompletionStatus) -> Void
+    ) -> ActionSubmission {
         let outcome = UtilityAction.toggleHiddenRunner.run(
             prompt: { () -> Bool? in
                 UtilityAction.confirmToggleHiddenAlert() ? true : nil
             },
             perform: { _ in
                 UtilityAction.performToggleHiddenFiles()
-            }
+            },
+            completion: completion
         )
-        return outcome == .accepted
+        return outcome == .accepted ? .accepted : .rejected
     }
 
     // MARK: - 3. 生成二维码
+    @MainActor
     private func generateQRCodeFromClipboard() -> Bool {
         let text = NSPasteboard.general.string(forType: .string) ?? ""
         
@@ -325,21 +349,15 @@ public final class UtilityAction: MenuAction, Sendable {
         let nsImage = NSImage(size: rep.size)
         nsImage.addRepresentation(rep)
         
-        // 以浮动面板展示二维码，不抢焦点。
-        DispatchQueue.main.async {
-            // 把 NSPanel 装配 / 保存 PNG / 拷贝图片三件事交给 QRCodePanelController，
-            // UtilityAction 这里只负责"剪贴板取文本 → 生成二维码 NSImage → 交给控制器"。
-            // controller 必须由文件作用域强引用，否则面板会被立即释放。
-            let controller = QRCodePanelController(image: nsImage, text: text)
-            activeQRController = controller
-            controller.show()
-
-            SharedHUDManager.show(
-                title: "二维码已生成",
-                content: "剪贴板内容已转为二维码",
-                isSuccess: true
-            )
-        }
+        // 把 NSPanel 装配 / 保存 PNG / 拷贝图片三件事交给 QRCodePanelController。
+        let controller = QRCodePanelController(image: nsImage, text: text)
+        activeQRController = controller
+        controller.show()
+        SharedHUDManager.show(
+            title: "二维码已生成",
+            content: "剪贴板内容已转为二维码",
+            isSuccess: true
+        )
         return true
     }
     
@@ -440,7 +458,7 @@ extension UtilityAction {
 
     /// 后台串行队列：执行 defaults + osascript + sleep + open -a Finder。
     /// 任何 Process.waitUntilExit / Thread.sleep 都不再阻塞 folder-monitor 队列。
-    static func performToggleHiddenFiles() {
+    static func performToggleHiddenFiles() -> ActionCompletionStatus {
         do {
             // 1. 读取当前值（默认 NO）。
             let read = Process()
@@ -461,6 +479,7 @@ extension UtilityAction {
             write.arguments = ["write", "com.apple.finder", "AppleShowAllFiles", next]
             try write.run()
             write.waitUntilExit()
+            try requireSuccessfulExit(write, label: "写入 Finder 偏好")
 
             // 3. 优雅退出 Finder（osascript），launchd 会自动拉回。
             //    保险起见再 500ms 后显式 `open -a Finder`，覆盖某些不会自动复活的边角场景。
@@ -469,13 +488,16 @@ extension UtilityAction {
             osa.arguments = ["-e", "tell application \"Finder\" to quit"]
             try osa.run()
             osa.waitUntilExit()
+            try requireSuccessfulExit(osa, label: "退出 Finder")
 
             Thread.sleep(forTimeInterval: 0.5)
 
             let relaunch = Process()
             relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             relaunch.arguments = ["-a", "Finder"]
-            try? relaunch.run()
+            try relaunch.run()
+            relaunch.waitUntilExit()
+            try requireSuccessfulExit(relaunch, label: "重新打开 Finder")
 
             let stateText = next == "YES" ? "显示" : "隐藏"
             SharedHUDManager.show(
@@ -483,12 +505,26 @@ extension UtilityAction {
                 content: "已成功切换系统隐藏文件状态为：【\(stateText)】",
                 isSuccess: true
             )
+            return .succeeded
         } catch {
             AppLog.error("切换显示隐藏文件失败: \(error.localizedDescription)", category: .action)
             SharedHUDManager.show(
                 title: "切换状态失败",
                 content: "在调用系统指令 defaults 或重启 Finder 时发生错误：\(error.localizedDescription)",
                 isSuccess: false
+            )
+            return .failed
+        }
+    }
+
+    private static func requireSuccessfulExit(_ process: Process, label: String) throws {
+        guard process.terminationStatus == 0 else {
+            throw NSError(
+                domain: "guyue.UtilityAction",
+                code: Int(process.terminationStatus),
+                userInfo: [
+                    NSLocalizedDescriptionKey: "\(label)失败，退出码 \(process.terminationStatus)"
+                ]
             )
         }
     }
