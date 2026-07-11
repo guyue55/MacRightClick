@@ -41,6 +41,95 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertEqual(retrieved?.actionId, txtAction.actionId)
         XCTAssertEqual(retrieved?.category, .newFile)
     }
+
+    func testDefaultRegistryHasUniqueTwentyEightActionIDs() {
+        let actions = DefaultActionRegistry.makeActions()
+
+        XCTAssertEqual(actions.count, 28)
+        XCTAssertEqual(Set(actions.map(\.actionId)).count, actions.count)
+    }
+
+    func testMenuActionExistentialUsesConcreteAssociatedBundleIdentifier() {
+        let action: MenuAction = TerminalOpenAction(type: .vscode)
+
+        XCTAssertEqual(action.associatedBundleIdentifier, "com.microsoft.VSCode")
+    }
+
+    func testEssentialProfileNeverChangesHighRiskActions() {
+        let actions = DefaultActionRegistry.makeActions()
+        let states = ActionProfile.essential.states(for: actions)
+
+        XCTAssertFalse(states.keys.contains("guyue.action.filemanage.delete"))
+        XCTAssertFalse(states.keys.contains("guyue.action.filemanage.moveTo"))
+        XCTAssertFalse(states.keys.contains("guyue.action.utility.toggleHiddenFiles"))
+    }
+
+    func testProfessionalProfileEnablesProfessionalButNotAdvancedActions() {
+        let actions = DefaultActionRegistry.makeActions()
+        let states = ActionProfile.professional.states(for: actions)
+
+        XCTAssertEqual(states["guyue.action.newfile.json"], true)
+        XCTAssertEqual(states["guyue.action.terminal.vscode"], true)
+        XCTAssertNil(states["guyue.action.filemanage.delete"])
+    }
+
+    func testFreshSettingsMigrationAppliesEssentialProfile() {
+        let actions = DefaultActionRegistry.makeActions()
+
+        storage.migrateSettingsIfNeeded(actions: actions)
+
+        XCTAssertEqual(storage.actionProfile, .essential)
+        XCTAssertTrue(storage.getBool(
+            forKey: "enable_action_guyue.action.newfile.txt",
+            defaultValue: false
+        ))
+        XCTAssertFalse(storage.getBool(
+            forKey: "enable_action_guyue.action.newfile.json",
+            defaultValue: true
+        ))
+        XCTAssertFalse(storage.getBool(
+            forKey: "enable_action_guyue.action.filemanage.delete",
+            defaultValue: false
+        ))
+        XCTAssertTrue(storage.getBool(
+            forKey: SharedStorageManager.Keys.actionProfileMigrationV1,
+            defaultValue: false
+        ))
+    }
+
+    func testLegacySettingsMigrationPreservesEffectiveStatesAndHighRiskChoice() {
+        let actions = DefaultActionRegistry.makeActions()
+        XCTAssertTrue(storage.setBool(false, forKey: "enable_action_guyue.action.newfile.txt"))
+        XCTAssertTrue(storage.setBool(true, forKey: "enable_action_guyue.action.newfile.json"))
+        XCTAssertTrue(storage.setBool(true, forKey: "enable_action_guyue.action.filemanage.delete"))
+
+        storage.migrateSettingsIfNeeded(actions: actions)
+
+        XCTAssertEqual(storage.actionProfile, .custom)
+        XCTAssertFalse(storage.getBool(
+            forKey: "enable_action_guyue.action.newfile.txt",
+            defaultValue: true
+        ))
+        XCTAssertTrue(storage.getBool(
+            forKey: "enable_action_guyue.action.newfile.json",
+            defaultValue: false
+        ))
+        XCTAssertTrue(storage.getBool(
+            forKey: "enable_action_guyue.action.filemanage.delete",
+            defaultValue: false
+        ))
+    }
+
+    func testApplyingProfileLeavesAdvancedActionChoiceUntouched() {
+        let actions = DefaultActionRegistry.makeActions()
+        let deleteKey = "enable_action_guyue.action.filemanage.delete"
+        XCTAssertTrue(storage.setBool(true, forKey: deleteKey))
+
+        XCTAssertTrue(storage.applyActionProfile(.essential, actions: actions))
+
+        XCTAssertEqual(storage.actionProfile, .essential)
+        XCTAssertTrue(storage.getBool(forKey: deleteKey, defaultValue: false))
+    }
     
     /// 2. 测试新建文件在发生重名时的自增重命名逻辑
     func testNewFileNameCollisionResolution() {

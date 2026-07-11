@@ -146,13 +146,17 @@ public final class FileManageAction: MenuAction {
     public let manageType: FileManageType
     private let customTargetPath: URL? // 针对特定复制到/移动到文件夹的预设路径
 
-    public var isHighRisk: Bool {
+    public var tier: ActionTier {
         switch manageType {
-        case .permanentDelete, .moveTo, .copyTo:
-            return true
         case .cut, .paste, .copyPath, .copyName:
-            return false
+            return .essential
+        case .permanentDelete, .moveTo, .copyTo:
+            return .advanced
         }
+    }
+
+    public var isHighRisk: Bool {
+        return tier == .advanced
     }
 
     public var isEnabledByDefault: Bool {

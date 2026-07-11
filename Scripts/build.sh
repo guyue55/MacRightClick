@@ -207,6 +207,8 @@ HOST_SOURCES="
     Sources/RightClickAssistant/AppDelegate.swift \
     Sources/RightClickAssistant/Views/ContentView.swift \
     Sources/RightClickAssistant/Core/MenuAction.swift \
+    Sources/RightClickAssistant/Core/ActionProfile.swift \
+    Sources/RightClickAssistant/Core/DefaultActionRegistry.swift \
     Sources/RightClickAssistant/Core/MenuLayout.swift \
     Sources/RightClickAssistant/Core/SharedStorageManager.swift \
     Sources/RightClickAssistant/Core/SharedFolderMonitor.swift \
@@ -238,6 +240,8 @@ HOST_SOURCES="
 EXT_SOURCES="
     Sources/RightClickAssistantExtension/FinderSync.swift \
     Sources/RightClickAssistant/Core/MenuAction.swift \
+    Sources/RightClickAssistant/Core/ActionProfile.swift \
+    Sources/RightClickAssistant/Core/DefaultActionRegistry.swift \
     Sources/RightClickAssistant/Core/MenuLayout.swift \
     Sources/RightClickAssistant/Core/SharedStorageManager.swift \
     Sources/RightClickAssistant/Core/ActionDispatcher.swift \

@@ -45,8 +45,12 @@ public final class TerminalOpenAction: MenuAction {
         return appType.bundleIdentifier
     }
 
+    public var tier: ActionTier {
+        return appType == .terminal ? .essential : .professional
+    }
+
     public var isEnabledByDefault: Bool {
-        return appType == .terminal
+        return tier == .essential
     }
     
     public init(type: TerminalEditorType) {

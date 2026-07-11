@@ -37,17 +37,23 @@ public final class UtilityAction: MenuAction, Sendable {
         ioQueueLabel: "guyue.RightClickAssistant.utility-image-conversion-io"
     )
 
+    public var tier: ActionTier {
+        switch utilityType {
+        case .calculateSHA256, .textToQRCode:
+            return .essential
+        case .calculateMD5, .convertToPNG, .convertToJPEG:
+            return .professional
+        case .toggleHiddenFiles:
+            return .advanced
+        }
+    }
+
     public var isHighRisk: Bool {
-        return utilityType == .toggleHiddenFiles
+        return tier == .advanced
     }
 
     public var isEnabledByDefault: Bool {
-        switch utilityType {
-        case .calculateSHA256, .textToQRCode:
-            return true
-        case .calculateMD5, .toggleHiddenFiles, .convertToPNG, .convertToJPEG:
-            return false
-        }
+        return tier == .essential
     }
 
     public var riskDescription: String? {

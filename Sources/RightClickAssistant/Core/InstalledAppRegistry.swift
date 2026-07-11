@@ -10,8 +10,8 @@ import AppKit
 /// - 缓存 30 秒 TTL，单 bundle 命中即返回
 /// - 监听 NSWorkspace.didLaunchApplication / didTerminateApplication 自动失效
 /// - `overrideResolverForTesting` 用于单测桩
-public final class InstalledAppRegistry {
-    public nonisolated(unsafe) static let shared = InstalledAppRegistry()
+public final class InstalledAppRegistry: @unchecked Sendable {
+    public static let shared = InstalledAppRegistry()
 
     private struct Entry {
         let url: URL?
@@ -22,8 +22,18 @@ public final class InstalledAppRegistry {
     private var cache: [String: Entry] = [:]
     private let ttl: TimeInterval = 30
 
-    /// 单测桩：返回非 nil 时直接绕过 NSWorkspace。生产代码不应设置。
-    public var overrideResolverForTesting: ((String) -> URL?)?
+    private var resolverOverride: (@Sendable (String) -> URL?)?
+
+    /// 单测桩：设置后绕过 NSWorkspace，并清空已有缓存。生产代码不应设置。
+    public var overrideResolverForTesting: (@Sendable (String) -> URL?)? {
+        get { queue.sync { resolverOverride } }
+        set {
+            queue.sync(flags: .barrier) {
+                resolverOverride = newValue
+                cache.removeAll(keepingCapacity: true)
+            }
+        }
+    }
 
     private init() {
         let workspace = NSWorkspace.shared
@@ -65,7 +75,7 @@ public final class InstalledAppRegistry {
         }
 
         // 2. miss：查询并回填
-        let resolver = overrideResolverForTesting ?? { id in
+        let resolver = queue.sync { resolverOverride } ?? { id in
             NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
         }
         let resolved = resolver(bundleId)

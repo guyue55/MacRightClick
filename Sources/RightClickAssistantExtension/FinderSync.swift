@@ -109,7 +109,7 @@ class FinderSync: FIFinderSync {
         )
         
         // 4. 在插件进程中也初始化默认动作集，以便直接在插件中分发执行
-        registerDefaultActionsInExtension()
+        DefaultActionRegistry.registerAll()
 
         // 5. 预热进程内缓存：把启用/收藏配置一次性读入，避免菜单渲染主路径同步穿透到 UserDefaults / config.json。
         //    同时把所有依赖 Launch Services 的 bundleId 一次性解析，避免 menu(for:) 阶段同步查询 NSWorkspace。
@@ -353,46 +353,6 @@ class FinderSync: FIFinderSync {
         }
     }
     
-    /// 在 Extension 的独立沙盒进程中注册默认支持的一套右键操作
-    private func registerDefaultActionsInExtension() {
-        let dispatcher = ActionDispatcher.shared
-        
-        // A. 新建文件类
-        dispatcher.register(action: NewFileAction(fileType: .txt))
-        dispatcher.register(action: NewFileAction(fileType: .md))
-        dispatcher.register(action: NewFileAction(fileType: .json))
-        dispatcher.register(action: NewFileAction(fileType: .csv))
-        dispatcher.register(action: NewFileAction(fileType: .html))
-        dispatcher.register(action: NewFileAction(fileType: .docx))
-        dispatcher.register(action: NewFileAction(fileType: .xlsx))
-        dispatcher.register(action: NewFileAction(fileType: .pptx))
-        dispatcher.register(action: NewFileAction(fileType: .pdf))
-        
-        // B. 文件管理类
-        dispatcher.register(action: FileManageAction(type: .cut))
-        dispatcher.register(action: FileManageAction(type: .paste))
-        dispatcher.register(action: FileManageAction(type: .permanentDelete))
-        dispatcher.register(action: FileManageAction(type: .copyPath))
-        dispatcher.register(action: FileManageAction(type: .copyName))
-        dispatcher.register(action: FileManageAction(type: .copyTo))
-        dispatcher.register(action: FileManageAction(type: .moveTo))
-        
-        // C. 终端/编辑器类
-        dispatcher.register(action: TerminalOpenAction(type: .terminal))
-        dispatcher.register(action: TerminalOpenAction(type: .iterm2))
-        dispatcher.register(action: TerminalOpenAction(type: .warp))
-        dispatcher.register(action: TerminalOpenAction(type: .vscode))
-        dispatcher.register(action: TerminalOpenAction(type: .sublime))
-        dispatcher.register(action: TerminalOpenAction(type: .cursor))
-        
-        // D. 实用小工具
-        dispatcher.register(action: UtilityAction(type: .calculateMD5))
-        dispatcher.register(action: UtilityAction(type: .calculateSHA256))
-        dispatcher.register(action: UtilityAction(type: .toggleHiddenFiles))
-        dispatcher.register(action: UtilityAction(type: .textToQRCode))
-        dispatcher.register(action: UtilityAction(type: .convertToPNG))
-        dispatcher.register(action: UtilityAction(type: .convertToJPEG))
-    }
 }
 
 // MARK: - 插件进程生命周期入口

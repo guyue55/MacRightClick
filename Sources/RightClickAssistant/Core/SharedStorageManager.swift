@@ -56,6 +56,8 @@ public final class SharedStorageManager {
         public static let favoriteActionIds = "favorite_action_ids"
         public static let watchedDirectoryPaths = "watched_directory_paths"
         public static let menuLayoutMode = "menu_layout_mode"
+        public static let actionProfile = "action_profile"
+        public static let actionProfileMigrationV1 = "action_profile_migration_v1"
         /// FinderSync 作用范围：`.everywhere` / `.custom`，对应 `WatchScope`。
         public static let watchScope = "watch_scope"
     }
@@ -704,6 +706,52 @@ public final class SharedStorageManager {
 
     public func isFavoriteAction(_ action: MenuAction) -> Bool {
         return favoriteActionIds.contains(action.actionId)
+    }
+
+    public var actionProfile: ActionProfile {
+        let rawValue = getStringArray(forKey: Keys.actionProfile).first
+        return rawValue.flatMap(ActionProfile.init(rawValue:)) ?? .custom
+    }
+
+    /// 应用预设档案时只批量更新非高级动作。高级动作保留用户逐项设置的状态。
+    @discardableResult
+    public func applyActionProfile(_ profile: ActionProfile, actions: [MenuAction]) -> Bool {
+        let actionStates = profile.states(for: actions)
+        let booleanValues = Dictionary(uniqueKeysWithValues: actionStates.map {
+            ("enable_action_\($0.key)", $0.value)
+        })
+        return applyConfigurationChanges(
+            booleanValues: booleanValues,
+            stringArrayValues: [Keys.actionProfile: [profile.rawValue]]
+        )
+    }
+
+    /// 首次引入动作档案时，新安装应用 Essential；旧配置保持原有实际状态并标记为 Custom。
+    /// 迁移标记与状态在同一事务提交，写入失败时下次启动会自动重试。
+    public func migrateSettingsIfNeeded(actions: [MenuAction]) {
+        guard !getBool(forKey: Keys.actionProfileMigrationV1, defaultValue: false) else { return }
+
+        let hasLegacyConfig = FileManager.default.fileExists(atPath: configURL.path)
+        let profile: ActionProfile = hasLegacyConfig ? .custom : .essential
+        let states: [String: Bool]
+        if hasLegacyConfig {
+            states = actions.reduce(into: [String: Bool]()) { result, action in
+                guard action.tier != .advanced else { return }
+                result[action.actionId] = isActionEnabled(action)
+            }
+        } else {
+            states = profile.states(for: actions)
+        }
+
+        let actionValues = Dictionary(uniqueKeysWithValues: states.map {
+            ("enable_action_\($0.key)", $0.value)
+        })
+        let booleanValues = actionValues.merging([Keys.actionProfileMigrationV1: true]) { _, new in new }
+
+        _ = applyConfigurationChanges(
+            booleanValues: booleanValues,
+            stringArrayValues: [Keys.actionProfile: [profile.rawValue]]
+        )
     }
     
     /// 写入指定菜单项的启用状态（在宿主设置界面变更配置时调用）

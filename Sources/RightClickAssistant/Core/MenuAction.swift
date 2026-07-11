@@ -21,7 +21,7 @@ public enum ActionCategory: String, Codable, CaseIterable, Identifiable, Sendabl
 }
 
 /// 设置页中的动作分组。
-public enum SettingsActionGroup: String, Codable {
+public enum SettingsActionGroup: String, Codable, Sendable {
     case standard
     case advanced
 }
@@ -39,6 +39,12 @@ public protocol MenuAction {
     
     /// 动作所属分类
     var category: ActionCategory { get }
+
+    /// 依赖的应用 bundle identifier；无外部应用依赖时为 nil。
+    var associatedBundleIdentifier: String? { get }
+
+    /// 动作能力层级，用于档案批量开关与设置页分组。
+    var tier: ActionTier { get }
 
     /// 是否默认启用。破坏性或会重启系统组件的动作应默认关闭，由用户显式开启。
     var isEnabledByDefault: Bool { get }
@@ -82,6 +88,10 @@ public extension MenuAction {
     
     var associatedBundleIdentifier: String? {
         return nil
+    }
+
+    var tier: ActionTier {
+        return isHighRisk ? .advanced : .professional
     }
 
     var isEnabledByDefault: Bool {

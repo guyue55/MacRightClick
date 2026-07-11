@@ -103,13 +103,17 @@ public final class NewFileAction: MenuAction {
     public let fileType: SupportedFileType
     private let customTemplateURL: URL?
 
-    public var isEnabledByDefault: Bool {
+    public var tier: ActionTier {
         switch fileType {
         case .txt, .md, .pdf:
-            return true
+            return .essential
         case .json, .csv, .html, .docx, .xlsx, .pptx:
-            return false
+            return .professional
         }
+    }
+
+    public var isEnabledByDefault: Bool {
+        return tier == .essential
     }
     
     public init(fileType: SupportedFileType, customTemplateURL: URL? = nil) {
