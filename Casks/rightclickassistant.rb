@@ -1,18 +1,23 @@
 cask "rightclickassistant" do
-  version :latest
-  sha256 :no_check
+  version "1.1.1"
+  sha256 "6c548dc44b675f0c3d650c1c9179c861b3dbd19817adbc222f488a216cc8776a"
 
-  url "https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg"
+  url "https://github.com/guyue55/MacRightClick/releases/download/v#{version}/RightClickAssistant-v#{version}-macOS-Universal.dmg"
   name "RightClickAssistant"
   name "MacRightClick"
   desc "Finder right-click context menu assistant"
   homepage "https://github.com/guyue55/MacRightClick"
 
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
   depends_on macos: ">= :ventura"
 
   app "RightClickAssistant.app"
 
-  uninstall quit: "guyue.RightClickAssistant",
+  uninstall quit:   "guyue.RightClickAssistant",
             script: {
               executable: "/usr/bin/pluginkit",
               args:       ["-r", "guyue.RightClickAssistant.Extension"],

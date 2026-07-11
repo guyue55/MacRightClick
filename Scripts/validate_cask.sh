@@ -15,6 +15,27 @@ ruby -c "$CASK_FILE"
 echo "🔎 [Cask] 检查项目结构约束..."
 bash "$ROOT_DIR/Tests/CaskStructureTests.sh"
 
+if [[ "${CASK_VERIFY_DOWNLOAD:-1}" == "1" ]]; then
+    VERSION_VALUE="$(sed -nE 's/^  version "([^"]+)"/\1/p' "$CASK_FILE")"
+    EXPECTED_SHA="$(sed -nE 's/^  sha256 "([0-9a-f]{64})"/\1/p' "$CASK_FILE")"
+    [[ -n "$VERSION_VALUE" && -n "$EXPECTED_SHA" ]] || {
+        echo "❌ [Cask] 无法解析版本或 SHA-256" >&2
+        exit 1
+    }
+
+    DOWNLOAD_URL="https://github.com/guyue55/MacRightClick/releases/download/v${VERSION_VALUE}/RightClickAssistant-v${VERSION_VALUE}-macOS-Universal.dmg"
+    TEMP_DMG="$(mktemp -t rightclickassistant-cask).dmg"
+    trap 'rm -f "$TEMP_DMG"' EXIT
+    echo "🌐 [Cask] 下载不可变制品并核对 SHA-256..."
+    curl --fail --location --retry 3 --silent --show-error "$DOWNLOAD_URL" --output "$TEMP_DMG"
+    ACTUAL_SHA="$(LC_ALL=C LANG=C shasum -a 256 "$TEMP_DMG" | awk '{print $1}')"
+    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+        echo "❌ [Cask] 制品 SHA-256 不匹配：$ACTUAL_SHA" >&2
+        exit 1
+    fi
+    echo "✅ [Cask] 远程制品 SHA-256 已验证"
+fi
+
 if command -v brew >/dev/null 2>&1; then
     TAP_NAME="${HOMEBREW_TAP_NAME:-guyue55/macrightclick}"
     TAP_REPO="$(brew --repo "$TAP_NAME" 2>/dev/null || true)"

@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # ==============================================================================
 # 开源右键助手 (RightClickAssistant) 自动化编译与打包脚本 (支持 Universal 2)
 # ==============================================================================
-set -e
+set -euo pipefail
 
 echo "🚀 [Build] 开始自动化编译与打包流程..."
 
@@ -14,7 +14,7 @@ APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 EXT_BUNDLE="$APP_BUNDLE/Contents/PlugIns/${APP_NAME}Extension.appex"
 DISTRIBUTION_ROUTE="${DISTRIBUTION_ROUTE:-website-dev}"
 CODE_SIGN_IDENTITY="-"
-CODESIGN_RUNTIME_ARGS=()
+CODESIGN_RUNTIME_ARGS=""
 
 if [ "$DISTRIBUTION_ROUTE" = "website-release" ]; then
     if [ -z "${DEVELOPER_ID_APPLICATION:-}" ]; then
@@ -22,7 +22,7 @@ if [ "$DISTRIBUTION_ROUTE" = "website-release" ]; then
         exit 2
     fi
     CODE_SIGN_IDENTITY="$DEVELOPER_ID_APPLICATION"
-    CODESIGN_RUNTIME_ARGS=(--options runtime --timestamp)
+    CODESIGN_RUNTIME_ARGS="--options runtime --timestamp"
 elif [ "$DISTRIBUTION_ROUTE" = "mac-app-store" ]; then
     echo "❌ [Build] 当前仓库已确定主分发路线为官网/开源站外分发。"
     echo "❌ [Build] Mac App Store 路线需要恢复主 App sandbox、正式 App Group 与 security-scoped access 后再单独启用。"
@@ -49,10 +49,16 @@ submit_for_notarization() {
     fi
 }
 
-if [ -f "VERSION" ]; then
-    VERSION=$(cat VERSION | tr -d '\n' | tr -d '\r')
+if [ -n "${VERSION_OVERRIDE:-}" ]; then
+    VERSION="$VERSION_OVERRIDE"
+elif [ -f "VERSION" ]; then
+    VERSION=$(tr -d '\r\n' < VERSION)
 else
     VERSION="1.0.0"
+fi
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "❌ [Build] VERSION 必须是稳定语义版本，实际为: $VERSION"
+    exit 2
 fi
 echo "🏷️ [Build] 检测到全局版本号: $VERSION"
 echo "🚢 [Build] 当前分发路线: $DISTRIBUTION_ROUTE"
@@ -361,8 +367,8 @@ cp "$EXT_ENTITLEMENTS"  "$BUILD_DIR/RightClickAssistantExtension.entitlements"
 
 echo "🔐 [Build] 自动进行嵌套签名..."
 # A. 先签名最内层插件的二进制与整个 XPC 插件 bundle
-codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE/Contents/MacOS/RightClickAssistantExtension"
-codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE"
+codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE/Contents/MacOS/RightClickAssistantExtension"
+codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE"
 
 # B. 再签名主程序二进制。官网分发路线保持主 App 非沙盒，并在 website-release 下启用 hardened runtime。
 # B. 主 App 二进制 + 整个 .app Bundle 都用 host entitlements 模板。
@@ -370,11 +376,13 @@ codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --en
 #    本轮 build.sh 重构后必须显式传入，否则 application-groups 不生效，
 #    SharedStorageManager 与 FinderSync 之间的 cross-container 物理路径访问会被
 #    macOS 13+ Hidden Subsystem Block 拦截。
-codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
-codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE"
+codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE/Contents/MacOS/RightClickAssistant"
+codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS --entitlements "$BUILD_DIR/RightClickAssistant.entitlements" "$APP_BUNDLE"
 
 # D. 签名自检程序
-codesign --force --sign "$CODE_SIGN_IDENTITY" "${CODESIGN_RUNTIME_ARGS[@]}" "ActionVerifier_bin"
+codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS "ActionVerifier_bin"
+
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
 if [ "$DISTRIBUTION_ROUTE" = "website-release" ]; then
     echo "🧾 [Build] 提交 App 到 Apple notary service 并 stapler 附票..."
@@ -383,6 +391,7 @@ if [ "$DISTRIBUTION_ROUTE" = "website-release" ]; then
     ditto -c -k --keepParent "$APP_BUNDLE" "$NOTARY_ZIP"
     submit_for_notarization "$NOTARY_ZIP"
     xcrun stapler staple "$APP_BUNDLE"
+    xcrun stapler validate "$APP_BUNDLE"
     rm -f "$NOTARY_ZIP"
 fi
 
@@ -463,6 +472,7 @@ if [ "$DISTRIBUTION_ROUTE" = "website-release" ]; then
     echo "🧾 [Build] 提交 DMG 到 Apple notary service 并 stapler 附票..."
     submit_for_notarization "$FINAL_DMG"
     xcrun stapler staple "$FINAL_DMG"
+    xcrun stapler validate "$FINAL_DMG"
 fi
 
 # E. 清理临时过渡资源
