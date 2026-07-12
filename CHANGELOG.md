@@ -8,19 +8,40 @@
 
 ## Unreleased
 
+暂无。
+
+## v1.2.0 — 2026-07-12
+
 ### Added
 
+- **actions**: 新增「复制 Shell 安全路径」与「复制 Git 相对路径」，注册动作总数由 28 增至 30。
+- **profiles**: 新增精简、专业、自定义三档动作配置，并支持按标题、动作 ID、分类与状态筛选。
+- **diagnostics**: 新增扩展心跳、监听入口、队列积压、失败动作与隐私安全诊断报告；诊断页只突出一个优先修复动作。
+- **update**: 新增用户主动触发的 GitHub Release 更新检查；不在启动、页面出现或后台自动请求网络。
 - **tools**: 新增「高级 -> 外部工具」管理入口，检测 Homebrew 后可通过 Homebrew Cask 安装或更新 iTerm2、Warp、Visual Studio Code、Sublime Text、Cursor。
-- **homebrew**: 新增 `Casks/rightclickassistant.rb`，支持通过 Homebrew Cask 安装 latest DMG，并提供 Cask 结构校验脚本。
+- **homebrew**: 新增固定版本、真实 SHA-256 与 `livecheck` 的 Homebrew Cask，并提供结构和远程制品校验脚本。
+
+### Changed
+
+- **ui**: 设置窗口重构为通用、动作、Finder、诊断、高级五个原生分组页面，减少嵌套卡片和无效说明。
+- **menu**: 默认保持一级平铺，收藏与普通动作连续排列；仍可切换分类子菜单。
+- **registry**: Host、FinderSync、设置页与测试统一使用 `DefaultActionRegistry`，消除重复动作清单。
+- **events**: 动作事件升级为 schema v2，记录选中项/空白区域调用语义，并在 Host 执行前重新校验目标与可用性。
+- **release**: CI 分离只读分支构建与标签发布；标签发布必须使用 Developer ID、Hardened Runtime、公证和 stapler，不再正式发布 Ad-hoc 制品。
 
 ### Fixed
 
+- **storage**: 测试存储完全隔离到临时目录；配置批量修改原子化，并避免回收仍由活动进程持有的动作租约。
+- **queue**: 异步动作只在成功、失败或取消终态后确认租约，宿主退出时不会提前丢弃进行中的事件。
+- **actions**: 剪切板快照加入版本号；跨卷移动、哈希、图片转换与高风险交互使用明确的后台/主线程边界；图片转码改用 ImageIO，修复灰度 Alpha PNG 无法转为 JPEG。
+- **permissions**: 完全磁盘访问、Finder 扩展注册、Finder 会话与监听范围分层呈现；授权后提供重新打开与刷新 Finder 的闭环。
+- **concurrency**: 收紧 Swift 6 `Sendable` / `MainActor` 边界，修复 HUD 生命周期、后台 runner 和系统命令完成回调问题。
 - **system-command**: 系统命令执行器在进程退出后完整等待 stdout/stderr 管道读完，避免 `pluginkit` / `brew` 等命令结果被截断。
 - **permissions**: 收紧权限刷新协调器的公开 API，避免“重新打开 App”步骤被误用为完整的“重新打开并重启 Finder”流程。
 
 ### Documentation
 
-- **readme**: 同步中文与英文 README 的外部工具安装/更新说明，并明确不会自动执行 Homebrew 远程安装脚本。
+- **readme**: 全文校对中英文 README，更新为 30 个动作、当前下载/Cask 行为、权限边界、显式更新隐私与 v1.2 原生界面截图。
 
 ## v1.1.1 — 2026-06-18
 

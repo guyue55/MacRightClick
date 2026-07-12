@@ -7,35 +7,64 @@ import AppKit
 struct ActionVerifier {
     static func main() {
         print("==============================================================================")
-        print("🧪 [Verifier] 开始执行 28 个 Action 全自动机器端物理仿真校验与断言测试...")
+        print("🧪 [Verifier] 开始执行 10 项关键链路机器端物理仿真校验...")
         print("==============================================================================")
         
         // 1. 初始化测试专属物理大本营
         let homeDir = NSHomeDirectory()
-        let testDirURL = URL(fileURLWithPath: "/tmp").appendingPathComponent("RightClickAssistantTest")
+        let testDirURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RightClickAssistantVerifier-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.removeItem(at: testDirURL)
         try? FileManager.default.createDirectory(at: testDirURL, withIntermediateDirectories: true)
         
         print("📂 [Verifier] 1. 创建测试物理专属工作区: \(testDirURL.path)")
         
-        let pendingActionsDirectoryURL = URL(fileURLWithPath: homeDir).appendingPathComponent("Library/Containers/guyue.RightClickAssistant.Extension/Data/PendingActions")
+        let sharedRootPath = ProcessInfo.processInfo.environment["RIGHTCLICKASSISTANT_SHARED_ROOT"]
+            ?? (homeDir as NSString).appendingPathComponent(
+                "Library/Containers/guyue.RightClickAssistant.Extension/Data"
+            )
+        let sharedRootURL = URL(fileURLWithPath: sharedRootPath, isDirectory: true)
+        let pendingActionsDirectoryURL = sharedRootURL.appendingPathComponent("PendingActions")
         try? FileManager.default.createDirectory(at: pendingActionsDirectoryURL, withIntermediateDirectories: true)
         print("📂 [Verifier] 2. 中介动作队列地址: \(pendingActionsDirectoryURL.path)")
+
+        let requiredProfessionalActions = [
+            "guyue.action.newfile.docx",
+            "guyue.action.newfile.html",
+            "guyue.action.utility.calculateMD5",
+            "guyue.action.utility.convertToJPG"
+        ]
+        let configURL = sharedRootURL.appendingPathComponent("config.json")
+        let config = (try? Data(contentsOf: configURL))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let disabledRequiredActions = requiredProfessionalActions.filter {
+            config["enable_action_\($0)"] as? Bool != true
+        }
+        if !disabledRequiredActions.isEmpty {
+            print("❌ [Verifier] 运行前请在“动作”页应用“专业”档案，确保关键链路动作已启用。")
+            print("❌ [Verifier] 当前未启用: \(disabledRequiredActions.joined(separator: ", "))")
+            try? FileManager.default.removeItem(at: testDirURL)
+            exit(2)
+        }
         
         // 我们选取代表 4 大分类的核心动作集进行严丝合缝的机器物理断言
         var passCount = 0
         var failCount = 0
+        var testCount = 0
         
         func runTest(name: String, actionId: String, targets: [URL], assertion: () -> Bool) {
+            testCount += 1
             print("\n------------------------------------------------------------------------------")
             print("▶️ [Verifier] 测试项: \(name) [ID: \(actionId)]")
             
             // A. 写入独立 UUID 队列事件，避免连续测试覆盖
             let actionData: [String: Any] = [
+                "schemaVersion": 2,
                 "id": UUID().uuidString,
                 "createdAt": Date().timeIntervalSince1970,
                 "actionId": actionId,
-                "paths": targets.map { $0.path }
+                "paths": targets.map { $0.path },
+                "invocationKind": "items"
             ]
             
             guard let jsonData = try? JSONSerialization.data(withJSONObject: actionData, options: .prettyPrinted) else {
@@ -92,10 +121,12 @@ struct ActionVerifier {
             
             // 手动仿真第二次
             let secondAction: [String: Any] = [
+                "schemaVersion": 2,
                 "id": UUID().uuidString,
                 "createdAt": Date().timeIntervalSince1970,
                 "actionId": "guyue.action.newfile.md",
-                "paths": [testDirURL.path]
+                "paths": [testDirURL.path],
+                "invocationKind": "items"
             ]
             if let secondData = try? JSONSerialization.data(withJSONObject: secondAction, options: []) {
                 let secondURL = pendingActionsDirectoryURL.appendingPathComponent("\(Int64(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString).json")
@@ -155,17 +186,15 @@ struct ActionVerifier {
         try? "Antigravity Verification 2026".data(using: .utf8)?.write(to: hashTestFile)
         
         runTest(name: "物理计算 MD5 码并写入剪切板", actionId: "guyue.action.utility.calculateMD5", targets: [hashTestFile]) {
-            // "Antigravity Verification 2026" 的标准 MD5 应该是 d1b1062b9a764d262eb40fdb9b3924bf (小写)
-            // 宿主程序处理完后，剪切板里应该是这个哈希字符串
             let clipStr = NSPasteboard.general.string(forType: .string) ?? ""
             print("ℹ️ [Verifier] 剪贴板 MD5 结果: \(clipStr)")
-            return clipStr.count == 32 // 满足 MD5 字符位数
+            return clipStr == "6f6b4a05c9f02fd24430a09bc98e7759"
         }
         
         runTest(name: "物理计算 SHA256 码并写入剪切板", actionId: "guyue.action.utility.calculateSHA256", targets: [hashTestFile]) {
             let clipStr = NSPasteboard.general.string(forType: .string) ?? ""
             print("ℹ️ [Verifier] 剪贴板 SHA256 结果: \(clipStr)")
-            return clipStr.count == 64 // 满足 SHA256 字符位数
+            return clipStr == "c6af35fd81aaf5c475cbe8dc51795fe0e0ba6eb6304b9234df430aa4c102305e"
         }
         
         let pngFile = testDirURL.appendingPathComponent("convert_source.png")
@@ -186,8 +215,8 @@ struct ActionVerifier {
         
         print("==============================================================================")
         print("📊 [Verifier] 物理自检结束！")
-        print("🟢 通过项: \(passCount) / 10")
-        print("🔴 失败项: \(failCount) / 10")
+        print("🟢 通过项: \(passCount) / \(testCount)")
+        print("🔴 失败项: \(failCount) / \(testCount)")
         print("==============================================================================")
         
         if failCount > 0 {

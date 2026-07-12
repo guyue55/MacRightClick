@@ -2,6 +2,8 @@ import Foundation
 import AppKit
 import CryptoKit
 import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
 
 // MARK: - 二维码面板生命周期持有者
 /// 文件作用域强引用：QRCodePanelController 内部的 NSPanel 不会被 UI 框架自动持有，
@@ -389,13 +391,9 @@ public final class DefaultImageConverter: ImageConverterProtocol {
             return .failure(NSError(domain: "guyue.ImageConverter", code: 400, userInfo: [NSLocalizedDescriptionKey: "不支持的目标转换格式：\(format)"]))
         }
         
-        guard let nsImage = NSImage(contentsOf: url) else {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              CGImageSourceGetCount(source) > 0 else {
             return .failure(NSError(domain: "guyue.ImageConverter", code: 404, userInfo: [NSLocalizedDescriptionKey: "无法读取或解析输入图片文件"]))
-        }
-        
-        guard let tiffData = nsImage.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData) else {
-            return .failure(NSError(domain: "guyue.ImageConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "无法提取图片的 Bitmap 表达"]))
         }
         
         let destExt = normalizedFormat == "png" ? "png" : "jpg"
@@ -411,23 +409,26 @@ public final class DefaultImageConverter: ImageConverterProtocol {
             counter += 1
         }
         
-        do {
-            let outData: Data?
-            if normalizedFormat == "png" {
-                outData = bitmap.representation(using: .png, properties: [:])
-            } else {
-                outData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
-            }
-            
-            guard let finalData = outData else {
-                return .failure(NSError(domain: "guyue.ImageConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "生成目标图像二进制数据失败"]))
-            }
-            
-            try finalData.write(to: finalDestURL)
-            return .success(finalDestURL)
-        } catch {
-            return .failure(error)
+        let destinationType = normalizedFormat == "png" ? UTType.png : UTType.jpeg
+        guard let destination = CGImageDestinationCreateWithURL(
+            finalDestURL as CFURL,
+            destinationType.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return .failure(NSError(domain: "guyue.ImageConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "无法创建目标图像编码器"]))
         }
+
+        let properties: CFDictionary? = normalizedFormat == "png"
+            ? nil
+            : [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary
+        CGImageDestinationAddImageFromSource(destination, source, 0, properties)
+
+        guard CGImageDestinationFinalize(destination) else {
+            try? FileManager.default.removeItem(at: finalDestURL)
+            return .failure(NSError(domain: "guyue.ImageConverter", code: 500, userInfo: [NSLocalizedDescriptionKey: "生成目标图像文件失败"]))
+        }
+        return .success(finalDestURL)
     }
 }
 

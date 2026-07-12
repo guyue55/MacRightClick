@@ -1,131 +1,108 @@
-# 🍏 MacRightClick — 开源 macOS 右键助手
+# MacRightClick
 
-[English Version](README_EN.md) | [中文版](README.md)
+[English](README_EN.md) | 简体中文
 
 <p align="center">
-  <img src="Resources/AppIcon.png" width="128" height="128" alt="MacRightClick Logo" />
+  <img src="Resources/AppIcon.png" width="128" height="128" alt="MacRightClick 图标" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/guyue55/MacRightClick/actions"><img src="https://github.com/guyue55/MacRightClick/workflows/MacRightClick%20CI/CD%20Build/badge.svg" alt="CI/CD Build Status" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%2013.0%2B-blue.svg" alt="Platform macOS 13.0+" />
-  <img src="https://img.shields.io/badge/Swift-6.0-orange.svg" alt="Swift 6.0" />
-  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License MIT" />
+  <a href="https://github.com/guyue55/MacRightClick/actions"><img src="https://github.com/guyue55/MacRightClick/workflows/MacRightClick%20CI/CD%20Build/badge.svg" alt="CI 状态" /></a>
+  <img src="https://img.shields.io/badge/macOS-13.0%2B-blue" alt="macOS 13.0+" />
+  <img src="https://img.shields.io/badge/Swift-6.0-orange" alt="Swift 6.0" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
 </p>
 
----
+MacRightClick 是一款免费、开源的 macOS Finder 右键菜单助手。当前源码注册 **30 个动作**，默认把已启用且适用于当前选中项的动作直接显示在一级菜单中；也可切换为分类子菜单。
 
-## 🌟 项目简介
+项目由 FinderSync 扩展负责菜单与上下文采集，宿主 App 负责文件操作、交互与后台任务。它不包含广告、遥测或后台更新轮询。
 
-**MacRightClick** 是一款专为 macOS 设计的免费开源**右键上下文菜单（Context Menu）增强助手**。它支持 28 种日常右键操作，包括新建多种格式文档、打开终端或编辑器、提取文件哈希、生成二维码、图片格式转换等。项目采用 **“分布式信号 + BSD kqueue (DispatchSource)”** 的队列化分发机制，兼顾 FinderSync 扩展、站外分发和本地开发调试场景。
+## 界面
 
----
-
-## ✨ 核心特性
-
-- 🚀 **队列化动作消费**：右键点击会写入独立 UUID 事件文件，宿主 App 按顺序消费，避免连续点击覆盖单个 pending 文件。
-- 🧭 **一级菜单直接展示**：默认将已启用且当前可用的动作直接铺在 Finder 右键一级菜单中，收藏动作置顶；也可切回按分类显示的二级菜单模式。
-- 🧩 **外部工具安装与更新**：在「高级 -> 外部工具」中检测 Homebrew，并可直接通过 `brew install --cask` / `brew upgrade --cask` 安装或更新 iTerm2、Warp、VS Code、Sublime Text、Cursor 等可选终端/编辑器。
-- 🔒 **清晰的共享通道**：当前官网分发路线使用扩展沙盒中介目录保持 Ad-hoc 与 Developer ID 环境路径一致；通过队列化数据中介与双通道信号机制，规避强沙盒下 DistributedNotification `userInfo` 被剥离的问题。若未来切换 Mac App Store，应改为正式 App Group 与 security-scoped access。
-- 🎨 **非阻塞磨砂玻璃 HUD**：彻底弃用传统的同步阻塞弹窗，独创实现了带有原生 macOS 磨砂玻璃、圆角卡片、淡入淡出微动画、2.5 秒自动关闭的非模态 `NSPanel` 浮动通知面板（HUD），不强占系统焦点，体验极其优雅。
-- 🦁 **现代 SMAppService 登录项自启**：依托 macOS 13+ `SMAppService` API 注册登录项。用户可在系统的“系统设置 -> 通用 -> 登录项”中管理。
-- ✂️ **访达已剪切文件原生状态角标**：原生利用 `FIFinderSyncController` 的 Badging 功能，为处于“已剪切”挂起状态下的文件、文件夹渲染精致的剪刀角标。且结合分布式通知信号触发 Finder 秒级重绘，彻底解决以往用户“不知道是否成功剪切”的交互痛点。
-- 🔋 **系统托盘与 Dock 无缝转换**：支持退入系统托盘常驻运行。偏好设置红叉拦截，在退出时隐藏 Dock 栏并将 AppKit 策略调整为 `.accessory` 以达到极轻量常驻；点击托盘时重新挂载为 `.regular` 并置顶，保障高贵的苹果原生手感。
-- 🖥️ **Universal 2 双架构支持**：支持 Apple Silicon (M1/M2/M3/M4) 与 Intel (x86_64) 双架构编译。
-
----
-
-## 🖼️ 界面预览
-
-| Finder 一级右键菜单 | 动作配置与菜单展示模式 |
+| Finder 一级菜单 | 动作与档案 |
 | :---: | :---: |
-| <img src="docs/screenshots/finder-context-menu.png" width="420" alt="Finder 右键菜单直接显示动作" /> | <img src="docs/screenshots/settings-actions.png" width="420" alt="动作配置与右键菜单展示模式" /> |
+| <img src="docs/screenshots/finder-context-menu.png" width="420" alt="Finder 一级右键菜单" /> | <img src="docs/screenshots/settings-actions.png" width="420" alt="动作搜索、档案和菜单布局" /> |
 
-| 权限与作用范围 | 诊断与日志 |
+| Finder 与权限 | 健康诊断 |
 | :---: | :---: |
-| <img src="docs/screenshots/settings-permissions.png" width="420" alt="完全磁盘访问权限、云同步盘兼容与右键菜单作用范围" /> | <img src="docs/screenshots/settings-diagnostics.png" width="420" alt="Finder 扩展诊断与日志工具" /> |
+| <img src="docs/screenshots/settings-permissions.png" width="420" alt="Finder 扩展、作用范围和文件访问" /> | <img src="docs/screenshots/settings-diagnostics.png" width="420" alt="右键菜单健康诊断" /> |
 
----
+| 高级与外部工具 | 深色模式 |
+| :---: | :---: |
+| <img src="docs/screenshots/settings-advanced.png" width="420" alt="高级动作和 Homebrew 外部工具" /> | <img src="docs/screenshots/settings-dark.png" width="420" alt="深色模式设置窗口" /> |
 
-## 🛠️ 功能矩阵 (28 大核心动作)
+## 主要能力
 
-| 📂 新建文件类 | 📝 文件管理类 | 💻 终端与编辑器 | 🧰 实用小工具 |
-| :--- | :--- | :--- | :--- |
-| - 新建 `.txt` 文本文档<br>- 新建 `.md` Markdown 文档<br>- 新建 `.json` 数据包<br>- 新建 `.csv` 数据表格<br>- 新建 `.html` 网页文档<br>- 新建 `.docx` Word 骨架<br>- 新建 `.xlsx` Excel 骨架<br>- 新建 `.pptx` PowerPoint 骨架<br>- 新建 `.pdf` PDF 骨架 | - 剪切文件 (Cut)<br>- 粘贴文件 (Paste)<br>- 永久删除（高级，默认关闭）<br>- 拷贝文件完整路径<br>- 拷贝文件名<br>- 复制到...（高级，默认关闭）<br>- 移动到...（高级，默认关闭） | - 在当前目录打开终端 (Terminal)<br>- 在当前目录打开 iTerm2<br>- 在当前目录打开 Warp<br>- 用 VSCode 打开目标<br>- 用 Sublime Text 打开目标<br>- 用 Cursor 打开目标 | - 提取文件 MD5 校验码<br>- 提取文件 SHA256 校验码<br>- 切换系统隐藏文件显示状态（高级，默认关闭）<br>- 从剪贴板生成二维码窗口<br>- 转换为 PNG 格式图片<br>- 转换为 JPEG 格式图片 |
+- **30 个内置动作**：新建文件、剪切粘贴、路径复制、终端/编辑器、哈希、二维码和图片转换。
+- **一级菜单默认开启**：收藏动作置顶但不额外拉开大段间距；可切换分类菜单。
+- **动作档案**：精简、专业、自定义三档；高级动作不会被档案批量开启。
+- **快速检索**：按标题、动作 ID、分类和状态筛选。
+- **全目录或自定义范围**：默认覆盖 Finder 常用目录、系统根目录和外接卷；可收窄到自定义目录。
+- **健康诊断**：分别展示菜单服务、完全磁盘访问和动作队列，并只推荐一个优先修复动作。
+- **可靠动作队列**：Pending -> InFlight -> 终态确认；宿主异常退出后可回收未完成租约。
+- **显式更新检查**：只有点击“检查更新”才访问 GitHub Release API。
+- **Homebrew 外部工具**：用户点击后可安装或更新 iTerm2、Warp、VS Code、Sublime Text、Cursor。
+- **Universal 2**：同时支持 Apple Silicon 与 Intel Mac。
+
+## 30 个动作
+
+| 类别 | 数量 | 动作 |
+| --- | ---: | --- |
+| 新建文件 | 9 | `.txt`、`.md`、`.json`、`.csv`、`.html`、`.docx`、`.xlsx`、`.pptx`、`.pdf` |
+| 文件管理 | 9 | 剪切、粘贴、彻底删除、拷贝完整路径、拷贝文件名、复制到、移动到、复制 Shell 安全路径、复制 Git 相对路径 |
+| 终端/编辑器 | 6 | Terminal、iTerm2、Warp、Visual Studio Code、Sublime Text、Cursor |
+| 实用工具 | 6 | MD5、SHA-256、切换隐藏文件、剪贴板文本转二维码、转 PNG、转 JPEG |
 
 > [!NOTE]
-> 这里列的是代码中注册的 28 个核心动作能力。为降低默认菜单噪音和风险，部分动作默认关闭或按上下文动态隐藏：JSON/CSV/HTML/Office 新建项、非系统终端/编辑器、MD5、图片转换以及高级动作可在「动作」页按需开启；终端/编辑器类还会根据本机是否安装对应 App 自动过滤。
-> 如需安装或更新 iTerm2、Warp、VS Code、Sublime Text、Cursor，可在「高级 -> 外部工具」中使用 Homebrew Cask 管理；若尚未安装 Homebrew，App 会提供官网入口与官方安装命令复制，不会擅自执行远程安装脚本。
+> 低频专业动作默认关闭；彻底删除、复制到、移动到、切换隐藏文件属于高级动作，默认关闭并在执行前确认。依赖第三方 App 的动作只会在对应 App 已安装时出现在菜单中。
 
----
-
-## 📐 穿透分发架构
-
-MacRightClick 采用集中式**数据通道隔离抽象层**：上层 Action 逻辑、SwiftUI 界面和 Finder 访达交互由 `SharedStorageManager` 托管，底层负责队列事件、配置文件和共享日志。
+## 架构
 
 ```mermaid
-sequenceDiagram
-    participant User as 用户右键菜单 (Finder)
-    participant FS as FinderSync 插件 (沙盒)
-    participant SC as 中介共享物理文件夹 (/Library/Containers/guyue.RightClickAssistant.Extension/Data)
-    participant Host as 主程序 MacRightClick (AppMain 事件循环)
-    
-    Note over Host: static func main() -> AppMain 入口启动
-    Note over Host: 静态持有 AppDelegate 实例 & 唤醒生命周期！
-    
-    User->>FS: 右键点击 "新建 文本文件 (.txt)"
-    Note over FS: actionMenuItemSelected 回调
-    FS->>SC: 1. 物理写入中介 PendingActions/{timestamp}-{uuid}.json
-    FS->>SC: 2. 通过 OSLog 写入 subsystem=guyue.RightClickAssistant（category=ext / storage）
-    FS->>Host: 3. 发送 DistributedNotification (guyue.RightClickAssistant.triggerActionSignal) 纯空信号 (双保险 1)
-    SC-->>Host: 4. 触发 BSD kqueue 内核事件 (双保险 2: 0.001ms 瞬时直达)
-    
-    Note over Host: 双保险任意一路触发专用串行消费队列
-    Note over Host: os_unfair_lock_trylock 防止重入消费
-    
-    Host->>SC: 5. 按创建时间消费队列中的所有 JSON 事件
-    Host->>SC: 6. 物理删除已消费事件文件 (单次高安全性消费)
-    
-    Host->>Host: 7. ActionDispatcher.shared.dispatch(业务分发；交互/后台动作由 Runner 接管)
-    Host-->>User: 8. 在用户目标下秒级诞生 "未命名.txt"！
+flowchart LR
+    F[Finder / FinderSync] -->|schema v2 事件| P[PendingActions]
+    P -->|原子租约| I[InFlightActions]
+    I --> H[Host ActionDispatcher]
+    H --> R[交互或后台 Runner]
+    R -->|成功 / 失败 / 取消| A[确认并删除租约]
+    I -->|进程异常退出| P
+    H --> D[FailedActions / OSLog 诊断]
 ```
 
----
+- `DefaultActionRegistry` 是 Host、FinderSync、设置页和测试的动作真相源。
+- Finder 菜单渲染路径不执行网络请求、外部命令或大文件处理。
+- 官网分发路线通过扩展容器目录交换配置和事件；FinderSync 保持沙盒化。
+- 配置批量变更采用单次原子提交，FinderSync 通过通知刷新进程内缓存。
 
-## ⚡ 快速开始与下载
+### 权限边界
 
-### 📥 官方发布版下载
+**完全磁盘访问不决定右键菜单是否出现。**
 
-推荐下载 **Universal 2 双架构 (Apple Silicon + Intel x86_64)** 磁盘映像包。正式发布版应使用 Developer ID 签名、Hardened Runtime、Apple notarization 与 stapler 附票；本地开发版仍可使用 Ad-hoc 签名调试。
+- Finder 扩展注册、启用状态和监听范围决定菜单能否出现。
+- 完全磁盘访问只影响部分受保护目录中的文件读写。
+- 刚授权后，旧进程可能仍持有授权前状态。App 会在重新检测时提供“重新打开并重启 Finder”的修复入口。
 
-| 📦 格式 | 下载链接 | 适用场景 & 特性 |
-| :--- | :--- | :--- |
-| **磁盘映像 (DMG)** | [下载最新 RightClickAssistant-Latest.dmg](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg) | 推荐。拖拽即可安装，适合常规使用。 |
-| **绿色压缩包 (ZIP)** | [下载最新 RightClickAssistant-Latest.zip](https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.zip) | 解压即可运行，适合测试或临时使用。 |
+## 安装
 
-> [!TIP]
-> 📌 **所有历史版本与更新日志**：您可以随时访问 [GitHub Releases 页面](https://github.com/guyue55/MacRightClick/releases) 查阅所有的历史发布版本、多架构安装包以及详尽的 Release Note 演进过程。
+### GitHub Release
 
-### 🍺 Homebrew 安装
+仓库当前开发版本为 **1.2.0**。尚未创建 v1.2.0 正式标签前，线上稳定制品和 Cask 仍指向 **v1.1.1**：
 
-当前仓库已提供 Homebrew Cask 文件，可用 Homebrew 安装 latest DMG。
+| 格式 | 当前稳定制品 |
+| --- | --- |
+| DMG | [RightClickAssistant-v1.1.1-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.dmg) |
+| ZIP | [RightClickAssistant-v1.1.1-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.zip) |
 
-如果你已经克隆了本仓库，可直接把本地仓库作为 tap 安装：
+全部版本见 [GitHub Releases](https://github.com/guyue55/MacRightClick/releases)。
 
-```bash
-cd /path/to/MacRightClick
-brew tap guyue55/macrightclick "$(pwd)"
-brew install --cask rightclickassistant
-```
-
-推送到 GitHub 后，普通用户可把远程仓库作为 tap 安装：
+### Homebrew Cask
 
 ```bash
 brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
 brew install --cask rightclickassistant
 ```
 
-更新到最新发布包：
+当前 Cask 固定到 v1.1.1 的不可变 URL，并校验真实 SHA-256。`brew upgrade` 只会在仓库中的 Cask 版本和哈希更新后升级，不会绕过版本元数据追随可变 Latest 文件。
 
 ```bash
 brew update
@@ -136,26 +113,74 @@ brew upgrade --cask rightclickassistant
 
 ```bash
 brew uninstall --cask rightclickassistant
-```
-
-如果需要移除 tap：
-
-```bash
 brew untap guyue55/macrightclick
 ```
 
-如果未来迁移到标准独立 tap（推荐仓库名：`homebrew-macrightclick`），可省略 URL：
+已克隆仓库时，也可以把当前目录作为本地 tap：
 
 ```bash
-brew tap guyue55/macrightclick
+brew tap guyue55/macrightclick "$(pwd)"
 brew install --cask rightclickassistant
 ```
 
----
+## 首次运行
 
-### 🚢 分发路线
+1. 将 `RightClickAssistant.app` 放入 `/Applications` 并打开。
+2. 在“Finder”页注册并启用扩展；必要时打开系统扩展设置。
+3. 保持“作用范围”为“所有目录”，或选择“仅自定义目录”并添加目录。
+4. 需要访问受保护目录时，再授予完全磁盘访问。
+5. 在“动作”页选择档案、收藏和菜单布局。
 
-当前项目主路线是 **官网 / GitHub Releases 站外分发**。正式发布时使用：
+手动注册扩展：
+
+```bash
+pluginkit -a /Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
+pluginkit -e use -i guyue.RightClickAssistant.Extension
+killall Finder
+```
+
+本地构建目录：
+
+```bash
+pluginkit -a "$(pwd)/build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex"
+pluginkit -e use -i guyue.RightClickAssistant.Extension
+killall Finder
+```
+
+## 构建与验证
+
+本地开发构建使用 Ad-hoc 签名：
+
+```bash
+./Scripts/build.sh
+```
+
+产物：
+
+- `build/RightClickAssistant.app`
+- `build/RightClickAssistant.zip`
+- `build/RightClickAssistant.dmg`
+- `ActionVerifier_bin`
+
+基础验证：
+
+```bash
+swift test
+bash Tests/CaskStructureTests.sh
+./Scripts/validate_cask.sh
+./Scripts/build.sh
+codesign --verify --deep --strict --verbose=2 build/RightClickAssistant.app
+hdiutil verify build/RightClickAssistant.dmg
+```
+
+`ActionVerifier_bin` 验证 10 项关键链路，并不代表逐一验证全部 30 个动作。运行前请在“动作”页应用“专业”档案：
+
+```bash
+./ActionVerifier_bin
+```
+
+正式标签发布必须提供 Developer ID 与公证凭据：
+
 ```bash
 DISTRIBUTION_ROUTE=website-release \
 DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" \
@@ -163,167 +188,65 @@ NOTARY_PROFILE="your-notarytool-profile" \
 ./Scripts/build.sh
 ```
 
-这条路线会启用 Developer ID 签名、Hardened Runtime、notarytool 提交、公证完成后对 `.app` 与 `.dmg` 执行 `stapler staple`。
+CI 的标签发布任务在缺少证书或公证凭据时会失败，不会降级发布 Ad-hoc 制品。
 
-Mac App Store 不是当前默认路线。若未来切换到 Mac App Store，请先阅读 [Mac App Store 架构迁移文档](docs/distribution/mac-app-store-architecture.md)，其中详细列出了 App Sandbox、App Group、security-scoped bookmarks 等必备前提。
+## 外部工具
 
-### 🛠️ 1. 本地自动化编译
-根目录下配备了标准的 Universal 2 多架构极速编译打包工具：
-```bash
-./Scripts/build.sh
-```
-编译完成后，制品将保存在 `build/` 目录下：
-* 📍 宿主应用路径: `build/RightClickAssistant.app`
-* 📦 分发 Zip 包路径: `build/RightClickAssistant.zip`
-
-### 2. 本机自检
-项目包含本机验证工具。您可以通过以下命令执行编译、卸载旧包、部署、拉起进程并运行核心断言测试：
-```bash
-./Scripts/build.sh && ./Scripts/uninstall.sh && cp -R build/RightClickAssistant.app /Applications/ && open /Applications/RightClickAssistant.app && sleep 5 && ./ActionVerifier_bin
-```
-**自检输出报告**：
-```text
-==============================================================================
-📊 [Verifier] 物理自检结束！
-🟢 通过项: 10 / 10
-🔴 失败项: 0 / 10
-==============================================================================
-✅ [Verifier] 验证通过：多进程动作队列、生命周期与核心 Action 逻辑符合预期。
-```
-
-### 3. 卸载
-自检完成后，您可以运行内置卸载脚本，注销 Finder 扩展、清理沙盒缓存，并重启 Finder 释放扩展会话：
-```bash
-./Scripts/uninstall.sh
-```
-
----
-
-## ⚠️ 安装运行排阻与常见问题 (Q&A)
-
-由于本开源项目在本地使用 Ad-Hoc 临时自签名编译（未向苹果公司缴纳年费购买商业开发者证书并进行官方公证 Notarization），其他用户在下载并安装、运行此软件时，可能会遇到 macOS 系统级安全防御拦截。请按照以下步骤轻松排除：
-
-### Q1: 双击运行时提示“应用已损坏，打不开”或“无法验证开发者”？
-* **原因**：macOS Gatekeeper 安全机制对非商业证书签名的外来下载软件会自动打上“隔离属性”并拦截运行。
-* **解决办法**：
-  1. 将应用拖入 `/Applications` 文件夹；
-  2. 打开系统的 **终端 (Terminal)** 软件，执行以下命令物理移除隔离标记：
-     ```bash
-     xattr -cr /Applications/RightClickAssistant.app
-     ```
-  3. 重新双击运行应用。
-
-### Q2: 右键菜单在访达 (Finder) 里不显示？或者在“系统设置 -> 扩展”中找不到“右键助手扩展”？
-* **原因**：macOS 默认不会在系统后台自动注册和激活第三方的 FinderSync 插件。特别是在本地编译、或者是从浏览器下载但未将其移动到 `/Applications` 文件夹、以及存在 Gatekeeper 隔离标记时，系统的 `pluginkit` 守护进程会漏掉扫描注册。
-* **解决办法（极简智能推荐）**：
-  * **主程序引导**：主程序会读取当前 macOS 系统版本，并在主界面中显示对应的扩展启用步骤与系统设置入口。点击概览页橙色的「一键注册扩展」按钮，App 会自动执行 `pluginkit -a` 注册 + `pluginkit -e use` 启用 + `killall Finder` 重启访达三步，无需再去系统设置里手动勾选。
-  * **终端手动注册**：
-    若您在扩展页面中找不到“右键助手”，请打开 Mac 的 **终端 (Terminal.app)**，依次执行以下注册并启用命令（注册和启用是两步，缺一不可）：
-    * **场景 A：如果您已将 App 安装在 `/Applications`（推荐）**：
-      ```bash
-      pluginkit -a /Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
-      pluginkit -e use -i guyue.RightClickAssistant.Extension
-      ```
-    * **场景 B：如果您是在克隆的源码目录本地编译**：
-      ```bash
-      pluginkit -a \$(pwd)/build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex
-      pluginkit -e use -i guyue.RightClickAssistant.Extension
-      ```
-    注册并启用后，执行 `killall Finder` 重启访达即可生效。
-  * **手动备用步骤**：
-    1. 打开 Mac 的 **系统设置 (System Settings)**；
-    2. 依次进入：**隐私与安全性 (Privacy & Security) -> 扩展 (Extensions)**；
-    3. 双击点击 **访达 (Finder)** 选项；
-    4. 找到 **“右键助手扩展”**，手动将其**勾选勾亮**开启服务；
-    5. 若尚未显示，可右键点开一个 Finder 窗口，或在终端执行 `killall Finder` 重启访达。
-
-### Q3: 主程序没有界面时，右键增强菜单还生效吗？
-* **原因**：MacRightClick 的架构属于“**双通道多进程沙盒穿透分发**”架构。Finder 菜单负责展示，真正的业务（如新建 Word 骨架、计算哈希等高特权文件读写）是由主 App 在后台常驻处理的。
-* **解决办法**：
-  * 主 App 在刚拉起时，已通过 `ProcessInfo.beginActivity` 申请了**系统级高优保活豁免**，确保不被 macOS App Nap 机制挂起和冻结；
-  * 主 App 支持点击红叉后隐藏到系统菜单栏，并在设置界面支持“开机自启动”（基于 macOS `SMAppService` 机制）。如果你希望右键服务随登录启动，可以开启此项。
-
-### Q4: 怎么查看运行日志？
-* **新版（推荐）**：日志统一走 OSLog，不再写文件。在终端运行：
-
-  ```bash
-  log show --predicate 'subsystem == "guyue.RightClickAssistant"' --last 5m --info
-  ```
-
-  或在「主控制台」(`Console.app`) 中按 `subsystem == "guyue.RightClickAssistant"` 过滤。可用 category 包括 `host` / `ext` / `storage` / `action` / `ui`。
-* **旧版兼容**：早期版本曾把日志追加到 `~/Library/Containers/<extBundle>/Data/Library/Logs/extension.log`。本版本起该文件不再被追加；如本机仍存在旧文件，可在「设置 → 诊断」点「导出旧日志（如有）」一键定位。
-* **详细调试日志**：默认关闭。在「设置 → 诊断 → 启用详细调试日志」打开后，会让 `.debug` 级别走 OSLog 记录菜单渲染、路径监听等细节。
-
-### Q5: 能否直接安装或更新右键菜单依赖的外部工具？
-可以。进入「设置 -> 高级 -> 外部工具」，App 会检测常见 Homebrew 路径：
+“高级 -> 外部工具”会检测：
 
 ```text
 /opt/homebrew/bin/brew
 /usr/local/bin/brew
 ```
 
-检测到 `brew` 后，可直接安装或更新终端/编辑器类右键动作使用的可选工具：iTerm2、Warp、Visual Studio Code、Sublime Text、Cursor。执行命令采用 Homebrew Cask：
+用户点击安装或更新后，App 才会在后台运行 `brew install --cask` 或 `brew upgrade --cask`。未检测到 Homebrew 时，只提供官网入口和官方安装命令复制，不会自动执行远程脚本。
+
+## 隐私与日志
+
+- 无广告、无遥测、无后台更新轮询。
+- 更新检查只向 GitHub Latest Release API 发送用户主动发起的请求。
+- 详细调试日志默认关闭；开启后可能包含菜单渲染和路径监听信息。
+- 日志统一写入 OSLog，不再持续追加 `extension.log`。
 
 ```bash
-brew install --cask visual-studio-code
-brew upgrade --cask iterm2
+log show --predicate 'subsystem == "guyue.RightClickAssistant"' --last 5m --info
 ```
 
-如果未检测到 Homebrew，App 只提供打开 Homebrew 官网和复制官方安装命令的入口，避免未经用户确认直接执行远程脚本。
+也可以在 `Console.app` 中使用：
 
-### 隐私与安全
+```text
+subsystem == "guyue.RightClickAssistant"
+```
 
-- 项目不包含广告，也不会主动收集或上传使用数据。
-- 详细调试日志默认关闭。开启后，日志可能包含菜单渲染、路径监听和动作过滤信息，请仅在排查问题时使用。
-- 高风险动作（永久删除、跨目录复制/移动、切换隐藏文件）默认关闭，并在执行前显示确认。
-- 外部工具安装/更新仅在用户点击按钮后执行本机 Homebrew 命令；不会自动安装 Homebrew，也不会后台静默安装第三方 App。
-- 正式站外发布版应使用 Developer ID、Hardened Runtime、Apple notarization，并对 `.app` 与 `.dmg` 执行 stapler 附票。
+## 常见问题
 
----
+### 已授予完全磁盘访问，为什么仍显示未授权？
 
-## 📜 更新日志
+先回到“Finder”页点击重新检测。若仍未刷新，使用页面提供的“重新打开并重启 Finder”；TCC 授权状态可能需要相关进程重新启动后才会更新。
 
-### v1.1.1 (2026-06-18)
+### 为什么其他路径没有右键菜单？
 
-- **fix(permissions)**: 重构完全磁盘访问权限检测逻辑，降低已授权后仍显示未授权的误判概率。
-- **fix(menu)**: 优化扁平化右键菜单中收藏动作与普通动作之间的间隔。
-- **docs(readme)**: 新增真实软件截图，并同步英文 README。
+在“Finder”页确认：扩展已启用、作用范围为“所有目录”、诊断页收到最近心跳且监听入口大于 0。菜单是否出现与完全磁盘访问是两个独立状态。
 
-### v1.1.0 (2026-06-18)
+### 如何清理失败动作？
 
-- **feat(menu)**: 新增默认开启的一级菜单直接展示模式，已启用且当前可用的动作会直接出现在 Finder 右键一级菜单中。
-- **feat(menu)**: 保留分类显示模式，用户可在「动作」页切换。
-- **core**: 新增 renderer-neutral 的 `MenuLayout` 布局引擎和菜单布局单元测试。
+“诊断”页会显示待处理、最久等待和失败计数。确认不再需要失败事件后，点击“清空失败动作”。
 
-### v1.0.2 (2026-06-18)
+### 本地 Ad-hoc 构建被 Gatekeeper 拦截怎么办？
 
-- **icon**: 更新应用图标资源与发布制品版本。
+优先使用正式签名并公证的发布包。本地自编译且确认源码可信时，可移除自己构建产物的隔离属性：
 
-### v1.0.1 (2026-06-16)
+```bash
+xattr -cr /Applications/RightClickAssistant.app
+```
 
-- **fix(ext)**: 「一键注册扩展」现在自动执行 `pluginkit -a` 注册 + `pluginkit -e use` 启用 + `killall Finder` 重启访达三步，不再仅注册不生效。
-- **fix(ux)**: 「一键注册扩展」按钮颜色统一为橙色，与未激活态 warning 基调一致，消除文本与实际颜色不一致的 bug。
-- **fix(host)**: `processPendingAction` 异步化 + Distribution 路线感知 UserDefaults 路由，斩断启动期 `cfprefsd` 死锁。
-- **fix(storage)**: PendingAction 改 lease/ack/reclaim 三件套，进程崩溃不丢事件。
-- **fix(filemanage)**: paste 走 `BackgroundActionRunner`，跨盘大文件不再阻塞 folder-monitor 队列；彻底删除走 `DeletionRequestCoordinator`，斩断死锁链。
-- **fix(interactive)**: moveTo/copyTo/toggleHidden 走 `InteractiveActionRunner`，斩断 P0-1/P0-2 死锁。
-- **fix(host+ext)**: statusItem 兜底 + FinderSync 启动时自愈拉起主 App。
-- **fix(ci)**: hdiutil create 加 detach 清理 + 重试，消除 CI DMG 打包 Resource busy 竞态。
-- **feat(ux)**: 右键菜单作用范围默认 `.everywhere`，新增 WatchScope 开关；概览页单一引导入口；高级页恢复默认拆两档；权限页改事件驱动。
-- **feat(hud)**: HUD 跟随鼠标所在屏幕，支持点击/Esc 立即关闭。
-- **feat(safety)**: 状态栏托盘移除切换隐藏文件入口，`killall Finder` 改 AppleScript 优雅退出。
-- **feat(filemanage)**: 永久删除走 HIG critical 三按钮，新增移到废纸篓中间档；跨卷 Copy-Then-Delete 事务化。
-- **feat(newfile)**: Office 三件套改读 Bundle Templates 最小骨架，可双击直开。
-- **feat(qr)**: 二维码窗口加保存为 PNG / 拷贝图片按钮，长内容滚动文本预览。
-- **feat(cache)**: 新增 `AppLog` / `Distribution` / `ActionConfigCache` / `InstalledAppRegistry` 四个共享模块，菜单渲染主路径走进程内缓存。
-- **feat(stress)**: 新增 `run_stress.py` / `run_reclaim_stress.py` 真机压测 harness，压测进 CI。
-- **build**: entitlements 外置 + 按 `DISTRIBUTION_ROUTE` 选模板，release/MAS 启用 `-O`。
-- **core**: 全面适配 Swift 6.1 并发安全检查（`@MainActor` / `nonisolated(unsafe)` / `Sendable`）。
+## 文档
 
-完整变更日志见 [CHANGELOG.md](CHANGELOG.md)。已发布版本说明见 [GitHub Releases](https://github.com/guyue55/MacRightClick/releases)。
+- [变更日志](CHANGELOG.md)
+- [Mac App Store 架构迁移](docs/distribution/mac-app-store-architecture.md)
+- [v1.2 设计](docs/superpowers/specs/2026-07-10-v1.2-native-experience-reliability-design.md)
+- [v1.2 实施计划](docs/superpowers/plans/2026-07-10-v1.2-native-experience-reliability.md)
 
----
+## License
 
-## 🛡️ 许可证 (License)
-
-本项目基于 [MIT](LICENSE) 开源许可证。
+[MIT](LICENSE)
