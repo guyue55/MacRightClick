@@ -17,10 +17,15 @@ enum TestStorage {
         testCaseName: String = #function,
         baseDirectory: URL = FileManager.default.temporaryDirectory
     ) throws -> (manager: SharedStorageManager, root: URL) {
-        let candidate = baseDirectory
+        // 先解析已存在的父目录。若先拼接尚不存在的后代，macOS 26 不会稳定展开
+        // 中间 symlink，可能绕过 Library/Containers 的测试隔离守门。
+        let resolvedBaseDirectory = baseDirectory
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let root = resolvedBaseDirectory
             .appendingPathComponent("RightClickAssistantTests")
             .appendingPathComponent("\(testCaseName)-\(UUID().uuidString)", isDirectory: true)
-        let root = candidate.resolvingSymlinksInPath().standardizedFileURL
+            .standardizedFileURL
 
         let components = root.pathComponents
         for index in components.indices.dropLast()
