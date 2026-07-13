@@ -27,7 +27,7 @@
 - **menu**: 默认保持一级平铺，收藏与普通动作连续排列；仍可切换分类子菜单。
 - **registry**: Host、FinderSync、设置页与测试统一使用 `DefaultActionRegistry`，消除重复动作清单。
 - **events**: 动作事件升级为 schema v2，记录选中项/空白区域调用语义，并在 Host 执行前重新校验目标与可用性。
-- **release**: CI 分离只读分支构建与标签发布；标签发布必须使用 Developer ID、Hardened Runtime、公证和 stapler，不再正式发布 Ad-hoc 制品。
+- **release**: CI 分离只读分支构建与标签发布；当前标签会生成明确标记的 Ad-hoc 社区制品、版本化与 Latest 资产、SHA-256 清单，并禁止覆盖已发布版本。
 
 ### Fixed
 
@@ -42,6 +42,7 @@
 ### Documentation
 
 - **readme**: 全文校对中英文 README，更新为 30 个动作、当前下载/Cask 行为、权限边界、显式更新隐私与 v1.2 原生界面截图。
+- **distribution**: 明确 GitHub Release 与 Homebrew Cask 为 Ad-hoc、未经 Apple 公证的社区构建，补充 Gatekeeper 放行、SHA-256 校验、Latest 约定、Homebrew 更新与完全卸载注意事项。
 
 ## v1.1.1 — 2026-06-18
 

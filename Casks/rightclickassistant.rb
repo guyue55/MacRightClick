@@ -29,4 +29,11 @@ cask "rightclickassistant" do
     "~/Library/Group Containers/group.guyue.RightClickAssistant",
     "~/Library/Preferences/guyue.RightClickAssistant.plist",
   ]
+
+  caveats <<~EOS
+    RightClickAssistant is an Ad-hoc signed, not notarized community build.
+    If macOS blocks the first launch, Control-click the app and choose Open,
+    or allow it in System Settings > Privacy & Security. Do not disable
+    Gatekeeper globally.
+  EOS
 end

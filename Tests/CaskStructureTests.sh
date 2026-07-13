@@ -22,6 +22,12 @@ grep -q 'app "RightClickAssistant.app"' "$CASK_FILE" || fail "Cask 必须安装 
 grep -q 'depends_on macos: ">= :ventura"' "$CASK_FILE" || fail "Cask 必须声明 macOS 13+"
 grep -q '/usr/bin/pluginkit' "$CASK_FILE" || fail "Cask 卸载时必须反注册 FinderSync 扩展"
 grep -q 'guyue.RightClickAssistant.Extension' "$CASK_FILE" || fail "Cask 必须包含 FinderSync 扩展 bundle id"
+grep -q 'caveats <<~EOS' "$CASK_FILE" || fail "Cask 必须在安装后说明社区签名状态"
+grep -q 'Ad-hoc signed, not notarized community build' "$CASK_FILE" || fail "Cask 必须披露 Ad-hoc 与未公证状态"
+
+if grep -q 'version :latest\|sha256 :no_check' "$CASK_FILE"; then
+  fail "Cask 必须使用明确版本和真实 SHA-256"
+fi
 
 if grep -q 'curl .*|.*sh' "$CASK_FILE"; then
   fail "Cask 不允许执行远程安装脚本"

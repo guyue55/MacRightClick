@@ -34,7 +34,7 @@ jobs:
       - name: Validate scripts and Cask structure
         run: |
           bash -n Scripts/*.sh
-          bash Tests/CaskStructureTests.sh
+          for test_script in Tests/*StructureTests.sh; do bash "$test_script"; done
           CASK_VERIFY_DOWNLOAD=0 ./Scripts/validate_cask.sh
           python3 -m py_compile Scripts/stress/run_stress.py Scripts/stress/run_reclaim_stress.py
 
@@ -66,20 +66,13 @@ jobs:
           retention-days: 14
 
   release:
-    name: Signed And Notarized Tag Release
+    name: Ad-hoc Community Tag Release
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: macos-latest
     needs: test
     permissions:
       contents: write
     env:
-      DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
-      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -88,48 +81,40 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require signing and notarization credentials
-        run: |
-          for name in DEVELOPER_ID_APPLICATION BUILD_CERTIFICATE_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required release secret: $name" >&2
-              exit 2
-            fi
-          done
-
       - name: Validate tag and version
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: ./Scripts/verify_release_metadata.sh
 
-      - name: Import Developer ID certificate
-        run: |
-          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-
-      - name: Build signed and notarized release
+      - name: Build Ad-hoc community release
         env:
-          DISTRIBUTION_ROUTE: website-release
+          DISTRIBUTION_ROUTE: website-dev
         run: ./Scripts/build.sh
 
-      - name: Verify signatures, tickets and metadata
+      - name: Verify community signature, architectures and metadata
         env:
           TAG_NAME: ${{ github.ref_name }}
+          VERIFY_BUILD_ARTIFACTS: "1"
         run: |
           ./Scripts/verify_release_metadata.sh
           codesign --verify --deep --strict --verbose=2 build/RightClickAssistant.app
-          spctl --assess --type execute --verbose=2 build/RightClickAssistant.app
-          xcrun stapler validate build/RightClickAssistant.app
-          xcrun stapler validate build/RightClickAssistant.dmg
           hdiutil verify build/RightClickAssistant.dmg
+
+          for bundle in \
+            build/RightClickAssistant.app \
+            build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex; do
+            signature_info="$(codesign -dv --verbose=4 "$bundle" 2>&1)"
+            grep -q 'Signature=adhoc' <<<"$signature_info"
+            grep -q 'TeamIdentifier=not set' <<<"$signature_info"
+          done
+
+          for executable in \
+            build/RightClickAssistant.app/Contents/MacOS/RightClickAssistant \
+            build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex/Contents/MacOS/RightClickAssistantExtension; do
+            architectures="$(lipo -archs "$executable")"
+            [[ "$architectures" == *arm64* ]]
+            [[ "$architectures" == *x86_64* ]]
+          done
 
       - name: Prepare immutable and latest release assets
         run: |
@@ -138,22 +123,32 @@ jobs:
           cp build/RightClickAssistant.dmg "build/RightClickAssistant-v${VERSION}-macOS-Universal.dmg"
           cp build/RightClickAssistant.zip build/RightClickAssistant-Latest.zip
           cp build/RightClickAssistant.dmg build/RightClickAssistant-Latest.dmg
+          cat > build/COMMUNITY_BUILD.txt <<EOF
+          Version: ${VERSION}
+          Distribution: Ad-hoc community build
+          Developer ID signed: No
+          Apple notarized: No
+          Architectures: arm64, x86_64
+          Source tag: v${VERSION}
+          EOF
           cd build
-          shasum -a 256 \
+          LC_ALL=C LANG=C shasum -a 256 \
             "RightClickAssistant-v${VERSION}-macOS-Universal.zip" \
             "RightClickAssistant-v${VERSION}-macOS-Universal.dmg" \
             RightClickAssistant-Latest.zip \
-            RightClickAssistant-Latest.dmg > SHA256SUMS
+            RightClickAssistant-Latest.dmg \
+            COMMUNITY_BUILD.txt > SHA256SUMS
 
-      - name: Upload signed workflow artifacts
+      - name: Upload community workflow artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: MacRightClick-${{ github.ref_name }}-signed
+          name: MacRightClick-${{ github.ref_name }}-community
           path: |
             build/RightClickAssistant-v*-macOS-Universal.zip
             build/RightClickAssistant-v*-macOS-Universal.dmg
             build/RightClickAssistant-Latest.zip
             build/RightClickAssistant-Latest.dmg
+            build/COMMUNITY_BUILD.txt
             build/SHA256SUMS
           retention-days: 30
 
@@ -164,14 +159,18 @@ jobs:
             build/RightClickAssistant-v*-macOS-Universal.dmg
             build/RightClickAssistant-Latest.zip
             build/RightClickAssistant-Latest.dmg
+            build/COMMUNITY_BUILD.txt
             build/SHA256SUMS
           )
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${ASSETS[@]}" --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+            echo "Release $GITHUB_REF_NAME already exists; refusing to replace immutable assets." >&2
+            exit 1
           fi
-
-      - name: Remove temporary signing keychain
-        if: ${{ always() }}
-        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+          COMMUNITY_NOTICE=$'> [!WARNING]\n> **Ad-hoc / Not notarized community build.** This free open-source build is not signed with an Apple Developer ID and has not been notarized by Apple. macOS may require Control-click -> Open or approval in System Settings -> Privacy & Security. Homebrew installation does not change this status.\n\n> **Ad-hoc / 未经 Apple 公证的社区构建。** 该免费开源版本未使用 Apple Developer ID 签名，macOS 可能需要通过 Control 点击“打开”，或在“系统设置 -> 隐私与安全性”中手动允许。Homebrew 安装不会改变该状态。'
+          gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" \
+            --verify-tag \
+            --fail-on-no-commits \
+            --generate-notes \
+            --latest \
+            --title "$GITHUB_REF_NAME Community Build" \
+            --notes "$COMMUNITY_NOTICE"

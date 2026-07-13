@@ -84,16 +84,37 @@ flowchart LR
 
 ## 安装
 
+> [!IMPORTANT]
+> **当前发布的是免费开源社区构建。** 安装包使用 Ad-hoc 签名，未使用付费 Apple Developer Program 提供的 Developer ID，也未经 Apple 公证。macOS 因此可能显示“无法验证开发者”或阻止首次打开。这个提示不等于文件已被判定为恶意软件，但也表示用户无法依赖 Apple 的开发者身份和公证结果。Homebrew 安装不会改变这一状态。请只从本仓库 Releases 下载，并按下方“首次运行”步骤手动确认。
+
 ### GitHub Release
 
-仓库当前开发版本为 **1.2.0**。尚未创建 v1.2.0 正式标签前，线上稳定制品和 Cask 仍指向 **v1.1.1**：
+仓库当前代码版本和 Git 标签为 **v1.2.0**，但尚未生成 v1.2.0 可下载制品。当前 GitHub Release 和 Cask 仍指向 **v1.1.1 社区构建**：
 
-| 格式 | 当前稳定制品 |
+| 格式 | 当前可下载制品 |
 | --- | --- |
 | DMG | [RightClickAssistant-v1.1.1-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.dmg) |
 | ZIP | [RightClickAssistant-v1.1.1-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.zip) |
 
 全部版本见 [GitHub Releases](https://github.com/guyue55/MacRightClick/releases)。
+
+### 更新与 Latest
+
+每个稳定标签会同时生成两类资产：
+
+- `RightClickAssistant-vX.Y.Z-macOS-Universal.*`：不可变的版本资产，用于 Homebrew、回滚和 SHA-256 校验。
+- `RightClickAssistant-Latest.*`：始终位于最新稳定 Release 的便利别名，用于手动下载或简单脚本。
+
+Latest 固定入口：
+
+```text
+https://github.com/guyue55/MacRightClick/releases/latest
+https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg
+https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.zip
+```
+
+> [!NOTE]
+> Latest 路径会随新版发布而变化，不适合用作可复现安装源。Homebrew 不使用 Latest 资产，而是通过 `livecheck` 发现版本，然后使用版本化 URL 和真实 SHA-256。
 
 ### Homebrew Cask
 
@@ -104,17 +125,30 @@ brew install --cask rightclickassistant
 
 当前 Cask 固定到 v1.1.1 的不可变 URL，并校验真实 SHA-256。`brew upgrade` 只会在仓库中的 Cask 版本和哈希更新后升级，不会绕过版本元数据追随可变 Latest 文件。
 
+> [!NOTE]
+> Homebrew 会校验下载包的 SHA-256 并安装 App，但不会为 App 补做 Developer ID 签名或 Apple 公证。首次打开时仍可能需要在“隐私与安全性”中手动允许。不建议使用 `--no-quarantine` 绕过这一次用户确认。
+
 ```bash
 brew update
 brew upgrade --cask rightclickassistant
 ```
 
-卸载：
+普通卸载会保留设置和运行数据：
 
 ```bash
 brew uninstall --cask rightclickassistant
 brew untap guyue55/macrightclick
 ```
+
+需要同时删除设置、共享容器和失败动作数据时，使用完全卸载：
+
+```bash
+brew uninstall --cask --zap rightclickassistant
+brew untap guyue55/macrightclick
+```
+
+> [!WARNING]
+> `--zap` 会删除用户配置和动作队列数据，不可恢复。
 
 已克隆仓库时，也可以把当前目录作为本地 tap：
 
@@ -125,11 +159,20 @@ brew install --cask rightclickassistant
 
 ## 首次运行
 
-1. 将 `RightClickAssistant.app` 放入 `/Applications` 并打开。
-2. 在“Finder”页注册并启用扩展；必要时打开系统扩展设置。
-3. 保持“作用范围”为“所有目录”，或选择“仅自定义目录”并添加目录。
-4. 需要访问受保护目录时，再授予完全磁盘访问。
-5. 在“动作”页选择档案、收藏和菜单布局。
+1. DMG 用户先将 `RightClickAssistant.app` 拖入 `/Applications`；ZIP 用户解压后手动移入该目录。Homebrew 会自动完成这一步。
+2. 在 Finder 中按住 Control 点击 App，选择“打开”并再次确认。若仍被阻止，转到“系统设置 -> 隐私与安全性”，在页面底部点击“仍要打开”。
+3. 只在确认制品来自本仓库且系统界面无法放行时，使用 FAQ 中的精确 `xattr` 命令；不要全局关闭 Gatekeeper。
+4. 打开 App，在“Finder”页注册并启用扩展；必要时打开系统扩展设置。
+5. 保持“作用范围”为“所有目录”，或选择“仅自定义目录”并添加目录。
+6. 需要访问受保护目录时，再授予完全磁盘访问。
+7. 在“动作”页选择档案、收藏和菜单布局。
+
+直接下载 v1.1.1 DMG 时，可与 Cask 中公开的 SHA-256 比对：
+
+```bash
+shasum -a 256 RightClickAssistant-v1.1.1-macOS-Universal.dmg
+# 期望: 6c548dc44b675f0c3d650c1c9179c861b3dbd19817adbc222f488a216cc8776a
+```
 
 手动注册扩展：
 
@@ -149,7 +192,7 @@ killall Finder
 
 ## 构建与验证
 
-本地开发构建使用 Ad-hoc 签名：
+当前社区构建和本地开发构建都使用 Ad-hoc 签名：
 
 ```bash
 ./Scripts/build.sh
@@ -179,7 +222,9 @@ hdiutil verify build/RightClickAssistant.dmg
 ./ActionVerifier_bin
 ```
 
-正式标签发布必须提供 Developer ID 与公证凭据：
+当前推送 `vX.Y.Z` 标签后，CI 会自动构建并发布 Ad-hoc 社区制品，生成版本化 DMG/ZIP、Latest DMG/ZIP、`SHA256SUMS` 和 `COMMUNITY_BUILD.txt`。Release 说明和 Cask 都会显式披露未公证状态，已存在的版本制品不允许原地覆盖。
+
+仓库同时保留了未来的 Developer ID 正式分发路线，但当前没有付费 Apple Developer Program 凭据。只有配置证书和公证凭据后才能手动使用：
 
 ```bash
 DISTRIBUTION_ROUTE=website-release \
@@ -188,7 +233,7 @@ NOTARY_PROFILE="your-notarytool-profile" \
 ./Scripts/build.sh
 ```
 
-CI 的标签发布任务在缺少证书或公证凭据时会失败，不会降级发布 Ad-hoc 制品。
+付费凭据缺失不会阻止明确标记的社区发布，但社区制品不得使用“Apple 已验证”“已公证”或 Developer ID 正式发布等表述。
 
 ## 外部工具
 
@@ -232,13 +277,16 @@ subsystem == "guyue.RightClickAssistant"
 
 “诊断”页会显示待处理、最久等待和失败计数。确认不再需要失败事件后，点击“清空失败动作”。
 
-### 本地 Ad-hoc 构建被 Gatekeeper 拦截怎么办？
+### 社区发布包或本地 Ad-hoc 构建被 Gatekeeper 拦截怎么办？
 
-优先使用正式签名并公证的发布包。本地自编译且确认源码可信时，可移除自己构建产物的隔离属性：
+当前 GitHub Release 与 Cask 制品未经 Apple 公证。先尝试 Control 点击 App -> “打开”，或使用“系统设置 -> 隐私与安全性 -> 仍要打开”。只有在确认 App 来自本仓库后，才对这一个 App 移除 quarantine 属性：
 
 ```bash
-xattr -cr /Applications/RightClickAssistant.app
+xattr -dr com.apple.quarantine /Applications/RightClickAssistant.app
 ```
+
+> [!WARNING]
+> 不要执行 `sudo spctl --master-disable`，不要对 `/Applications` 整个目录运行 `xattr`，也不要对来源不明的 App 使用上述命令。该命令只移除指定 App 的下载隔离标记，不会为它增加签名或公证。
 
 ## 文档
 

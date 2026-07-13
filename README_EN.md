@@ -84,16 +84,37 @@ flowchart LR
 
 ## Installation
 
+> [!IMPORTANT]
+> **Current downloads are free, open-source community builds.** They use an Ad-hoc signature, not a Developer ID from the paid Apple Developer Program, and they are not notarized by Apple. macOS may therefore report that it cannot verify the developer or block the first launch. This warning does not mean the file has been identified as malware, but it also means users cannot rely on an Apple-verified developer identity or notarization result. Installing through Homebrew does not change this status. Download only from this repository's Releases page and explicitly approve the app using the First Run steps below.
+
 ### GitHub Release
 
-The repository development version is **1.2.0**. Until a formal v1.2.0 tag is published, the online stable artifacts and Cask remain at **v1.1.1**:
+The repository code and Git tag are at **v1.2.0**, but no downloadable v1.2.0 artifacts have been produced. The current GitHub Release and Cask remain on the **v1.1.1 community build**:
 
-| Format | Current stable artifact |
+| Format | Current downloadable artifact |
 | --- | --- |
 | DMG | [RightClickAssistant-v1.1.1-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.dmg) |
 | ZIP | [RightClickAssistant-v1.1.1-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.zip) |
 
 See [GitHub Releases](https://github.com/guyue55/MacRightClick/releases) for all versions.
+
+### Updates And Latest
+
+Every stable tag produces two asset classes:
+
+- `RightClickAssistant-vX.Y.Z-macOS-Universal.*`: immutable versioned assets for Homebrew, rollback, and SHA-256 verification.
+- `RightClickAssistant-Latest.*`: convenience aliases attached to the newest stable Release for manual downloads and simple scripts.
+
+Stable Latest entry points:
+
+```text
+https://github.com/guyue55/MacRightClick/releases/latest
+https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.dmg
+https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssistant-Latest.zip
+```
+
+> [!NOTE]
+> Latest paths change when a new version is published and are unsuitable as reproducible installation sources. Homebrew does not use Latest assets. It discovers versions through `livecheck`, then uses a versioned URL and real SHA-256.
 
 ### Homebrew Cask
 
@@ -104,17 +125,30 @@ brew install --cask rightclickassistant
 
 The current Cask is pinned to an immutable v1.1.1 URL with a real SHA-256. `brew upgrade` advances only after this repository updates the Cask version and checksum; it does not bypass version metadata by following a mutable Latest file.
 
+> [!NOTE]
+> Homebrew verifies the download SHA-256 and installs the app, but it cannot add a Developer ID signature or Apple notarization. The first launch may still require manual approval in Privacy & Security. Using `--no-quarantine` to bypass that user confirmation is not recommended.
+
 ```bash
 brew update
 brew upgrade --cask rightclickassistant
 ```
 
-Uninstall:
+A normal uninstall keeps settings and runtime data:
 
 ```bash
 brew uninstall --cask rightclickassistant
 brew untap guyue55/macrightclick
 ```
+
+To also remove settings, shared containers, and failed-action data, perform a full uninstall:
+
+```bash
+brew uninstall --cask --zap rightclickassistant
+brew untap guyue55/macrightclick
+```
+
+> [!WARNING]
+> `--zap` permanently removes user configuration and action-queue data.
 
 For a local checkout, the current directory can be used as a local tap:
 
@@ -125,11 +159,20 @@ brew install --cask rightclickassistant
 
 ## First Run
 
-1. Put `RightClickAssistant.app` in `/Applications` and open it.
-2. Register and enable the extension on the Finder page; open System Settings if needed.
-3. Keep Watch Scope set to Everywhere, or choose Custom Directories and add folders.
-4. Grant Full Disk Access only when protected-location operations require it.
-5. Choose an action profile, favorites, and menu layout on the Actions page.
+1. For a DMG, drag `RightClickAssistant.app` into `/Applications`. For a ZIP, extract it and move it there manually. Homebrew performs this step automatically.
+2. Control-click the app in Finder, choose Open, and confirm again. If macOS still blocks it, open System Settings -> Privacy & Security and choose Open Anyway near the bottom of the page.
+3. Use the precise `xattr` command in the FAQ only when the artifact is confirmed to come from this repository and the system UI cannot approve it. Never disable Gatekeeper globally.
+4. Open the app, then register and enable the extension on the Finder page; open System Settings if needed.
+5. Keep Watch Scope set to Everywhere, or choose Custom Directories and add folders.
+6. Grant Full Disk Access only when protected-location operations require it.
+7. Choose an action profile, favorites, and menu layout on the Actions page.
+
+For a direct v1.1.1 DMG download, compare its SHA-256 with the value published in the Cask:
+
+```bash
+shasum -a 256 RightClickAssistant-v1.1.1-macOS-Universal.dmg
+# Expected: 6c548dc44b675f0c3d650c1c9179c861b3dbd19817adbc222f488a216cc8776a
+```
 
 Manual extension registration:
 
@@ -149,7 +192,7 @@ killall Finder
 
 ## Build And Verification
 
-Local development builds use an Ad-hoc signature:
+Current community artifacts and local development builds both use an Ad-hoc signature:
 
 ```bash
 ./Scripts/build.sh
@@ -179,7 +222,9 @@ hdiutil verify build/RightClickAssistant.dmg
 ./ActionVerifier_bin
 ```
 
-Formal tag releases require Developer ID and notarization credentials:
+Pushing a `vX.Y.Z` tag currently makes CI build and publish an Ad-hoc community release automatically. It creates versioned DMG/ZIP files, Latest DMG/ZIP aliases, `SHA256SUMS`, and `COMMUNITY_BUILD.txt`. Both the Release notes and Cask disclose the non-notarized status, and existing version assets cannot be replaced in place.
+
+The repository also retains a future Developer ID distribution path, but the project currently has no paid Apple Developer Program credentials. It can be used manually only after signing and notarization credentials are configured:
 
 ```bash
 DISTRIBUTION_ROUTE=website-release \
@@ -188,7 +233,7 @@ NOTARY_PROFILE="your-notarytool-profile" \
 ./Scripts/build.sh
 ```
 
-The CI tag-release job fails when signing or notarization credentials are missing. It never falls back to publishing Ad-hoc artifacts as a formal release.
+Missing paid credentials do not block an explicitly labeled community release, but community artifacts must never be described as Apple verified, notarized, or formally distributed with a Developer ID.
 
 ## External Tools
 
@@ -232,13 +277,16 @@ On the Finder page, verify that the extension is enabled and Watch Scope is Ever
 
 Diagnostics shows pending, oldest-wait, and failed counts. After confirming that failed events are no longer needed, click Clear Failed Actions.
 
-### Gatekeeper blocks my local Ad-hoc build
+### Gatekeeper blocks a community release or local Ad-hoc build
 
-Prefer a formally signed and notarized release. For a local build you created from trusted source, remove quarantine from that build only:
+Current GitHub Release and Cask artifacts are not notarized by Apple. First try Control-click -> Open, or System Settings -> Privacy & Security -> Open Anyway. Only after confirming that the app came from this repository, remove the quarantine attribute from this app alone:
 
 ```bash
-xattr -cr /Applications/RightClickAssistant.app
+xattr -dr com.apple.quarantine /Applications/RightClickAssistant.app
 ```
+
+> [!WARNING]
+> Do not run `sudo spctl --master-disable`, do not run `xattr` against the entire `/Applications` directory, and do not bypass quarantine for an app from an unknown source. This command removes only the download quarantine marker from the specified app; it does not sign or notarize it.
 
 ## Documentation
 
