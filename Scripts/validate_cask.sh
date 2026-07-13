@@ -45,7 +45,7 @@ if command -v brew >/dev/null 2>&1; then
         brew style --cask "$CASK_FILE"
 
         echo "🍺 [Cask] 运行 brew audit..."
-        brew audit --cask --strict --online "$CASK_FILE"
+        brew audit --cask --strict --online "$TAP_NAME/rightclickassistant"
     else
         echo "⚠️ [Cask] Homebrew 要求 style/audit 的 Cask 位于 tap 中。"
         echo "⚠️ [Cask] 当前路径不是 $TAP_NAME tap，已跳过 brew style/audit。"

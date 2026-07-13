@@ -137,6 +137,16 @@ brew install --cask guyue55/macrightclick/rightclickassistant
 > [!NOTE]
 > Homebrew verifies the download SHA-256 and installs the app, but it cannot add a Developer ID signature or Apple notarization. The first launch may still require manual approval in Privacy & Security. Using `--no-quarantine` to bypass that user confirmation is not recommended.
 
+> [!IMPORTANT]
+> The current v1.2.0 community build is Ad-hoc signed and not notarized by Apple. After a Homebrew install on a new Mac, macOS may still block the first launch. First try Control-clicking the app and choosing Open, or use System Settings -> Privacy & Security -> Open Anyway. If the app is confirmed to come from this repository and macOS still blocks it, run:
+
+```bash
+sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
+open "/Applications/RightClickAssistant.app"
+```
+
+`sudo` prompts for the current macOS administrator password. Terminal does not display password characters while you type; this is expected. The command removes the download quarantine attribute from this app only. It does not disable Gatekeeper or add signing or notarization.
+
 ```bash
 brew update
 brew upgrade --cask rightclickassistant
@@ -291,8 +301,11 @@ Diagnostics shows pending, oldest-wait, and failed counts. After confirming that
 Current GitHub Release and Cask artifacts are not notarized by Apple. First try Control-click -> Open, or System Settings -> Privacy & Security -> Open Anyway. Only after confirming that the app came from this repository, remove the quarantine attribute from this app alone:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/RightClickAssistant.app
+sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
+open "/Applications/RightClickAssistant.app"
 ```
+
+`sudo` prompts for the current macOS administrator password, and Terminal does not display password characters while you type. A successful command normally prints no output; use the second command to launch the app.
 
 > [!WARNING]
 > Do not run `sudo spctl --master-disable`, do not run `xattr` against the entire `/Applications` directory, and do not bypass quarantine for an app from an unknown source. This command removes only the download quarantine marker from the specified app; it does not sign or notarize it.

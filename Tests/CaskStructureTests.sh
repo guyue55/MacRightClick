@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CASK_FILE="$ROOT_DIR/Casks/rightclickassistant.rb"
 README_ZH="$ROOT_DIR/README.md"
 README_EN="$ROOT_DIR/README_EN.md"
+VALIDATOR_FILE="$ROOT_DIR/Scripts/validate_cask.sh"
+QUARANTINE_COMMAND='sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"'
 
 fail() {
   echo "❌ $1" >&2
@@ -24,6 +26,7 @@ grep -q '/usr/bin/pluginkit' "$CASK_FILE" || fail "Cask 卸载时必须反注册
 grep -q 'guyue.RightClickAssistant.Extension' "$CASK_FILE" || fail "Cask 必须包含 FinderSync 扩展 bundle id"
 grep -q 'caveats <<~EOS' "$CASK_FILE" || fail "Cask 必须在安装后说明社区签名状态"
 grep -q 'Ad-hoc signed, not notarized community build' "$CASK_FILE" || fail "Cask 必须披露 Ad-hoc 与未公证状态"
+grep -Fq "$QUARANTINE_COMMAND" "$CASK_FILE" || fail "Cask 安装后提示必须提供精确的 quarantine 移除命令"
 
 if grep -q 'version :latest\|sha256 :no_check' "$CASK_FILE"; then
   fail "Cask 必须使用明确版本和真实 SHA-256"
@@ -40,9 +43,13 @@ fi
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_ZH" || fail "中文 README 缺少当前可用的 brew tap 命令"
 grep -q 'brew install --cask guyue55/macrightclick/rightclickassistant' "$README_ZH" || fail "中文 README 缺少最小信任范围的 brew 安装命令"
 grep -q 'brew trust --cask guyue55/macrightclick/rightclickassistant' "$README_ZH" || fail "中文 README 缺少 Homebrew 6 信任修复命令"
+grep -Fq "$QUARANTINE_COMMAND" "$README_ZH" || fail "中文 README 缺少可直接执行的 quarantine 移除命令"
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_EN" || fail "英文 README 缺少当前可用的 brew tap 命令"
 grep -q 'brew install --cask guyue55/macrightclick/rightclickassistant' "$README_EN" || fail "英文 README 缺少最小信任范围的 brew 安装命令"
 grep -q 'brew trust --cask guyue55/macrightclick/rightclickassistant' "$README_EN" || fail "英文 README 缺少 Homebrew 6 信任修复命令"
+grep -Fq "$QUARANTINE_COMMAND" "$README_EN" || fail "英文 README 缺少可直接执行的 quarantine 移除命令"
+
+grep -Fq 'brew audit --cask --strict --online "$TAP_NAME/rightclickassistant"' "$VALIDATOR_FILE" || fail "Cask 验证器必须使用 Homebrew 6 支持的完整限定名称执行 audit"
 
 users_prefix="/""Users/"
 if grep -q "$users_prefix" "$README_ZH" "$README_EN"; then

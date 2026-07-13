@@ -115,7 +115,14 @@ Add a Homebrew install section using:
 
 ```bash
 brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
-brew install --cask rightclickassistant
+brew install --cask guyue55/macrightclick/rightclickassistant
+```
+
+For the current Ad-hoc signed and unnotarized community build, document the preferred Gatekeeper UI approval first. If a verified download remains blocked, provide the exact single-app fallback:
+
+```bash
+sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
+open "/Applications/RightClickAssistant.app"
 ```
 
 - [ ] **Step 2: Document future tap command**

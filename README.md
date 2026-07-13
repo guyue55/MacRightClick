@@ -137,6 +137,16 @@ brew install --cask guyue55/macrightclick/rightclickassistant
 > [!NOTE]
 > Homebrew 会校验下载包的 SHA-256 并安装 App，但不会为 App 补做 Developer ID 签名或 Apple 公证。首次打开时仍可能需要在“隐私与安全性”中手动允许。不建议使用 `--no-quarantine` 绕过这一次用户确认。
 
+> [!IMPORTANT]
+> 当前 v1.2.0 是 Ad-hoc 签名、未经 Apple 公证的社区构建。新机器通过 Homebrew 安装后，macOS 仍可能阻止首次启动。先尝试 Control 点击 App ->“打开”，或“系统设置 -> 隐私与安全性 -> 仍要打开”。如果确认 App 来自本仓库但系统仍然拦截，执行：
+
+```bash
+sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
+open "/Applications/RightClickAssistant.app"
+```
+
+`sudo` 会要求输入当前 macOS 管理员密码；终端输入密码时不会显示字符，这是正常现象。该命令只移除这个 App 的下载隔离属性，不会关闭 Gatekeeper，也不会为 App 增加签名或公证。
+
 ```bash
 brew update
 brew upgrade --cask rightclickassistant
@@ -291,8 +301,11 @@ subsystem == "guyue.RightClickAssistant"
 当前 GitHub Release 与 Cask 制品未经 Apple 公证。先尝试 Control 点击 App -> “打开”，或使用“系统设置 -> 隐私与安全性 -> 仍要打开”。只有在确认 App 来自本仓库后，才对这一个 App 移除 quarantine 属性：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/RightClickAssistant.app
+sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
+open "/Applications/RightClickAssistant.app"
 ```
+
+`sudo` 会要求输入当前 macOS 管理员密码，输入时终端不会显示字符。命令成功后通常没有输出；随后使用第二条命令启动 App。
 
 > [!WARNING]
 > 不要执行 `sudo spctl --master-disable`，不要对 `/Applications` 整个目录运行 `xattr`，也不要对来源不明的 App 使用上述命令。该命令只移除指定 App 的下载隔离标记，不会为它增加签名或公证。

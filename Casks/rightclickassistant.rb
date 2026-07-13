@@ -32,8 +32,14 @@ cask "rightclickassistant" do
 
   caveats <<~EOS
     RightClickAssistant is an Ad-hoc signed, not notarized community build.
-    If macOS blocks the first launch, Control-click the app and choose Open,
-    or allow it in System Settings > Privacy & Security. Do not disable
-    Gatekeeper globally.
+    First try Control-click > Open, or System Settings > Privacy & Security
+    > Open Anyway. If macOS still blocks this verified download, remove the
+    quarantine attribute from this app only, then open it:
+
+      sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
+      open "/Applications/RightClickAssistant.app"
+
+    Enter your macOS administrator password when prompted; Terminal does not
+    display password characters. Do not disable Gatekeeper globally.
   EOS
 end
