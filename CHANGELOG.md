@@ -8,7 +8,9 @@
 
 ## Unreleased
 
-暂无。
+### Packaging
+
+- **homebrew**: Cask 更新到 v1.2.0 不可变 DMG 及远程制品的真实 SHA-256。
 
 ## v1.2.0 — 2026-07-12
 

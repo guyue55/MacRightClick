@@ -89,12 +89,12 @@ flowchart LR
 
 ### GitHub Release
 
-仓库当前代码版本和 Git 标签为 **v1.2.0**，但尚未生成 v1.2.0 可下载制品。当前 GitHub Release 和 Cask 仍指向 **v1.1.1 社区构建**：
+当前代码、GitHub Release 和 Homebrew Cask 版本均为 **v1.2.0 社区构建**：
 
 | 格式 | 当前可下载制品 |
 | --- | --- |
-| DMG | [RightClickAssistant-v1.1.1-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.dmg) |
-| ZIP | [RightClickAssistant-v1.1.1-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.1.1/RightClickAssistant-v1.1.1-macOS-Universal.zip) |
+| DMG | [RightClickAssistant-v1.2.0-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.2.0/RightClickAssistant-v1.2.0-macOS-Universal.dmg) |
+| ZIP | [RightClickAssistant-v1.2.0-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.2.0/RightClickAssistant-v1.2.0-macOS-Universal.zip) |
 
 全部版本见 [GitHub Releases](https://github.com/guyue55/MacRightClick/releases)。
 
@@ -123,7 +123,7 @@ brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
 brew install --cask rightclickassistant
 ```
 
-当前 Cask 固定到 v1.1.1 的不可变 URL，并校验真实 SHA-256。`brew upgrade` 只会在仓库中的 Cask 版本和哈希更新后升级，不会绕过版本元数据追随可变 Latest 文件。
+当前 Cask 固定到 v1.2.0 的不可变 URL，并校验真实 SHA-256。`brew upgrade` 只会在仓库中的 Cask 版本和哈希更新后升级，不会绕过版本元数据追随可变 Latest 文件。
 
 > [!NOTE]
 > Homebrew 会校验下载包的 SHA-256 并安装 App，但不会为 App 补做 Developer ID 签名或 Apple 公证。首次打开时仍可能需要在“隐私与安全性”中手动允许。不建议使用 `--no-quarantine` 绕过这一次用户确认。
@@ -167,11 +167,11 @@ brew install --cask rightclickassistant
 6. 需要访问受保护目录时，再授予完全磁盘访问。
 7. 在“动作”页选择档案、收藏和菜单布局。
 
-直接下载 v1.1.1 DMG 时，可与 Cask 中公开的 SHA-256 比对：
+直接下载 v1.2.0 DMG 时，可与 Cask 中公开的 SHA-256 比对：
 
 ```bash
-shasum -a 256 RightClickAssistant-v1.1.1-macOS-Universal.dmg
-# 期望: 6c548dc44b675f0c3d650c1c9179c861b3dbd19817adbc222f488a216cc8776a
+shasum -a 256 RightClickAssistant-v1.2.0-macOS-Universal.dmg
+# 期望: fa71e4b80a4e1e4071ca6e6a5ee0af79ae2b48c74401c215ece2eea8aa8ad813
 ```
 
 手动注册扩展：

@@ -14,8 +14,8 @@ fail() {
 [[ -f "$CASK_FILE" ]] || fail "缺少 Cask 文件: $CASK_FILE"
 
 grep -q 'cask "rightclickassistant"' "$CASK_FILE" || fail "Cask token 必须是 rightclickassistant"
-grep -q 'version "1.1.1"' "$CASK_FILE" || fail "Cask 必须使用明确版本"
-grep -q 'sha256 "6c548dc44b675f0c3d650c1c9179c861b3dbd19817adbc222f488a216cc8776a"' "$CASK_FILE" || fail "Cask 必须校验稳定制品"
+grep -q 'version "1.2.0"' "$CASK_FILE" || fail "Cask 必须使用明确版本"
+grep -q 'sha256 "fa71e4b80a4e1e4071ca6e6a5ee0af79ae2b48c74401c215ece2eea8aa8ad813"' "$CASK_FILE" || fail "Cask 必须校验稳定制品"
 grep -q 'download/v#{version}/RightClickAssistant-v#{version}-macOS-Universal.dmg' "$CASK_FILE" || fail "Cask URL 必须不可变"
 grep -q 'livecheck do' "$CASK_FILE" || fail "Cask 必须提供版本检查策略"
 grep -q 'app "RightClickAssistant.app"' "$CASK_FILE" || fail "Cask 必须安装 RightClickAssistant.app"
