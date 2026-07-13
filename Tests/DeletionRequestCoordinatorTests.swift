@@ -12,7 +12,7 @@ final class DeletionRequestCoordinatorTests: XCTestCase {
 
     /// 假的 presenter：不真的弹 NSAlert，
     /// 而是把 completion 暂存起来，让测试自由决定何时"用户做出选择"。
-    final class FakePresenter: ConfirmationPresenter {
+    final class FakePresenter: ConfirmationPresenter, @unchecked Sendable {
         var presentedCount = 0
         private var pendingCompletion: (@Sendable (DestructiveChoice) -> Void)?
 

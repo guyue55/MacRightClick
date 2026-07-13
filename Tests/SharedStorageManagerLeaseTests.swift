@@ -63,8 +63,8 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
 
         let suiteName = "guyue.RightClickAssistantTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { [suiteName] in
+            UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         }
 
         let boolKey = "isolated_bool"
@@ -118,8 +118,8 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
 
         let suiteName = "guyue.RightClickAssistantTests.mas.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { [suiteName] in
+            UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         }
 
         let manager = SharedStorageManager(
@@ -151,8 +151,8 @@ final class SharedStorageManagerLeaseTests: XCTestCase {
         let suiteName = "guyue.RightClickAssistantTests.write-failure.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.set(false, forKey: "write_failure")
-        addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { [suiteName] in
+            UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         }
 
         let manager = SharedStorageManager(

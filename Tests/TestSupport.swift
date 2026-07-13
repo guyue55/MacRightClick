@@ -51,3 +51,21 @@ final class TestSendableBox<Value>: @unchecked Sendable {
         self.value = value
     }
 }
+
+/// 并发测试中的最小锁保护集合，避免把 Foundation 可变集合跨 Sendable 闭包传递。
+final class TestLockedSet<Element: Hashable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Set<Element> = []
+
+    func insert(_ element: Element) {
+        lock.lock()
+        storage.insert(element)
+        lock.unlock()
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage.count
+    }
+}

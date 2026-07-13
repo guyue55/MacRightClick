@@ -34,28 +34,24 @@ final class PendingActionStressTests: XCTestCase {
         let total = 200
         let group = DispatchGroup()
         let queue = DispatchQueue(label: "test.concurrent.enqueue", attributes: .concurrent)
-        let producedIds = NSMutableSet()
-        let lock = NSLock()
+        let managerBox = TestSendableBox(manager!)
+        let producedIDs = TestLockedSet<String>()
 
         for i in 0..<total {
             group.enter()
-            queue.async { [weak self] in
+            queue.async {
                 defer { group.leave() }
-                guard let self = self else { return }
-                let url = try? self.manager.enqueueAction(
+                let url = try? managerBox.value.enqueueAction(
                     actionId: "test.stress.\(i % 7)",
                     paths: ["/tmp/stress-\(i)"]
                 )
-                XCTAssertNotNil(url)
                 if let url = url {
-                    lock.lock()
-                    producedIds.add(url.lastPathComponent)
-                    lock.unlock()
+                    producedIDs.insert(url.lastPathComponent)
                 }
             }
         }
         group.wait()
-        XCTAssertEqual(producedIds.count, total, "并发 enqueue 不应文件名互踩")
+        XCTAssertEqual(producedIDs.count, total, "并发 enqueue 不应丢失或文件名互踩")
 
         let leases = manager.consumePendingActionLeases()
         XCTAssertEqual(leases.count, total, "consume 必须 1:1 拿到全部事件")
