@@ -11,6 +11,7 @@
 ### Packaging
 
 - **homebrew**: Cask 更新到 v1.2.0 不可变 DMG 及远程制品的真实 SHA-256。
+- **homebrew**: 修正 macOS 依赖的弃用语法，并补充 Homebrew 6 第三方 tap 的单 Cask 最小信任安装与故障恢复流程。
 - **ci**: GitHub Actions 升级并锁定到原生 Node 24 的 `checkout v6.0.2` 与 `upload-artifact v7.0.1`，移除 Node 20 兼容开关。
 
 ## v1.2.0 — 2026-07-12

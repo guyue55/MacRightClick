@@ -120,10 +120,19 @@ https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssi
 
 ```bash
 brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
-brew install --cask rightclickassistant
+brew install --cask guyue55/macrightclick/rightclickassistant
 ```
 
 The current Cask is pinned to an immutable v1.2.0 URL with a real SHA-256. `brew upgrade` advances only after this repository updates the Cask version and checksum; it does not bypass version metadata by following a mutable Latest file.
+
+Starting with Homebrew 6.0, third-party taps require explicit trust. The fully qualified name above trusts only the `rightclickassistant` Cask, not the entire tap, and is the recommended command across old and new Homebrew versions. If a previous short-name install reported an `untrusted tap`, run:
+
+```bash
+brew trust --cask guyue55/macrightclick/rightclickassistant
+brew install --cask guyue55/macrightclick/rightclickassistant
+```
+
+`brew trust --cask` is available only in Homebrew 6.0 and later. There is no need to grant the broader `brew trust guyue55/macrightclick` permission.
 
 > [!NOTE]
 > Homebrew verifies the download SHA-256 and installs the app, but it cannot add a Developer ID signature or Apple notarization. The first launch may still require manual approval in Privacy & Security. Using `--no-quarantine` to bypass that user confirmation is not recommended.
@@ -154,7 +163,7 @@ For a local checkout, the current directory can be used as a local tap:
 
 ```bash
 brew tap guyue55/macrightclick "$(pwd)"
-brew install --cask rightclickassistant
+brew install --cask guyue55/macrightclick/rightclickassistant
 ```
 
 ## First Run

@@ -120,10 +120,19 @@ https://github.com/guyue55/MacRightClick/releases/latest/download/RightClickAssi
 
 ```bash
 brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
-brew install --cask rightclickassistant
+brew install --cask guyue55/macrightclick/rightclickassistant
 ```
 
 当前 Cask 固定到 v1.2.0 的不可变 URL，并校验真实 SHA-256。`brew upgrade` 只会在仓库中的 Cask 版本和哈希更新后升级，不会绕过版本元数据追随可变 Latest 文件。
+
+Homebrew 6.0 起，第三方 tap 必须经过显式信任。上面的完整限定名称只信任 `rightclickassistant` 这一项，不会扩大到整个 tap，也是新旧 Homebrew 均可使用的推荐安装方式。如果此前使用短名称安装并看到 `untrusted tap`，执行：
+
+```bash
+brew trust --cask guyue55/macrightclick/rightclickassistant
+brew install --cask guyue55/macrightclick/rightclickassistant
+```
+
+`brew trust --cask` 仅适用于 Homebrew 6.0 及以上；无需使用权限范围更大的 `brew trust guyue55/macrightclick`。
 
 > [!NOTE]
 > Homebrew 会校验下载包的 SHA-256 并安装 App，但不会为 App 补做 Developer ID 签名或 Apple 公证。首次打开时仍可能需要在“隐私与安全性”中手动允许。不建议使用 `--no-quarantine` 绕过这一次用户确认。
@@ -154,7 +163,7 @@ brew untap guyue55/macrightclick
 
 ```bash
 brew tap guyue55/macrightclick "$(pwd)"
-brew install --cask rightclickassistant
+brew install --cask guyue55/macrightclick/rightclickassistant
 ```
 
 ## 首次运行

@@ -19,7 +19,7 @@ grep -q 'sha256 "fa71e4b80a4e1e4071ca6e6a5ee0af79ae2b48c74401c215ece2eea8aa8ad81
 grep -q 'download/v#{version}/RightClickAssistant-v#{version}-macOS-Universal.dmg' "$CASK_FILE" || fail "Cask URL 必须不可变"
 grep -q 'livecheck do' "$CASK_FILE" || fail "Cask 必须提供版本检查策略"
 grep -q 'app "RightClickAssistant.app"' "$CASK_FILE" || fail "Cask 必须安装 RightClickAssistant.app"
-grep -q 'depends_on macos: ">= :ventura"' "$CASK_FILE" || fail "Cask 必须声明 macOS 13+"
+grep -q 'depends_on macos: :ventura' "$CASK_FILE" || fail "Cask 必须使用当前语法声明 macOS 13+"
 grep -q '/usr/bin/pluginkit' "$CASK_FILE" || fail "Cask 卸载时必须反注册 FinderSync 扩展"
 grep -q 'guyue.RightClickAssistant.Extension' "$CASK_FILE" || fail "Cask 必须包含 FinderSync 扩展 bundle id"
 grep -q 'caveats <<~EOS' "$CASK_FILE" || fail "Cask 必须在安装后说明社区签名状态"
@@ -29,14 +29,20 @@ if grep -q 'version :latest\|sha256 :no_check' "$CASK_FILE"; then
   fail "Cask 必须使用明确版本和真实 SHA-256"
 fi
 
+if grep -q 'depends_on macos: "' "$CASK_FILE"; then
+  fail "Cask 不应使用已弃用的 macOS 字符串比较语法"
+fi
+
 if grep -q 'curl .*|.*sh' "$CASK_FILE"; then
   fail "Cask 不允许执行远程安装脚本"
 fi
 
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_ZH" || fail "中文 README 缺少当前可用的 brew tap 命令"
-grep -q 'brew install --cask rightclickassistant' "$README_ZH" || fail "中文 README 缺少当前可用的 brew 安装命令"
+grep -q 'brew install --cask guyue55/macrightclick/rightclickassistant' "$README_ZH" || fail "中文 README 缺少最小信任范围的 brew 安装命令"
+grep -q 'brew trust --cask guyue55/macrightclick/rightclickassistant' "$README_ZH" || fail "中文 README 缺少 Homebrew 6 信任修复命令"
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_EN" || fail "英文 README 缺少当前可用的 brew tap 命令"
-grep -q 'brew install --cask rightclickassistant' "$README_EN" || fail "英文 README 缺少当前可用的 brew 安装命令"
+grep -q 'brew install --cask guyue55/macrightclick/rightclickassistant' "$README_EN" || fail "英文 README 缺少最小信任范围的 brew 安装命令"
+grep -q 'brew trust --cask guyue55/macrightclick/rightclickassistant' "$README_EN" || fail "英文 README 缺少 Homebrew 6 信任修复命令"
 
 users_prefix="/""Users/"
 if grep -q "$users_prefix" "$README_ZH" "$README_EN"; then
