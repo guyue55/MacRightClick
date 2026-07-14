@@ -34,7 +34,8 @@ final class FinderQuickServiceManager {
             )
         )
     }()
-    private var observer: NSObjectProtocol?
+    private var configObserver: NSObjectProtocol?
+    private var appAvailabilityObserver: NSObjectProtocol?
     private var pendingRefresh: DispatchWorkItem?
 
     private init() {
@@ -48,9 +49,18 @@ final class FinderQuickServiceManager {
     }
 
     func start() {
-        guard observer == nil else { return }
-        observer = DistributedNotificationCenter.default().addObserver(
+        guard configObserver == nil, appAvailabilityObserver == nil else { return }
+        configObserver = DistributedNotificationCenter.default().addObserver(
             forName: SystemReloader.configChangedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.scheduleRefresh()
+            }
+        }
+        appAvailabilityObserver = NotificationCenter.default.addObserver(
+            forName: InstalledAppRegistry.availabilityChangedNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -64,9 +74,13 @@ final class FinderQuickServiceManager {
     func stop() {
         pendingRefresh?.cancel()
         pendingRefresh = nil
-        if let observer {
-            DistributedNotificationCenter.default().removeObserver(observer)
-            self.observer = nil
+        if let configObserver {
+            DistributedNotificationCenter.default().removeObserver(configObserver)
+            self.configObserver = nil
+        }
+        if let appAvailabilityObserver {
+            NotificationCenter.default.removeObserver(appAvailabilityObserver)
+            self.appAvailabilityObserver = nil
         }
     }
 
@@ -89,8 +103,13 @@ final class FinderQuickServiceManager {
             let data = items.isEmpty
                 ? nil
                 : try FinderQuickServiceManifest.encodedData(items: items, appVersion: version)
-            if data != nil, helperExecutableData == nil {
-                AppLog.error("Finder 快捷服务 helper 缺失，保留静态动作面板入口", category: .host)
+            guard let data else {
+                synchronize(nil, executableData: nil)
+                return
+            }
+            guard let helperExecutableData else {
+                AppLog.error("Finder 快捷服务 helper 缺失，已撤下失效直达项", category: .host)
+                synchronize(nil, executableData: nil)
                 return
             }
             synchronize(data, executableData: helperExecutableData)
@@ -109,12 +128,11 @@ final class FinderQuickServiceManager {
                 )
                 if manifestData != nil {
                     let registrationStatus = LSRegisterURL(store.bundleURL as CFURL, true)
-                    guard registrationStatus == noErr else {
+                    if registrationStatus != noErr {
                         AppLog.error(
                             "注册 Finder 快捷服务失败，状态码：\(registrationStatus)",
                             category: .host
                         )
-                        return
                     }
                 }
                 guard didChange else { return }

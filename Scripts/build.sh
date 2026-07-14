@@ -420,6 +420,7 @@ codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS --entitleme
 codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS "ActionVerifier_bin"
 
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+codesign --verify --strict --verbose=2 "$APP_BUNDLE/Contents/Resources/RightClickAssistantQuickService"
 
 if [ "$DISTRIBUTION_ROUTE" = "website-release" ]; then
     echo "🧾 [Build] 提交 App 到 Apple notary service 并 stapler 附票..."

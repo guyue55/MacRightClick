@@ -1137,6 +1137,29 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertTrue(ExternalToolManager.canPerform(.install, for: .notInstalled))
     }
 
+    func testInstalledAppRegistryInvalidationPublishesChangeWithoutBlockingImmediateRead() {
+        let expectation = expectation(description: "应用可用性变化事件")
+        let observer = NotificationCenter.default.addObserver(
+            forName: InstalledAppRegistry.availabilityChangedNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            expectation.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        InstalledAppRegistry.shared.overrideResolverForTesting = { bundleIdentifier in
+            URL(fileURLWithPath: "/Applications/\(bundleIdentifier).app")
+        }
+        defer { InstalledAppRegistry.shared.overrideResolverForTesting = nil }
+
+        XCTAssertTrue(InstalledAppRegistry.shared.isInstalled("test.application"))
+
+        InstalledAppRegistry.shared.invalidateAll()
+        XCTAssertTrue(InstalledAppRegistry.shared.isInstalled("test.application"))
+
+        wait(for: [expectation], timeout: 1)
+    }
+
     func testFinderServiceFallbackUsesOneStablePaletteEntry() {
         XCTAssertEqual(FinderServiceCatalog.menuTitle, "右键助手…")
         XCTAssertEqual(
@@ -1303,7 +1326,19 @@ final class RightClickAssistantTests: XCTestCase {
             isHighRisk: false,
             isRecommended: true
         )
-        let data = try FinderQuickServiceManifest.encodedData(items: [item], appVersion: "1.2.0")
+        let recommendation = FinderServiceActionItem(
+            actionID: "guyue.action.filemanage.copyName",
+            title: "拷贝文件名",
+            iconName: "pencil.and.outline",
+            category: .fileManage,
+            isFavorite: false,
+            isHighRisk: false,
+            isRecommended: true
+        )
+        let data = try FinderQuickServiceManifest.encodedData(
+            items: [item, recommendation],
+            appVersion: "1.2.0"
+        )
         let plist = try XCTUnwrap(
             PropertyListSerialization.propertyList(
                 from: data,
@@ -1313,7 +1348,9 @@ final class RightClickAssistantTests: XCTestCase {
         )
         let services = try XCTUnwrap(plist["NSServices"] as? [[String: Any]])
         let service = try XCTUnwrap(services.first)
-        let menuItem = try XCTUnwrap(service["NSMenuItem"] as? [String: String])
+        let menuItems = try services.map {
+            try XCTUnwrap(($0["NSMenuItem"] as? [String: String])?["default"])
+        }
 
         XCTAssertEqual(
             plist["CFBundleExecutable"] as? String,
@@ -1323,7 +1360,10 @@ final class RightClickAssistantTests: XCTestCase {
             plist["CFBundleIdentifier"] as? String,
             FinderQuickServiceProtocol.bundleIdentifier
         )
-        XCTAssertEqual(menuItem["default"], "右键助手 · 剪切")
+        XCTAssertEqual(
+            menuItems,
+            ["右键助手 · 1 ★ 剪切", "右键助手 · 2 拷贝文件名"]
+        )
         XCTAssertEqual(service["NSUserData"] as? String, item.actionID)
         XCTAssertEqual(service["NSMessage"] as? String, "performFinderService")
         XCTAssertEqual(
@@ -1341,6 +1381,43 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertTrue(try store.synchronize(manifestData: nil, executableData: nil))
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.bundleURL.path))
         XCTAssertFalse(try store.synchronize(manifestData: nil, executableData: nil))
+    }
+
+    func testQuickServiceStoreRepairsExecutablePermissionsWhenBytesMatch() throws {
+        let item = FinderServiceActionItem(
+            actionID: "guyue.action.filemanage.cut",
+            title: "剪切",
+            iconName: "scissors",
+            category: .fileManage,
+            isFavorite: true,
+            isHighRisk: false
+        )
+        let manifestData = try FinderQuickServiceManifest.encodedData(
+            items: [item],
+            appVersion: "1.2.0"
+        )
+        let executableData = Data("quick-service".utf8)
+        let store = FinderQuickServiceBundleStore(
+            servicesDirectoryURL: tempDirectory.appendingPathComponent("Services", isDirectory: true)
+        )
+        XCTAssertTrue(try store.synchronize(
+            manifestData: manifestData,
+            executableData: executableData
+        ))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644],
+            ofItemAtPath: store.executableURL.path
+        )
+
+        XCTAssertTrue(try store.synchronize(
+            manifestData: manifestData,
+            executableData: executableData
+        ))
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: store.executableURL.path
+        )
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(permissions.intValue & 0o777, 0o755)
     }
 
     func testFinderServiceItemsRespectBackendEnabledAndAvailabilityRules() {

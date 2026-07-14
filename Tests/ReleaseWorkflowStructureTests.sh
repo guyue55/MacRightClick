@@ -15,6 +15,8 @@ grep -q 'name: Ad-hoc Community Tag Release' "$WORKFLOW_FILE" || fail "标签任
 grep -q 'DISTRIBUTION_ROUTE: website-dev' "$WORKFLOW_FILE" || fail "社区发布必须使用 website-dev 路线"
 grep -q 'Signature=adhoc' "$WORKFLOW_FILE" || fail "社区发布必须验证 Ad-hoc 签名"
 grep -q 'lipo -archs' "$WORKFLOW_FILE" || fail "标签任务必须验证 Universal 2 架构"
+[ "$(grep -c 'Contents/Resources/RightClickAssistantQuickService' "$WORKFLOW_FILE")" -ge 3 ] || fail "开发构建、发布签名和发布架构必须分别验证快捷服务 helper"
+grep -q '"ReleaseWorkflowStructureTests.sh"' Package.swift || fail "SwiftPM 必须排除发布结构测试脚本"
 grep -q 'RightClickAssistant-v\${VERSION}-macOS-Universal.dmg' "$WORKFLOW_FILE" || fail "缺少不可变版本 DMG"
 grep -q 'RightClickAssistant-Latest.dmg' "$WORKFLOW_FILE" || fail "缺少 Latest DMG 便利资产"
 grep -q 'SHA256SUMS' "$WORKFLOW_FILE" || fail "社区发布必须附带 SHA-256 清单"

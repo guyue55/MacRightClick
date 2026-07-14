@@ -202,9 +202,12 @@ public enum FinderQuickServiceManifest {
         items: [FinderServiceActionItem],
         appVersion: String
     ) throws -> Data {
-        let services: [[String: Any]] = items.map { item in
-            [
-                "NSMenuItem": ["default": "右键助手 · \(item.title)"],
+        let services: [[String: Any]] = items.enumerated().map { offset, item in
+            let favoriteMarker = item.isFavorite ? " ★" : ""
+            return [
+                "NSMenuItem": [
+                    "default": "右键助手 · \(offset + 1)\(favoriteMarker) \(item.title)"
+                ],
                 "NSMessage": "performFinderService",
                 "NSPortName": FinderQuickServiceProtocol.providerPortName,
                 "NSRequiredContext": ["NSTextContent": "FilePath"],
@@ -271,7 +274,14 @@ public struct FinderQuickServiceBundleStore: Sendable {
         }
         let manifestMatches = (try? Data(contentsOf: infoPlistURL)) == manifestData
         let executableMatches = (try? Data(contentsOf: executableURL)) == executableData
-        if manifestMatches && executableMatches {
+        let executableAttributes = try? fileManager.attributesOfItem(
+            atPath: executableURL.path
+        )
+        let executablePermissions = executableAttributes?[.posixPermissions] as? NSNumber
+        let executablePermissionsMatch = executablePermissions.map {
+            ($0.intValue & 0o777) == 0o755
+        } ?? false
+        if manifestMatches && executableMatches && executablePermissionsMatch {
             return false
         }
 
@@ -281,6 +291,8 @@ public struct FinderQuickServiceBundleStore: Sendable {
         )
         if !executableMatches {
             try executableData.write(to: executableURL, options: .atomic)
+        }
+        if !executableMatches || !executablePermissionsMatch {
             try fileManager.setAttributes(
                 [.posixPermissions: 0o755],
                 ofItemAtPath: executableURL.path

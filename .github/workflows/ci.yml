@@ -51,6 +51,12 @@ jobs:
       - name: Verify development artifacts
         run: |
           codesign --verify --deep --strict --verbose=2 build/RightClickAssistant.app
+          quick_service_helper="build/RightClickAssistant.app/Contents/Resources/RightClickAssistantQuickService"
+          test -x "$quick_service_helper"
+          codesign --verify --strict --verbose=2 "$quick_service_helper"
+          architectures="$(lipo -archs "$quick_service_helper")"
+          [[ "$architectures" == *arm64* ]]
+          [[ "$architectures" == *x86_64* ]]
           hdiutil verify build/RightClickAssistant.dmg
 
       - name: Upload development artifacts
@@ -99,7 +105,8 @@ jobs:
 
           for bundle in \
             build/RightClickAssistant.app \
-            build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex; do
+            build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex \
+            build/RightClickAssistant.app/Contents/Resources/RightClickAssistantQuickService; do
             signature_info="$(codesign -dv --verbose=4 "$bundle" 2>&1)"
             grep -q 'Signature=adhoc' <<<"$signature_info"
             grep -q 'TeamIdentifier=not set' <<<"$signature_info"
@@ -107,7 +114,8 @@ jobs:
 
           for executable in \
             build/RightClickAssistant.app/Contents/MacOS/RightClickAssistant \
-            build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex/Contents/MacOS/RightClickAssistantExtension; do
+            build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex/Contents/MacOS/RightClickAssistantExtension \
+            build/RightClickAssistant.app/Contents/Resources/RightClickAssistantQuickService; do
             architectures="$(lipo -archs "$executable")"
             [[ "$architectures" == *arm64* ]]
             [[ "$architectures" == *x86_64* ]]

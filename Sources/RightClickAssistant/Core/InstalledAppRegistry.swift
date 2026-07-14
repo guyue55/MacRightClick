@@ -12,6 +12,9 @@ import AppKit
 /// - `overrideResolverForTesting` 用于单测桩
 public final class InstalledAppRegistry: @unchecked Sendable {
     public static let shared = InstalledAppRegistry()
+    public static let availabilityChangedNotification = Notification.Name(
+        "guyue.InstalledAppRegistry.availabilityChanged"
+    )
 
     private struct Entry {
         let url: URL?
@@ -98,13 +101,26 @@ public final class InstalledAppRegistry: @unchecked Sendable {
 
     public func invalidate(bundleId: String) {
         queue.async(flags: .barrier) {
-            self.cache.removeValue(forKey: bundleId)
+            guard self.cache.removeValue(forKey: bundleId) != nil else { return }
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: Self.availabilityChangedNotification,
+                    object: nil,
+                    userInfo: ["bundleIdentifier": bundleId]
+                )
+            }
         }
     }
 
     public func invalidateAll() {
         queue.async(flags: .barrier) {
             self.cache.removeAll(keepingCapacity: true)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: Self.availabilityChangedNotification,
+                    object: nil
+                )
+            }
         }
     }
 }

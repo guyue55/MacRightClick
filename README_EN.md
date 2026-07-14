@@ -304,11 +304,11 @@ On the Finder page, verify that the extension is enabled and Watch Scope is Ever
 If Desktop or Documents is managed by iCloud Drive / File Provider, macOS may suppress third-party FinderSync actions in that domain; other FinderSync tools disappear from the same menu as well. RightClickAssistant therefore provides two fallback levels under Services:
 
 ```text
-Control-click a file/folder -> Services -> 右键助手 · 剪切 (direct action example)
+Control-click a file/folder -> Services -> 右键助手 · 1 ★ 剪切 (favorite direct action example)
 Control-click a file/folder -> Services -> 右键助手… (full action palette)
 ```
 
-Direct services keep enabled favorites in the user's saved order, then fill from common actions such as Cut, Copy Full Path, Copy File Name, Open in Terminal, and SHA256. Entries are deduplicated and capped at eight. High-risk actions and actions whose external app is unavailable are never advertised directly. Changes to favorites and action switches refresh Services on demand without background polling.
+Direct services keep enabled favorites in the user's saved order, then fill from common actions such as Cut, Copy Full Path, Copy File Name, Open in Terminal, and SHA256. Entries are deduplicated and capped at eight. Numeric prefixes stabilize the order shown by macOS, and `★` marks favorites. High-risk actions and actions whose external app is unavailable are never advertised directly. Changes to favorites, action switches, or external app availability refresh Services on demand without background polling.
 
 The “右键助手…” palette reuses the same action registry, settings, and transactional queue. It provides All, Common, New, Files, Terminal, and Tools views plus search. All keeps favorites first, recommendations second, and remaining categories deduplicated. Only actions that apply to the current selection are shown, and every choice is validated again before it is queued. FinderSync remains the preferred first-level menu in regular local folders.
 
