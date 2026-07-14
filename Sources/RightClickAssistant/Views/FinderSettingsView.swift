@@ -6,7 +6,7 @@ struct PermissionsSettingsView: View {
     @State private var hasLoadedInitialFullDiskAccess = false
     @State private var didPromptAfterFullDiskAccessGrant = false
     @State private var shouldShowManualRelaunchFallback = false
-    @State private var shouldEnableiCloudMenu = false
+    @State private var shouldEnableiCloudMenu = true
     @State private var watchedDirectoryPaths: [String] = []
     @State private var watchScope: WatchScope = .everywhere
     // 改事件驱动：不再用 2s 轮询，避免 App 在后台空跑 timer。
@@ -33,6 +33,11 @@ struct PermissionsSettingsView: View {
                     get: { shouldEnableiCloudMenu },
                     set: saveCloudCompatibility
                 ))
+
+                LabeledContent("File Provider 降级入口") {
+                    Text("服务 > 右键助手")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("自定义目录") {
@@ -143,7 +148,7 @@ struct PermissionsSettingsView: View {
     private func saveCloudCompatibility(_ enabled: Bool) {
         guard SharedStorageManager.shared.setBool(
             enabled,
-            forKey: "shouldEnableiCloudMenu"
+            forKey: SharedStorageManager.Keys.cloudCompatibility
         ) else {
             showConfigurationSaveFailure("云同步盘兼容")
             return
@@ -153,7 +158,7 @@ struct PermissionsSettingsView: View {
     }
 
     private func refresh(promptOnFullDiskAccessGrant: Bool) {
-        shouldEnableiCloudMenu = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
+        shouldEnableiCloudMenu = SharedStorageManager.shared.isCloudCompatibilityEnabled
         watchScope = SharedStorageManager.shared.watchScope
         // UI 永远展示用户的「自定义目录」原始列表（即使当前作用范围是 .everywhere，
         // 切回 .custom 时仍保留之前的自定义配置，避免来回切换丢数据）。

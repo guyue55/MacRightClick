@@ -15,6 +15,14 @@
 - **homebrew**: 安装后提示与中英文文档补充新机器 Gatekeeper 放行步骤、精确的单 App quarantine 移除命令，并修正 Homebrew 6 的 Cask audit 调用。
 - **ci**: GitHub Actions 升级并锁定到原生 Node 24 的 `checkout v6.0.2` 与 `upload-artifact v7.0.1`，移除 Node 20 兼容开关。
 
+### Fixed
+
+- **finder**: 云盘兼容改为默认开启，并显式注册 iCloud Drive 的 File Provider 真实根路径。稳定根与桌面/下载/文稿不再用扩展的文件读权限过滤，避免普通受保护目录被错误排除。
+- **finder**: 针对 macOS 在 File Provider 域中抑制第三方 FinderSync 动作的情况，新增 5 个低风险系统服务入口，复用原有动作队列、开关与终态确认。
+- **tools**: 外部工具区分独立安装、Homebrew 管理、未安装与安装记录损坏四种状态；命令执行前重新校验，避免对手动安装的 iTerm2 误用 `brew upgrade`。
+- **tools**: Homebrew 管理的外部工具更新使用 `--greedy`，避免 `auto_updates` Cask 被跳过；Homebrew 库存检测移出主线程并防止过期刷新覆盖新状态。
+- **diagnostics**: 诊断页与隐私安全报告显示云盘兼容状态，便于定位 File Provider 目录缺少菜单的问题。
+
 ## v1.2.0 — 2026-07-12
 
 ### Added

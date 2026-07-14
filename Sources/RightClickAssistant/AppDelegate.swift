@@ -31,6 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 1. 初始化并注册系统自带的右键菜单动作
         registerDefaultActions()
+        NSApp.servicesProvider = FinderServicesProvider.shared
         
         // 2. 监听来自 Extension 的纯信号通知（双保险机制一：分布式空信号通知，强制指定 suspensionBehavior: .deliverImmediately）
         DistributedNotificationCenter.default().addObserver(

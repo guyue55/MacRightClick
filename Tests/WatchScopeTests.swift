@@ -21,6 +21,7 @@ final class WatchScopeTests: XCTestCase {
         // 清场：每个用例从默认值起步。
         storage.removeValue(forKey: SharedStorageManager.Keys.watchScope)
         storage.removeValue(forKey: SharedStorageManager.Keys.watchedDirectoryPaths)
+        storage.removeValue(forKey: SharedStorageManager.Keys.cloudCompatibility)
     }
 
     func testDefaultScopeIsEverywhere() {
@@ -47,8 +48,7 @@ final class WatchScopeTests: XCTestCase {
     func testEverywhereStableRootsCoverCommonNonHomeLocations() {
         let paths = SharedStorageManager.everywhereWatchedDirectoryPaths(
             homePath: "/Users/tester",
-            mountedVolumePaths: [],
-            fileExists: { ["/", "/Applications", "/Users", "/Volumes", "/tmp", "/private/tmp", "/Users/tester"].contains($0) }
+            mountedVolumePaths: []
         )
 
         XCTAssertTrue(paths.contains("/Applications"),
@@ -62,35 +62,43 @@ final class WatchScopeTests: XCTestCase {
     func testEverywhereIncludesMountedVolumes() {
         let paths = SharedStorageManager.everywhereWatchedDirectoryPaths(
             homePath: "/Users/tester",
-            mountedVolumePaths: ["/Volumes/WorkDisk", "/Volumes/WorkDisk"],
-            fileExists: { ["/", "/Users", "/Volumes", "/Users/tester", "/Volumes/WorkDisk"].contains($0) }
+            mountedVolumePaths: ["/Volumes/WorkDisk", "/Volumes/WorkDisk"]
         )
 
         XCTAssertEqual(paths.filter { $0 == "/Volumes/WorkDisk" }.count, 1,
                        "挂载卷应被加入且去重，保证外接卷路径下右键菜单稳定出现")
     }
 
+    func testEverywhereKeepsProtectedSeedDirectoriesWithoutProbingReadAccess() {
+        let home = "/Users/tester"
+        let paths = SharedStorageManager.everywhereWatchedDirectoryPaths(
+            homePath: home,
+            mountedVolumePaths: []
+        )
+
+        XCTAssertTrue(paths.contains(home + "/Desktop"))
+        XCTAssertTrue(paths.contains(home + "/Downloads"))
+        XCTAssertTrue(paths.contains(home + "/Documents"),
+                      "FinderSync 不能用 fileExists 结果过滤受保护的文稿目录")
+    }
+
     /// .everywhere 时还要把 Desktop/Downloads/Documents 作为「种子目录」一并注册，
     /// 用来打破 chicken-and-egg：全新设备上 Finder 没看见受监控目录就不会拉起 Extension，
     /// 那么写到 directoryURLs 的 "/" 永远到不了 Finder。
-    /// 种子目录里只要其中之一存在，Finder 在用户进入时就能把 Extension 拉起。
-    func testEverywhereIncludesSeedDirectoriesWhenPresent() {
+    /// 种子目录不做读权限探测，Finder 在用户进入时就能把 Extension 拉起。
+    func testEverywhereIncludesSeedDirectories() {
         storage.watchScope = .everywhere
         let urls = storage.watchedDirectoryURLs.map(\.path)
-        let home = NSHomeDirectory()  // 仅作存在性参考
+        let home = NSHomeDirectory()
         let candidates = ["Desktop", "Downloads", "Documents"]
             .map { (home as NSString).appendingPathComponent($0) }
-            .filter { FileManager.default.fileExists(atPath: $0) }
-        // 种子集合至少要被部分包含（CI 环境里这三个目录可能都不存在）。
-        if !candidates.isEmpty {
-            XCTAssertFalse(Set(urls).intersection(Set(candidates)).isEmpty,
-                           ".everywhere 应当注册 Desktop/Downloads/Documents 中存在的种子目录")
-        }
+        XCTAssertTrue(Set(candidates).isSubset(of: Set(urls)),
+                      ".everywhere 必须注册 Desktop/Downloads/Documents，不能被扩展读权限过滤")
     }
 
     func testCustomYieldsCustomList() {
         storage.watchScope = .custom
-        // custom 模式下走旧逻辑：默认 Desktop/Downloads/Documents 中存在的子集。
+        // custom 模式下默认使用 Desktop/Downloads/Documents。
         let urls = storage.watchedDirectoryURLs
         // 不强测具体路径（CI 环境 Home 不一定有），仅断言 / 不会出现。
         XCTAssertFalse(urls.contains(URL(fileURLWithPath: "/")),
@@ -102,5 +110,41 @@ final class WatchScopeTests: XCTestCase {
         XCTAssertEqual(storage.watchScope, .custom)
         storage.watchScope = .everywhere
         XCTAssertEqual(storage.watchScope, .everywhere)
+    }
+
+    func testCloudCompatibilityDefaultsToEnabled() {
+        XCTAssertTrue(
+            storage.isCloudCompatibilityEnabled,
+            "现代 macOS 的桌面与文稿可能由 iCloud File Provider 托管，首次安装必须默认兼容"
+        )
+    }
+
+    func testCloudCompatibilityIncludesConcreteICloudDriveRoot() {
+        let home = "/Users/tester"
+        let mobileDocuments = "/Users/tester/Library/Mobile Documents"
+        let cloudDocs = mobileDocuments + "/com~apple~CloudDocs"
+        let cloudStorage = "/Users/tester/Library/CloudStorage"
+        let paths = SharedStorageManager.cloudCompatibleDirectoryPaths(
+            homePath: home,
+            fileExists: { [mobileDocuments, cloudDocs, cloudStorage].contains($0) }
+        )
+
+        XCTAssertTrue(paths.contains(mobileDocuments))
+        XCTAssertTrue(paths.contains(cloudDocs),
+                      "Finder 可能使用 iCloud Drive 的真实 File Provider 根，不能只注册其父目录")
+        XCTAssertTrue(paths.contains(cloudStorage))
+    }
+
+    func testCloudCompatibilityKeepsICloudRootsWhenExtensionCannotProbeThem() {
+        let home = "/Users/tester"
+        let paths = SharedStorageManager.cloudCompatibleDirectoryPaths(
+            homePath: home,
+            fileExists: { _ in false }
+        )
+
+        XCTAssertTrue(paths.contains(home + "/Library/Mobile Documents"))
+        XCTAssertTrue(paths.contains(home + "/Library/Mobile Documents/com~apple~CloudDocs"))
+        XCTAssertFalse(paths.contains(home + "/Library/CloudStorage"),
+                       "不存在的第三方可选云盘根不应被注册")
     }
 }

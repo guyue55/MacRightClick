@@ -430,10 +430,7 @@ final class RightClickAssistantTests: XCTestCase {
     /// 13. 默认监听目录不应包含或创建用户项目目录
     func testDefaultWatchedDirectoriesDoNotIncludeGitProject() {
         let paths = SharedStorageManager.defaultWatchedDirectoryPaths(
-            homePath: "/Users/example",
-            fileExists: { path in
-                ["/Users/example/Desktop", "/Users/example/Downloads", "/Users/example/Documents", "/Users/example/GitProject"].contains(path)
-            }
+            homePath: "/Users/example"
         )
 
         XCTAssertEqual(paths, [
@@ -993,6 +990,7 @@ final class RightClickAssistantTests: XCTestCase {
             pluginKitState: .enabled,
             heartbeatState: .recent(observedPathCount: 7),
             watchScope: .custom,
+            cloudCompatibilityEnabled: false,
             pendingActionCount: 2,
             oldestPendingAge: 12,
             failedActionCount: 1
@@ -1003,6 +1001,7 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertFalse(summary.contains("/Users/"))
         XCTAssertTrue(summary.contains("Pending: 2"))
         XCTAssertTrue(summary.contains("App Version: 1.2.0"))
+        XCTAssertTrue(summary.contains("Cloud Compatibility: false"))
     }
 
     func testExtensionHeartbeatStoreThrottlesWritesAndDetectsStaleState() throws {
@@ -1078,10 +1077,104 @@ final class RightClickAssistantTests: XCTestCase {
             tool: .iterm2,
             brewExecutablePath: "/opt/homebrew/bin/brew"
         )
+        let repair = ExternalToolManager.command(
+            for: .repair,
+            tool: .warp,
+            brewExecutablePath: "/opt/homebrew/bin/brew"
+        )
 
         XCTAssertEqual(install.executablePath, "/opt/homebrew/bin/brew")
         XCTAssertEqual(install.arguments, ["install", "--cask", "visual-studio-code"])
-        XCTAssertEqual(update.arguments, ["upgrade", "--cask", "iterm2"])
+        XCTAssertEqual(update.arguments, ["upgrade", "--cask", "--greedy", "iterm2"])
+        XCTAssertEqual(repair.arguments, ["reinstall", "--cask", "warp"])
+    }
+
+    func testExternalToolManagerParsesInstalledCaskInventory() {
+        let names = ExternalToolManager.installedCaskNames(from: """
+        calibre 9.7.0
+        docker-desktop 4.1.1,69879
+        visual-studio-code 1.109.5
+
+        """)
+
+        XCTAssertEqual(names, ["calibre", "docker-desktop", "visual-studio-code"])
+    }
+
+    func testExternalToolManagerDistinguishesManualAndHomebrewInstalls() {
+        let manuallyInstalled = ExternalToolManager.installationState(
+            for: .iterm2,
+            appInstalled: true,
+            managedCaskNames: []
+        )
+        let homebrewInstalled = ExternalToolManager.installationState(
+            for: .iterm2,
+            appInstalled: true,
+            managedCaskNames: ["iterm2"]
+        )
+        let missingManagedApp = ExternalToolManager.installationState(
+            for: .warp,
+            appInstalled: false,
+            managedCaskNames: ["warp"]
+        )
+        let notInstalled = ExternalToolManager.installationState(
+            for: .cursor,
+            appInstalled: false,
+            managedCaskNames: []
+        )
+
+        XCTAssertEqual(manuallyInstalled, .installedOutsideHomebrew)
+        XCTAssertNil(manuallyInstalled.recommendedOperation,
+                     "手动安装的 App 不能误用 brew upgrade")
+        XCTAssertEqual(homebrewInstalled.recommendedOperation, .update)
+        XCTAssertEqual(missingManagedApp.recommendedOperation, .repair)
+        XCTAssertEqual(notInstalled.recommendedOperation, .install)
+    }
+
+    func testExternalToolOperationMustMatchCurrentInstallationState() {
+        XCTAssertFalse(ExternalToolManager.canPerform(.update, for: .installedOutsideHomebrew))
+        XCTAssertTrue(ExternalToolManager.canPerform(.update, for: .managedByHomebrew))
+        XCTAssertTrue(ExternalToolManager.canPerform(.repair, for: .managedByHomebrewMissingApp))
+        XCTAssertTrue(ExternalToolManager.canPerform(.install, for: .notInstalled))
+    }
+
+    func testFinderServiceFallbackOnlyExposesKnownLowRiskActions() {
+        let actionsByID = Dictionary(
+            uniqueKeysWithValues: DefaultActionRegistry.makeActions().map { ($0.actionId, $0) }
+        )
+        let definitions = FinderServiceCatalog.definitions
+
+        XCTAssertEqual(Set(definitions.map(\.actionID)), [
+            "guyue.action.filemanage.cut",
+            "guyue.action.filemanage.copyPath",
+            "guyue.action.filemanage.copyName",
+            "guyue.action.terminal.terminal",
+            "guyue.action.utility.calculateSHA256"
+        ])
+        XCTAssertTrue(definitions.allSatisfy { definition in
+            guard let action = actionsByID[definition.actionID] else { return false }
+            return action.isEnabledByDefault && !action.isHighRisk
+        })
+    }
+
+    func testFinderServiceSelectionNormalizesAndDeduplicatesFileURLs() {
+        let paths = FinderServiceCatalog.normalizedSelectionPaths(
+            fileURLStrings: [
+                "file:///Users/example/My%20File.txt",
+                "file:///Users/example/My%20File.txt",
+                "https://example.com/not-a-file"
+            ],
+            legacyPaths: [
+                "/Users/example/Folder",
+                "/Users/example/Folder",
+                "",
+                "relative/path"
+            ]
+        )
+
+        XCTAssertEqual(paths, [
+            "/Users/example/My File.txt",
+            "/Users/example/Folder"
+        ])
     }
 
     func testManagedExternalToolsMapToTerminalEditorApps() {

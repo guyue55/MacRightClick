@@ -37,11 +37,11 @@ MacRightClick 是一款免费、开源的 macOS Finder 右键菜单助手。当�
 - **一级菜单默认开启**：收藏动作置顶但不额外拉开大段间距；可切换分类菜单。
 - **动作档案**：精简、专业、自定义三档；高级动作不会被档案批量开启。
 - **快速检索**：按标题、动作 ID、分类和状态筛选。
-- **全目录或自定义范围**：默认覆盖 Finder 常用目录、系统根目录和外接卷；可收窄到自定义目录。
+- **全目录或自定义范围**：默认覆盖 Finder 常用目录、iCloud/CloudStorage、系统根目录和外接卷；可收窄到自定义目录。
 - **健康诊断**：分别展示菜单服务、完全磁盘访问和动作队列，并只推荐一个优先修复动作。
 - **可靠动作队列**：Pending -> InFlight -> 终态确认；宿主异常退出后可回收未完成租约。
 - **显式更新检查**：只有点击“检查更新”才访问 GitHub Release API。
-- **Homebrew 外部工具**：用户点击后可安装或更新 iTerm2、Warp、VS Code、Sublime Text、Cursor。
+- **Homebrew 外部工具**：区分独立安装与 Homebrew 管理来源，再安装、更新或修复 iTerm2、Warp、VS Code、Sublime Text、Cursor。
 - **Universal 2**：同时支持 Apple Silicon 与 Intel Mac。
 
 ## 30 个动作
@@ -61,6 +61,8 @@ MacRightClick 是一款免费、开源的 macOS Finder 右键菜单助手。当�
 ```mermaid
 flowchart LR
     F[Finder / FinderSync] -->|schema v2 事件| P[PendingActions]
+    F -->|File Provider 降级| S[macOS 系统服务]
+    S -->|schema v2 事件| P
     P -->|原子租约| I[InFlightActions]
     I --> H[Host ActionDispatcher]
     H --> R[交互或后台 Runner]
@@ -263,7 +265,14 @@ NOTARY_PROFILE="your-notarytool-profile" \
 /usr/local/bin/brew
 ```
 
-用户点击安装或更新后，App 才会在后台运行 `brew install --cask` 或 `brew upgrade --cask`。未检测到 Homebrew 时，只提供官网入口和官方安装命令复制，不会自动执行远程脚本。
+页面会在后台读取一次 `brew list --cask --versions`，同时检查 App 是否存在：
+
+- 未安装：提供 `brew install --cask`。
+- 由 Homebrew 管理：提供 `brew upgrade --cask --greedy`，包括声明 `auto_updates` 的 Cask。
+- App 已存在但不是由 Homebrew 管理：标记为“独立安装”，只提供打开入口，应使用应用自身的更新机制。
+- Homebrew 有安装记录但 App 缺失：提供 `brew reinstall --cask` 修复。
+
+只有用户点击安装、更新或修复后，App 才会在后台运行对应命令；执行前还会重新核对安装状态。未检测到 Homebrew 时，只提供官网入口和官方安装命令复制，不会自动执行远程脚本，也不会强制接管手动安装的 App。
 
 ## 隐私与日志
 
@@ -291,6 +300,14 @@ subsystem == "guyue.RightClickAssistant"
 ### 为什么其他路径没有右键菜单？
 
 在“Finder”页确认：扩展已启用、作用范围为“所有目录”、诊断页收到最近心跳且监听入口大于 0。菜单是否出现与完全磁盘访问是两个独立状态。
+
+如果“桌面”或“文稿”已由 iCloud Drive / File Provider 托管，macOS 可能不向第三方 FinderSync 扩展提供一级动作，同目录中其他 FinderSync 工具也会一起缺失。右键助手会在“服务”子菜单提供经验证的降级入口：剪切、拷贝完整路径、拷贝文件名、在系统终端中打开和获取 SHA256。路径为：
+
+```text
+右键文件/文件夹 -> 服务 -> 右键助手：…
+```
+
+这些服务复用同一动作队列和开关；对应动作在设置中被关闭时，系统服务也不会执行。“获取 SHA256”仅适用于单个文件。普通本地目录仍优先使用 FinderSync 一级菜单。
 
 ### 如何清理失败动作？
 

@@ -32,6 +32,7 @@ func makeRightClickMenuHealthSnapshot(
         pluginKitState: pluginKitState,
         heartbeatState: heartbeatState,
         watchScope: storage.watchScope,
+        cloudCompatibilityEnabled: storage.isCloudCompatibilityEnabled,
         pendingActionCount: storage.pendingActionCount,
         oldestPendingAge: storage.oldestPendingActionAge(),
         failedActionCount: storage.failedActionCount

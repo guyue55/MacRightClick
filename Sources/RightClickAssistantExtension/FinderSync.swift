@@ -225,38 +225,21 @@ class FinderSync: FIFinderSync {
         var observedURLs: Set<URL> = []
         let homePath = getRealHomeDirectory()
         
-        // 精准注册用户常用或自定义工作区，避免监听整个 Home 目录带来的隐私和性能问题。
+        // Finder 菜单范围与扩展的文件读取权限是两个边界。不能用 fileExists 过滤：
+        // 受保护目录可能暂时不可读，但 Finder 仍可根据 directoryURLs 提供菜单。
         for folderURL in SharedStorageManager.shared.watchedDirectoryURLs {
-            if FileManager.default.fileExists(atPath: folderURL.path) {
-                observedURLs.insert(folderURL)
-                logToSharedContainer("[FinderSync] 激活工作区监控: \(folderURL.path)", level: .debug)
-            }
+            observedURLs.insert(folderURL.standardizedFileURL)
+            logToSharedContainer("[FinderSync] 激活工作区监控: \(folderURL.path)", level: .debug)
         }
         
-        let shouldEnableCloudCompat = SharedStorageManager.shared.getBool(forKey: "shouldEnableiCloudMenu", defaultValue: false)
+        let shouldEnableCloudCompat = SharedStorageManager.shared.isCloudCompatibilityEnabled
         
         if shouldEnableCloudCompat {
             logToSharedContainer("[FinderSync] 云盘特殊兼容已启用，正在激活云端监听...", level: .debug)
             
-            // A. iCloud Drive 的标准本地路径：~/Library/Mobile Documents
-            let iCloudURL = URL(fileURLWithPath: homePath).appendingPathComponent("Library/Mobile Documents")
-            if FileManager.default.fileExists(atPath: iCloudURL.path) {
-                observedURLs.insert(iCloudURL)
-                logToSharedContainer("[FinderSync] 激活 iCloud Drive 监控: \(iCloudURL.path)", level: .debug)
-            }
-            
-            // B. OneDrive / Dropbox 等第三方同步客户端在 macOS 上统一由 FileProvider 托管的宿主根路径
-            let cloudStorageURL = URL(fileURLWithPath: homePath).appendingPathComponent("Library/CloudStorage")
-            if FileManager.default.fileExists(atPath: cloudStorageURL.path) {
-                observedURLs.insert(cloudStorageURL)
-                logToSharedContainer("[FinderSync] 激活 CloudStorage (OneDrive/Dropbox) 监控: \(cloudStorageURL.path)", level: .debug)
-            }
-            
-            // C. 备用检测：经典的本地 OneDrive 根目录
-            let legacyOneDriveURL = URL(fileURLWithPath: homePath).appendingPathComponent("OneDrive")
-            if FileManager.default.fileExists(atPath: legacyOneDriveURL.path) {
-                observedURLs.insert(legacyOneDriveURL)
-                logToSharedContainer("[FinderSync] 激活 Legacy OneDrive 监控: \(legacyOneDriveURL.path)", level: .debug)
+            for path in SharedStorageManager.cloudCompatibleDirectoryPaths(homePath: homePath) {
+                observedURLs.insert(URL(fileURLWithPath: path, isDirectory: true))
+                logToSharedContainer("[FinderSync] 激活云盘监控: \(path)", level: .debug)
             }
         }
         

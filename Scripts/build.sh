@@ -126,6 +126,59 @@ cat <<EOF > "$APP_BUNDLE/Contents/Info.plist"
     <true/>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>右键助手：剪切</string></dict>
+            <key>NSMessage</key><string>performFinderService</string>
+            <key>NSPortName</key><string>RightClickAssistant</string>
+            <key>NSRequiredContext</key>
+            <dict><key>NSTextContent</key><string>FilePath</string></dict>
+            <key>NSUserData</key><string>guyue.action.filemanage.cut</string>
+            <key>NSSendTypes</key><array><string>NSFilenamesPboardType</string></array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>右键助手：拷贝完整路径</string></dict>
+            <key>NSMessage</key><string>performFinderService</string>
+            <key>NSPortName</key><string>RightClickAssistant</string>
+            <key>NSRequiredContext</key>
+            <dict><key>NSTextContent</key><string>FilePath</string></dict>
+            <key>NSUserData</key><string>guyue.action.filemanage.copyPath</string>
+            <key>NSSendTypes</key><array><string>NSFilenamesPboardType</string></array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>右键助手：拷贝文件名</string></dict>
+            <key>NSMessage</key><string>performFinderService</string>
+            <key>NSPortName</key><string>RightClickAssistant</string>
+            <key>NSRequiredContext</key>
+            <dict><key>NSTextContent</key><string>FilePath</string></dict>
+            <key>NSUserData</key><string>guyue.action.filemanage.copyName</string>
+            <key>NSSendTypes</key><array><string>NSFilenamesPboardType</string></array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>右键助手：在系统终端中打开</string></dict>
+            <key>NSMessage</key><string>performFinderService</string>
+            <key>NSPortName</key><string>RightClickAssistant</string>
+            <key>NSRequiredContext</key>
+            <dict><key>NSTextContent</key><string>FilePath</string></dict>
+            <key>NSUserData</key><string>guyue.action.terminal.terminal</string>
+            <key>NSSendTypes</key><array><string>NSFilenamesPboardType</string></array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>右键助手：获取 SHA256</string></dict>
+            <key>NSMessage</key><string>performFinderService</string>
+            <key>NSPortName</key><string>RightClickAssistant</string>
+            <key>NSRequiredContext</key>
+            <dict><key>NSTextContent</key><string>FilePath</string></dict>
+            <key>NSUserData</key><string>guyue.action.utility.calculateSHA256</string>
+            <key>NSSendTypes</key><array><string>NSFilenamesPboardType</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF
@@ -211,6 +264,7 @@ fi
 # 5. 源码列表定义
 HOST_SOURCES="
     Sources/RightClickAssistant/AppDelegate.swift \
+    Sources/RightClickAssistant/FinderServicesProvider.swift \
     Sources/RightClickAssistant/Views/ContentView.swift \
     Sources/RightClickAssistant/Views/GeneralSettingsView.swift \
     Sources/RightClickAssistant/Views/ActionsSettingsView.swift \
@@ -230,6 +284,7 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/LaunchServiceManager.swift \
     Sources/RightClickAssistant/Core/LaunchPresentationPolicy.swift \
     Sources/RightClickAssistant/Core/FinderExtensionDiagnostics.swift \
+    Sources/RightClickAssistant/Core/FinderServiceCatalog.swift \
     Sources/RightClickAssistant/Core/ExtensionHeartbeat.swift \
     Sources/RightClickAssistant/Core/SystemReloader.swift \
     Sources/RightClickAssistant/Core/PermissionRefreshCoordinator.swift \

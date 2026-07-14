@@ -137,7 +137,7 @@ struct AdvancedSettingsView: View {
     private func resetAllDefaults() {
         let actionKeys = ActionDispatcher.shared.allActions.map { "enable_action_\($0.actionId)" }
         let preferenceKeys = [
-            "shouldEnableiCloudMenu",
+            SharedStorageManager.Keys.cloudCompatibility,
             "enable_success_hud",
             SharedStorageManager.Keys.enableDebugLogging,
             SharedStorageManager.Keys.menuLayoutMode,
@@ -171,18 +171,20 @@ struct AdvancedSettingsView: View {
 
 struct ExternalToolsManagerView: View {
     @State private var brewPath: String?
-    @State private var installedTools: [ManagedExternalTool: Bool] = [:]
+    @State private var toolStates: [ManagedExternalTool: ExternalToolInstallationState] = [:]
     @State private var runningTool: ManagedExternalTool?
-    @State private var runningOperation: ExternalToolOperation?
+    @State private var isRefreshing = false
+    @State private var inventoryError: String?
+    @State private var refreshRequestID = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(brewPath == nil ? "未检测到 Homebrew" : "Homebrew 已就绪")
-                    Text(brewPath ?? "安装 Homebrew 后可直接安装或更新可选工具。")
+                    Text(inventoryError ?? brewPath ?? "安装 Homebrew 后可管理可选工具。")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(inventoryError == nil ? Color.secondary : Color.orange)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -200,8 +202,14 @@ struct ExternalToolsManagerView: View {
                     }
                 } else {
                     Button(action: refresh) {
-                        Label("重新检测", systemImage: "arrow.clockwise")
+                        if isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("重新检测", systemImage: "arrow.clockwise")
+                        }
                     }
+                    .disabled(isRefreshing || runningTool != nil)
                 }
             }
 
@@ -218,14 +226,14 @@ struct ExternalToolsManagerView: View {
     }
 
     private func externalToolRow(_ tool: ManagedExternalTool) -> some View {
-        let isInstalled = installedTools[tool] ?? false
-        let operation: ExternalToolOperation = isInstalled ? .update : .install
+        let state = toolStates[tool] ?? .notInstalled
+        let operation = state.recommendedOperation
         let isRunning = runningTool == tool
 
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(tool.displayName)
-                Text("brew \(operation == .install ? "install" : "upgrade") --cask \(tool.caskName)")
+                Text(operationDetail(operation, tool: tool))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -233,34 +241,79 @@ struct ExternalToolsManagerView: View {
 
             Spacer(minLength: 12)
 
-            Text(isInstalled ? "已安装" : "未安装")
+            Text(stateTitle(state))
                 .font(.caption)
-                .foregroundStyle(isInstalled ? Color.green : Color.secondary)
+                .foregroundStyle(stateColor(state))
 
-            Button(action: { run(operation, for: tool) }) {
-                if isRunning {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 52)
-                } else {
-                    Text(operation.title)
-                        .frame(minWidth: 40)
+            if let operation {
+                Button(action: { run(operation, for: tool) }) {
+                    if isRunning {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 52)
+                    } else {
+                        Text(operation.title)
+                            .frame(minWidth: 40)
+                    }
                 }
+                .disabled(brewPath == nil || isRefreshing || runningTool != nil)
+                .accessibilityLabel("\(operation.title) \(tool.displayName)")
+            } else {
+                Button("打开") {
+                    openInstalledTool(tool)
+                }
+                .frame(minWidth: 52)
+                .disabled(isRefreshing || runningTool != nil)
+                .accessibilityLabel("打开 \(tool.displayName)")
             }
-            .disabled(brewPath == nil || runningTool != nil)
-            .accessibilityLabel("\(operation.title) \(tool.displayName)")
         }
         .padding(.vertical, 2)
     }
 
     private func refresh() {
-        brewPath = ExternalToolManager.homebrewExecutablePath()
+        let requestID = UUID()
+        refreshRequestID = requestID
+        let detectedBrewPath = ExternalToolManager.homebrewExecutablePath()
+        brewPath = detectedBrewPath
+        inventoryError = nil
         InstalledAppRegistry.shared.invalidateAll()
-        installedTools = Dictionary(
+        let appInstalledByTool = Dictionary(
             uniqueKeysWithValues: ManagedExternalTool.allCases.map { tool in
                 (tool, ExternalToolManager.isInstalled(tool))
             }
         )
+
+        guard let detectedBrewPath else {
+            isRefreshing = false
+            toolStates = appInstalledByTool.mapValues {
+                $0 ? .installedOutsideHomebrew : .notInstalled
+            }
+            return
+        }
+
+        isRefreshing = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let inventory = ExternalToolManager.loadInventory(
+                brewExecutablePath: detectedBrewPath,
+                appInstalledByTool: appInstalledByTool
+            )
+            DispatchQueue.main.async {
+                guard refreshRequestID == requestID else { return }
+                isRefreshing = false
+                if inventory.isReliable {
+                    toolStates = inventory.states
+                } else {
+                    toolStates = appInstalledByTool.mapValues {
+                        $0 ? .installedOutsideHomebrew : .notInstalled
+                    }
+                    let standardError = inventory.commandResult.standardError
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    inventoryError = inventory.commandResult.errorDescription
+                        ?? (standardError.isEmpty ? nil : standardError)
+                        ?? "无法读取 Homebrew Cask 列表"
+                }
+            }
+        }
     }
 
     private func copyHomebrewInstallCommand() {
@@ -284,7 +337,6 @@ struct ExternalToolsManagerView: View {
         }
 
         runningTool = tool
-        runningOperation = operation
         SharedHUDManager.show(
             title: "\(operation.title)\(tool.displayName)",
             content: "Homebrew 正在后台执行，请稍候",
@@ -300,7 +352,6 @@ struct ExternalToolsManagerView: View {
 
             DispatchQueue.main.async {
                 runningTool = nil
-                runningOperation = nil
                 refresh()
 
                 SharedHUDManager.show(
@@ -311,6 +362,50 @@ struct ExternalToolsManagerView: View {
                     isSuccess: outcome.isSuccess
                 )
             }
+        }
+    }
+
+    private func openInstalledTool(_ tool: ManagedExternalTool) {
+        guard let appURL = InstalledAppRegistry.shared.url(for: tool.bundleIdentifier) else {
+            SharedHUDManager.show(
+                title: "无法打开 \(tool.displayName)",
+                content: "应用位置已变化，请重新检测",
+                isSuccess: false
+            )
+            refresh()
+            return
+        }
+        NSWorkspace.shared.open(appURL)
+    }
+
+    private func operationDetail(
+        _ operation: ExternalToolOperation?,
+        tool: ManagedExternalTool
+    ) -> String {
+        guard let operation else { return "由应用自身管理更新" }
+        let command: String
+        switch operation {
+        case .install: command = "install"
+        case .update: return "brew upgrade --cask --greedy \(tool.caskName)"
+        case .repair: command = "reinstall"
+        }
+        return "brew \(command) --cask \(tool.caskName)"
+    }
+
+    private func stateTitle(_ state: ExternalToolInstallationState) -> String {
+        switch state {
+        case .notInstalled: return "未安装"
+        case .installedOutsideHomebrew: return "独立安装"
+        case .managedByHomebrew: return "Homebrew"
+        case .managedByHomebrewMissingApp: return "待修复"
+        }
+    }
+
+    private func stateColor(_ state: ExternalToolInstallationState) -> Color {
+        switch state {
+        case .notInstalled: return .secondary
+        case .installedOutsideHomebrew, .managedByHomebrew: return .green
+        case .managedByHomebrewMissingApp: return .orange
         }
     }
 

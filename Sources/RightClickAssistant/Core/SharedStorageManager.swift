@@ -106,6 +106,7 @@ public final class SharedStorageManager: @unchecked Sendable {
         public static let actionProfileMigrationV1 = "action_profile_migration_v1"
         /// FinderSync 作用范围：`.everywhere` / `.custom`，对应 `WatchScope`。
         public static let watchScope = "watch_scope"
+        public static let cloudCompatibility = "shouldEnableiCloudMenu"
     }
     
     private static let appGroupIdentifier = "group.guyue.RightClickAssistant"
@@ -321,14 +322,33 @@ public final class SharedStorageManager: @unchecked Sendable {
         return getBool(forKey: Keys.enableDebugLogging, defaultValue: false)
     }
 
-    /// 默认监听的 Finder 常用目录。不会创建不存在的目录。
-    public static func defaultWatchedDirectoryPaths(
+    /// 默认监听的 Finder 常用目录。只生成路径，不会创建目录或探测读权限。
+    public static func defaultWatchedDirectoryPaths(homePath: String) -> [String] {
+        ["Desktop", "Downloads", "Documents"]
+            .map { (homePath as NSString).appendingPathComponent($0) }
+    }
+
+    /// Finder 对 File Provider 目录可能使用逻辑路径或供应商真实根路径回调。
+    /// 同时注册两种入口，避免桌面/文稿迁移到 iCloud 后只在下载目录出现菜单。
+    public static func cloudCompatibleDirectoryPaths(
         homePath: String,
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
     ) -> [String] {
-        return ["Desktop", "Downloads", "Documents"]
-            .map { (homePath as NSString).appendingPathComponent($0) }
-            .filter(fileExists)
+        let mobileDocuments = (homePath as NSString)
+            .appendingPathComponent("Library/Mobile Documents")
+        let requiredICloudPaths = [
+            mobileDocuments,
+            (mobileDocuments as NSString).appendingPathComponent("com~apple~CloudDocs")
+        ]
+        let optionalProviderPaths = [
+            (homePath as NSString).appendingPathComponent("Library/CloudStorage"),
+            (homePath as NSString).appendingPathComponent("OneDrive")
+        ]
+
+        var seen = Set<String>()
+        return (requiredICloudPaths + optionalProviderPaths.filter(fileExists))
+            .map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path }
+            .filter { seen.insert($0).inserted }
     }
 
     /// `.everywhere` 模式下真正写入 FinderSync `directoryURLs` 的稳定根目录集合。
@@ -338,8 +358,7 @@ public final class SharedStorageManager: @unchecked Sendable {
     /// 这样仍然保持「所有目录」的产品语义，但不把可靠性押在单个根路径上。
     public static func everywhereWatchedDirectoryPaths(
         homePath: String,
-        mountedVolumePaths: [String],
-        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+        mountedVolumePaths: [String]
     ) -> [String] {
         let stableRoots = [
             "/",
@@ -351,13 +370,12 @@ public final class SharedStorageManager: @unchecked Sendable {
             homePath
         ]
 
-        let seeds = defaultWatchedDirectoryPaths(homePath: homePath, fileExists: fileExists)
+        let seeds = defaultWatchedDirectoryPaths(homePath: homePath)
         let paths = stableRoots + seeds + mountedVolumePaths
 
         var seen = Set<String>()
         return paths
             .map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path }
-            .filter(fileExists)
             .filter { seen.insert($0).inserted }
     }
 
@@ -410,6 +428,12 @@ public final class SharedStorageManager: @unchecked Sendable {
         set {
             setStringArray([newValue.rawValue], forKey: Keys.watchScope)
         }
+    }
+
+    /// 现代 macOS 可将桌面与文稿交给 iCloud File Provider 管理，因此默认开启。
+    /// 用户显式关闭后仍尊重已保存值。
+    public var isCloudCompatibilityEnabled: Bool {
+        getBool(forKey: Keys.cloudCompatibility, defaultValue: true)
     }
 
     /// Finder 右键菜单展示模式。默认 `.flat`，让已启用动作直接显示在一级菜单。

@@ -287,7 +287,8 @@ struct DiagnosticsSettingsView: View {
         case .unknown: registration = "扩展注册状态未知"
         }
         let scope = snapshot.watchScope == .everywhere ? "所有目录" : "自定义目录"
-        return "\(registration)；\(scope)，实际监听 \(snapshot.observedPathCount) 个入口。"
+        let cloud = snapshot.cloudCompatibilityEnabled ? "云盘兼容已开启" : "云盘兼容已关闭"
+        return "\(registration)；\(scope)，\(cloud)，实际监听 \(snapshot.observedPathCount) 个入口；File Provider 目录可使用系统服务入口。"
     }
 
     private func queueLevel(_ snapshot: RightClickMenuHealthSnapshot) -> SettingsStatusLevel {

@@ -37,11 +37,11 @@ A FinderSync extension renders menus and captures context, while the host app pe
 - **Top-level menu by default** with favorites first and no oversized separator gap; categorized mode is optional.
 - **Action profiles**: Essential, Professional, and Custom. Profiles never batch-enable advanced actions.
 - **Fast filtering** by title, action ID, category, and status.
-- **Everywhere or custom scope** covering common Finder roots and mounted volumes by default.
+- **Everywhere or custom scope** covering common Finder roots, iCloud/CloudStorage, and mounted volumes by default.
 - **Layered health diagnostics** for menu service, Full Disk Access, and the action queue, with one prioritized repair action.
 - **Reliable action queue** using Pending -> InFlight -> terminal acknowledgement and abandoned-lease recovery.
 - **Explicit update checks** that run only after the user clicks Check for Updates.
-- **Homebrew tool management** for iTerm2, Warp, VS Code, Sublime Text, and Cursor.
+- **Homebrew tool management** that distinguishes standalone apps from Homebrew-managed installs before installing, updating, or repairing iTerm2, Warp, VS Code, Sublime Text, and Cursor.
 - **Universal 2** support for Apple Silicon and Intel Macs.
 
 ## 30 Actions
@@ -61,6 +61,8 @@ A FinderSync extension renders menus and captures context, while the host app pe
 ```mermaid
 flowchart LR
     F[Finder / FinderSync] -->|schema v2 event| P[PendingActions]
+    F -->|File Provider fallback| S[macOS Services]
+    S -->|schema v2 event| P
     P -->|atomic lease| I[InFlightActions]
     I --> H[Host ActionDispatcher]
     H --> R[Interactive or background Runner]
@@ -263,7 +265,14 @@ Advanced -> External Tools checks these Homebrew locations:
 /usr/local/bin/brew
 ```
 
-The app runs `brew install --cask` or `brew upgrade --cask` in the background only after a user clicks Install or Update. If Homebrew is unavailable, the app only offers the official website and a copyable official install command; it does not execute a remote script automatically.
+The page reads `brew list --cask --versions` in the background and checks whether each app exists:
+
+- Not installed: offers `brew install --cask`.
+- Managed by Homebrew: offers `brew upgrade --cask --greedy`, including Casks marked `auto_updates`.
+- App present but not managed by Homebrew: labels it as a standalone install and only offers Open; use the app's own updater.
+- Homebrew record present but app missing: offers `brew reinstall --cask` to repair it.
+
+The app runs an install, update, or repair command only after an explicit click and revalidates the installation state before execution. If Homebrew is unavailable, it only offers the official website and a copyable official install command. It never runs a remote script automatically or forcibly takes over a manually installed app.
 
 ## Privacy And Logs
 
@@ -291,6 +300,14 @@ Return to the Finder page and click Recheck. If the state remains stale, use Rel
 ### The context menu is missing in other folders
 
 On the Finder page, verify that the extension is enabled and Watch Scope is Everywhere. The Diagnostics page should show a recent heartbeat with at least one observed entry. Menu visibility and Full Disk Access are separate states.
+
+If Desktop or Documents is managed by iCloud Drive / File Provider, macOS may suppress third-party FinderSync actions in that domain; other FinderSync tools disappear from the same menu as well. RightClickAssistant therefore registers a verified fallback under Services for Cut, Copy Full Path, Copy File Name, Open in Terminal, and SHA256:
+
+```text
+Control-click a file/folder -> Services -> RightClickAssistant: ...
+```
+
+These services reuse the same action queue and settings. A disabled action remains disabled through the service route, and SHA256 accepts one file only. FinderSync remains the preferred first-level menu in regular local folders.
 
 ### How do I clear failed actions?
 

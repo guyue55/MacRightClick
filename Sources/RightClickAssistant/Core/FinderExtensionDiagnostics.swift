@@ -37,6 +37,7 @@ public struct RightClickMenuHealthSnapshot: Equatable, Sendable {
     public let finderExtensionState: FinderExtensionRegistrationState
     public let finderSyncControllerEnabled: Bool
     public let watchScope: WatchScope
+    public let cloudCompatibilityEnabled: Bool
     public let heartbeatState: ExtensionHeartbeatState
     public let observedPathCount: Int
     public let pendingActionCount: Int
@@ -100,6 +101,7 @@ public struct RightClickMenuHealthSnapshot: Equatable, Sendable {
             "Finder Controller Enabled: \(finderSyncControllerEnabled)",
             "Heartbeat: \(heartbeat)",
             "Watch Scope: \(watchScope.rawValue)",
+            "Cloud Compatibility: \(cloudCompatibilityEnabled)",
             "Observed Paths: \(observedPathCount)",
             "Pending: \(pendingActionCount)",
             "Oldest Pending Seconds: \(oldestAge)",
@@ -178,6 +180,7 @@ public enum FinderExtensionDiagnostics {
         pluginKitState: FinderExtensionRegistrationState,
         heartbeatState: ExtensionHeartbeatState,
         watchScope: WatchScope,
+        cloudCompatibilityEnabled: Bool = true,
         pendingActionCount: Int,
         oldestPendingAge: TimeInterval?,
         failedActionCount: Int
@@ -201,6 +204,7 @@ public enum FinderExtensionDiagnostics {
             finderExtensionState: pluginKitState,
             finderSyncControllerEnabled: finderSyncControllerEnabled,
             watchScope: watchScope,
+            cloudCompatibilityEnabled: cloudCompatibilityEnabled,
             heartbeatState: heartbeatState,
             observedPathCount: observedPathCount,
             pendingActionCount: pendingActionCount,
@@ -216,6 +220,7 @@ public enum FinderExtensionDiagnostics {
         finderSyncControllerEnabled: Bool,
         pluginKitState: FinderExtensionRegistrationState,
         watchScope: WatchScope,
+        cloudCompatibilityEnabled: Bool = true,
         observedPathCount: Int,
         pendingActionCount: Int,
         failedActionCount: Int
@@ -226,6 +231,7 @@ public enum FinderExtensionDiagnostics {
             pluginKitState: pluginKitState,
             heartbeatState: .recent(observedPathCount: observedPathCount),
             watchScope: watchScope,
+            cloudCompatibilityEnabled: cloudCompatibilityEnabled,
             pendingActionCount: pendingActionCount,
             oldestPendingAge: nil,
             failedActionCount: failedActionCount
