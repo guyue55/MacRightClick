@@ -1137,23 +1137,119 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertTrue(ExternalToolManager.canPerform(.install, for: .notInstalled))
     }
 
-    func testFinderServiceFallbackOnlyExposesKnownLowRiskActions() {
-        let actionsByID = Dictionary(
-            uniqueKeysWithValues: DefaultActionRegistry.makeActions().map { ($0.actionId, $0) }
+    func testFinderServiceFallbackUsesOneStablePaletteEntry() {
+        XCTAssertEqual(FinderServiceCatalog.menuTitle, "右键助手…")
+        XCTAssertEqual(
+            FinderServiceCatalog.serviceUserData,
+            "guyue.service.openActionPalette"
         )
-        let definitions = FinderServiceCatalog.definitions
+        XCTAssertTrue(FinderServiceCatalog.accepts(userData: FinderServiceCatalog.serviceUserData))
+        XCTAssertFalse(FinderServiceCatalog.accepts(userData: "guyue.action.filemanage.cut"))
+    }
 
-        XCTAssertEqual(Set(definitions.map(\.actionID)), [
-            "guyue.action.filemanage.cut",
-            "guyue.action.filemanage.copyPath",
-            "guyue.action.filemanage.copyName",
-            "guyue.action.terminal.terminal",
-            "guyue.action.utility.calculateSHA256"
+    func testFinderServiceItemsRespectBackendEnabledAndAvailabilityRules() {
+        let selectedURL = tempDirectory.appendingPathComponent("selected.txt")
+        let visible = TestMenuAction(id: "visible", title: "可见", category: .utility)
+        let disabled = TestMenuAction(id: "disabled", title: "已关闭", category: .utility)
+        let unavailable = TestMenuAction(
+            id: "unavailable",
+            title: "不可用",
+            category: .utility,
+            isAvailable: false
+        )
+
+        let items = FinderServiceCatalog.resolveItems(
+            actions: [disabled, unavailable, visible],
+            targetURLs: [selectedURL],
+            isEnabled: { $0.actionId != disabled.actionId },
+            isFavorite: { _ in false },
+            fileExists: { _ in true }
+        )
+
+        XCTAssertEqual(items.map(\.actionID), [visible.actionId])
+    }
+
+    func testFinderServiceItemsPlaceFavoritesFirstThenUseCategoryAndTitleOrder() {
+        let favorite = TestMenuAction(id: "favorite", title: "末尾收藏", category: .utility)
+        let fileManage = TestMenuAction(id: "file", title: "文件动作", category: .fileManage)
+        let utilityB = TestMenuAction(id: "utility.b", title: "B 工具", category: .utility)
+        let utilityA = TestMenuAction(id: "utility.a", title: "A 工具", category: .utility)
+
+        let items = FinderServiceCatalog.resolveItems(
+            actions: [utilityB, fileManage, favorite, utilityA],
+            targetURLs: [tempDirectory],
+            isEnabled: { _ in true },
+            isFavorite: { $0.actionId == favorite.actionId },
+            fileExists: { _ in true }
+        )
+
+        XCTAssertEqual(items.map(\.actionID), [
+            favorite.actionId,
+            fileManage.actionId,
+            utilityA.actionId,
+            utilityB.actionId
         ])
-        XCTAssertTrue(definitions.allSatisfy { definition in
-            guard let action = actionsByID[definition.actionID] else { return false }
-            return action.isEnabledByDefault && !action.isHighRisk
-        })
+        XCTAssertTrue(items[0].isFavorite)
+        XCTAssertFalse(items[1].isFavorite)
+    }
+
+    func testFinderServiceItemsHideActionsWhoseRequiredTargetsNoLongerExist() {
+        let requiresTarget = TestMenuAction(
+            id: "requires-target",
+            title: "依赖目标",
+            category: .fileManage
+        )
+        let independent = TestMenuAction(
+            id: "independent",
+            title: "无需目标",
+            category: .utility,
+            requiresExistingTargets: false
+        )
+
+        let items = FinderServiceCatalog.resolveItems(
+            actions: [requiresTarget, independent],
+            targetURLs: [tempDirectory.appendingPathComponent("missing.txt")],
+            isEnabled: { _ in true },
+            isFavorite: { _ in false },
+            fileExists: { _ in false }
+        )
+
+        XCTAssertEqual(items.map(\.actionID), [independent.actionId])
+    }
+
+    func testFinderServiceItemSearchMatchesChineseTitleCategoryAndIdentifier() {
+        let items = [
+            FinderServiceActionItem(
+                actionID: "guyue.action.utility.calculateSHA256",
+                title: "获取文件 SHA256 校验码",
+                iconName: "number.square.fill",
+                category: .utility,
+                isFavorite: false,
+                isHighRisk: false
+            ),
+            FinderServiceActionItem(
+                actionID: "guyue.action.filemanage.cut",
+                title: "剪切",
+                iconName: "scissors",
+                category: .fileManage,
+                isFavorite: true,
+                isHighRisk: false
+            )
+        ]
+
+        XCTAssertEqual(
+            FinderServiceCatalog.filter(items: items, query: "校验").map(\.actionID),
+            [items[0].actionID]
+        )
+        XCTAssertEqual(
+            FinderServiceCatalog.filter(items: items, query: "文件管理").map(\.actionID),
+            [items[1].actionID]
+        )
+        XCTAssertEqual(
+            FinderServiceCatalog.filter(items: items, query: "calculateSHA").map(\.actionID),
+            [items[0].actionID]
+        )
+        XCTAssertEqual(FinderServiceCatalog.filter(items: items, query: "  "), items)
     }
 
     func testFinderServiceSelectionNormalizesAndDeduplicatesFileURLs() {
@@ -1216,11 +1312,25 @@ private final class TestMenuAction: MenuAction {
     let localizedTitle: String
     let iconName: String? = nil
     let category: ActionCategory
+    let requiresExistingTargets: Bool
+    private let available: Bool
 
-    init(id: String, title: String, category: ActionCategory) {
+    init(
+        id: String,
+        title: String,
+        category: ActionCategory,
+        isAvailable: Bool = true,
+        requiresExistingTargets: Bool = true
+    ) {
         self.actionId = id
         self.localizedTitle = title
         self.category = category
+        self.available = isAvailable
+        self.requiresExistingTargets = requiresExistingTargets
+    }
+
+    func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool {
+        available
     }
 
     func execute(targetURLs: [URL]) -> Bool {

@@ -35,7 +35,7 @@ struct PermissionsSettingsView: View {
                 ))
 
                 LabeledContent("File Provider 降级入口") {
-                    Text("服务 > 右键助手")
+                    Text("服务 > 右键助手…")
                         .foregroundStyle(.secondary)
                 }
             }

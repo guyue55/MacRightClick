@@ -301,13 +301,15 @@ Return to the Finder page and click Recheck. If the state remains stale, use Rel
 
 On the Finder page, verify that the extension is enabled and Watch Scope is Everywhere. The Diagnostics page should show a recent heartbeat with at least one observed entry. Menu visibility and Full Disk Access are separate states.
 
-If Desktop or Documents is managed by iCloud Drive / File Provider, macOS may suppress third-party FinderSync actions in that domain; other FinderSync tools disappear from the same menu as well. RightClickAssistant therefore registers a verified fallback under Services for Cut, Copy Full Path, Copy File Name, Open in Terminal, and SHA256:
+If Desktop or Documents is managed by iCloud Drive / File Provider, macOS may suppress third-party FinderSync actions in that domain; other FinderSync tools disappear from the same menu as well. RightClickAssistant therefore registers one verified fallback under Services that opens an action palette for the current Finder selection:
 
 ```text
-Control-click a file/folder -> Services -> RightClickAssistant: ...
+Control-click a file/folder -> Services -> RightClickAssistant...
 ```
 
-These services reuse the same action queue and settings. A disabled action remains disabled through the service route, and SHA256 accepts one file only. FinderSync remains the preferred first-level menu in regular local folders.
+The palette reuses the same action registry, settings, and transactional queue. It only shows enabled actions that apply to the current selection, keeps favorites first, and hides actions whose external app or target is unavailable. Every choice is validated again before it is queued. FinderSync remains the preferred first-level menu in regular local folders.
+
+This fallback does not request Accessibility or Automation access and does not use private APIs. To assign a keyboard shortcut, use System Settings -> Keyboard -> Keyboard Shortcuts -> Services and configure “RightClickAssistant...” there; the app intentionally avoids a global default that could conflict with existing shortcuts.
 
 ### How do I clear failed actions?
 

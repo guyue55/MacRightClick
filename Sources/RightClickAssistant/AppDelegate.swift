@@ -158,6 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     private func registerDefaultActions() {
         let actions = DefaultActionRegistry.registerAll()
         SharedStorageManager.shared.migrateSettingsIfNeeded(actions: actions)
+        ActionConfigCache.shared.preheat()
         print("[App] 已成功注册 \(actions.count) 个核心右键动作")
     }
     
