@@ -9,6 +9,8 @@ public struct FinderServiceActionItem: Equatable, Identifiable, Sendable {
     public let category: ActionCategory
     public let isFavorite: Bool
     public let isHighRisk: Bool
+    public let isRecommended: Bool
+    public let favoriteRank: Int?
 
     public var id: String { actionID }
 
@@ -18,7 +20,9 @@ public struct FinderServiceActionItem: Equatable, Identifiable, Sendable {
         iconName: String?,
         category: ActionCategory,
         isFavorite: Bool,
-        isHighRisk: Bool
+        isHighRisk: Bool,
+        isRecommended: Bool = false,
+        favoriteRank: Int? = nil
     ) {
         self.actionID = actionID
         self.title = title
@@ -26,11 +30,18 @@ public struct FinderServiceActionItem: Equatable, Identifiable, Sendable {
         self.category = category
         self.isFavorite = isFavorite
         self.isHighRisk = isHighRisk
+        self.isRecommended = isRecommended
+        self.favoriteRank = favoriteRank
     }
 }
 
+public enum FinderServiceRequest: Equatable, Sendable {
+    case palette
+    case directAction(String)
+}
+
 /// FinderSync 在 File Provider 托管目录中可能被 Finder 抑制。
-/// 系统服务以单一入口打开动作面板，并由这里统一决定动作显隐。
+/// 系统服务提供稳定面板入口和受控直达项，并由这里统一决定动作显隐与授权。
 public enum FinderServiceCatalog {
     public static let menuTitle = "右键助手…"
     public static let serviceUserData = "guyue.service.openActionPalette"
@@ -39,11 +50,23 @@ public enum FinderServiceCatalog {
         userData == serviceUserData
     }
 
+    public static func request(
+        userData: String,
+        authorizedDirectActionIDs: Set<String>
+    ) -> FinderServiceRequest? {
+        if accepts(userData: userData) {
+            return .palette
+        }
+        guard authorizedDirectActionIDs.contains(userData) else { return nil }
+        return .directAction(userData)
+    }
+
     public static func resolveItems(
         actions: [MenuAction],
         targetURLs: [URL],
         isEnabled: (MenuAction) -> Bool,
         isFavorite: (MenuAction) -> Bool,
+        favoriteRank: (MenuAction) -> Int? = { _ in nil },
         fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
     ) -> [FinderServiceActionItem] {
         guard !targetURLs.isEmpty else { return [] }
@@ -69,7 +92,9 @@ public enum FinderServiceCatalog {
                 iconName: action.iconName,
                 category: action.category,
                 isFavorite: isFavorite(action),
-                isHighRisk: action.isHighRisk
+                isHighRisk: action.isHighRisk,
+                isRecommended: FinderQuickActionPolicy.isRecommended(actionID: action.actionId),
+                favoriteRank: favoriteRank(action)
             )
         }
 
@@ -113,6 +138,9 @@ public enum FinderServiceCatalog {
     ) -> Bool {
         if lhs.isFavorite != rhs.isFavorite {
             return lhs.isFavorite
+        }
+        if lhs.isFavorite, lhs.favoriteRank != rhs.favoriteRank {
+            return (lhs.favoriteRank ?? .max) < (rhs.favoriteRank ?? .max)
         }
         if lhs.category != rhs.category {
             return categoryIndex(lhs.category) < categoryIndex(rhs.category)

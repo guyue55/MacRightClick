@@ -24,6 +24,8 @@ grep -q 'app "RightClickAssistant.app"' "$CASK_FILE" || fail "Cask 必须安装 
 grep -q 'depends_on macos: :ventura' "$CASK_FILE" || fail "Cask 必须使用当前语法声明 macOS 13+"
 grep -q '/usr/bin/pluginkit' "$CASK_FILE" || fail "Cask 卸载时必须反注册 FinderSync 扩展"
 grep -q 'guyue.RightClickAssistant.Extension' "$CASK_FILE" || fail "Cask 必须包含 FinderSync 扩展 bundle id"
+grep -q 'Library/Services/RightClickAssistantQuickActions.service' "$CASK_FILE" || fail "Cask 卸载时必须清理动态服务"
+grep -q 'NSUpdateDynamicServices' "$CASK_FILE" || fail "Cask 卸载后必须刷新系统服务缓存"
 grep -q 'caveats <<~EOS' "$CASK_FILE" || fail "Cask 必须在安装后说明社区签名状态"
 grep -q 'Ad-hoc signed, not notarized community build' "$CASK_FILE" || fail "Cask 必须披露 Ad-hoc 与未公证状态"
 grep -Fq "$QUARANTINE_COMMAND" "$CASK_FILE" || fail "Cask 安装后提示必须提供精确的 quarantine 移除命令"

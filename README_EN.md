@@ -154,7 +154,7 @@ brew update
 brew upgrade --cask rightclickassistant
 ```
 
-A normal uninstall keeps settings and runtime data:
+A normal uninstall keeps settings and runtime data, while removing dynamic quick services and refreshing the system menu:
 
 ```bash
 brew uninstall --cask rightclickassistant
@@ -301,15 +301,18 @@ Return to the Finder page and click Recheck. If the state remains stale, use Rel
 
 On the Finder page, verify that the extension is enabled and Watch Scope is Everywhere. The Diagnostics page should show a recent heartbeat with at least one observed entry. Menu visibility and Full Disk Access are separate states.
 
-If Desktop or Documents is managed by iCloud Drive / File Provider, macOS may suppress third-party FinderSync actions in that domain; other FinderSync tools disappear from the same menu as well. RightClickAssistant therefore registers one verified fallback under Services that opens an action palette for the current Finder selection:
+If Desktop or Documents is managed by iCloud Drive / File Provider, macOS may suppress third-party FinderSync actions in that domain; other FinderSync tools disappear from the same menu as well. RightClickAssistant therefore provides two fallback levels under Services:
 
 ```text
-Control-click a file/folder -> Services -> RightClickAssistant...
+Control-click a file/folder -> Services -> 右键助手 · 剪切 (direct action example)
+Control-click a file/folder -> Services -> 右键助手… (full action palette)
 ```
 
-The palette reuses the same action registry, settings, and transactional queue. It only shows enabled actions that apply to the current selection, keeps favorites first, and hides actions whose external app or target is unavailable. Every choice is validated again before it is queued. FinderSync remains the preferred first-level menu in regular local folders.
+Direct services keep enabled favorites in the user's saved order, then fill from common actions such as Cut, Copy Full Path, Copy File Name, Open in Terminal, and SHA256. Entries are deduplicated and capped at eight. High-risk actions and actions whose external app is unavailable are never advertised directly. Changes to favorites and action switches refresh Services on demand without background polling.
 
-This fallback does not request Accessibility or Automation access and does not use private APIs. To assign a keyboard shortcut, use System Settings -> Keyboard -> Keyboard Shortcuts -> Services and configure “RightClickAssistant...” there; the app intentionally avoids a global default that could conflict with existing shortcuts.
+The “右键助手…” palette reuses the same action registry, settings, and transactional queue. It provides All, Common, New, Files, Terminal, and Tools views plus search. All keeps favorites first, recommendations second, and remaining categories deduplicated. Only actions that apply to the current selection are shown, and every choice is validated again before it is queued. FinderSync remains the preferred first-level menu in regular local folders.
+
+This fallback does not request Accessibility or Automation access and does not use private APIs. Dynamic entries are stored at `~/Library/Services/RightClickAssistantQuickActions.service` and refreshed with Apple's `NSUpdateDynamicServices()` only when their content changes; normal and zap uninstall paths remove the generated bundle. To assign a keyboard shortcut, use System Settings -> Keyboard -> Keyboard Shortcuts -> Services and configure “右键助手…” there; the app intentionally avoids a global default that could conflict with existing shortcuts.
 
 ### How do I clear failed actions?
 

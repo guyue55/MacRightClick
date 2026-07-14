@@ -17,17 +17,24 @@ cask "rightclickassistant" do
 
   app "RightClickAssistant.app"
 
+  uninstall_postflight do
+    system_command "/usr/bin/osascript",
+                   args: ["-l", "JavaScript", "-e", 'ObjC.import("AppKit"); $.NSUpdateDynamicServices();']
+  end
+
   uninstall quit:   "guyue.RightClickAssistant",
             script: {
               executable: "/usr/bin/pluginkit",
               args:       ["-r", "guyue.RightClickAssistant.Extension"],
-            }
+            },
+            trash:  "~/Library/Services/RightClickAssistantQuickActions.service"
 
   zap trash: [
     "~/Library/Containers/guyue.RightClickAssistant",
     "~/Library/Containers/guyue.RightClickAssistant.Extension",
     "~/Library/Group Containers/group.guyue.RightClickAssistant",
     "~/Library/Preferences/guyue.RightClickAssistant.plist",
+    "~/Library/Services/RightClickAssistantQuickActions.service",
   ]
 
   caveats <<~EOS

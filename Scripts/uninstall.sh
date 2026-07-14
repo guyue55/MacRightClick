@@ -18,17 +18,23 @@ pluginkit -r "build/RightClickAssistant.app/Contents/PlugIns/RightClickAssistant
 echo "🛑 [Uninstall] 2. 终止常驻保活的主程序进程..."
 killall RightClickAssistant 2>/dev/null || true
 
-# 3. 删除主 App 部署包
-echo "🗑️ [Uninstall] 3. 清除 /Applications 目录下的主程序..."
+# 3. 删除动态系统服务，避免卸载后保留失效菜单
+echo "🧩 [Uninstall] 3. 清除动态系统服务..."
+rm -rf "$HOME/Library/Services/RightClickAssistantQuickActions.service"
+/usr/bin/osascript -l JavaScript \
+  -e 'ObjC.import("AppKit"); $.NSUpdateDynamicServices();' 2>/dev/null || true
+
+# 4. 删除主 App 部署包
+echo "🗑️ [Uninstall] 4. 清除 /Applications 目录下的主程序..."
 rm -rf "/Applications/RightClickAssistant.app"
 
-# 4. 清理共享中介目录
-echo "📂 [Uninstall] 4. 清除共享中介缓存..."
+# 5. 清理共享中介目录
+echo "📂 [Uninstall] 5. 清除共享中介缓存..."
 rm -rf "$HOME/Library/Containers/org.antigravity.RightClickAssistant.Extension/Data" 2>/dev/null || true
 rm -rf "$HOME/Library/Containers/guyue.RightClickAssistant.Extension/Data" 2>/dev/null || true
 
-# 5. 重启访达 (Finder)，释放扩展 XPC 会话
-echo "🔄 [Uninstall] 5. 重启访达进程以释放扩展缓存..."
+# 6. 重启访达 (Finder)，释放扩展 XPC 会话
+echo "🔄 [Uninstall] 6. 重启访达进程以释放扩展缓存..."
 killall Finder 2>/dev/null || true
 
 echo "=============================================================================="

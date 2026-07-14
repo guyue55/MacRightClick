@@ -9,13 +9,10 @@ struct FinderServicePaletteView: View {
     let onSelect: (String) -> Void
 
     @State private var query = ""
+    @State private var scope: FinderServicePaletteScope = .all
 
-    private var filteredItems: [FinderServiceActionItem] {
-        FinderServiceCatalog.filter(items: items, query: query)
-    }
-
-    private var favoriteItems: [FinderServiceActionItem] {
-        filteredItems.filter(\.isFavorite)
+    private var sections: [FinderServicePaletteSection] {
+        FinderServicePaletteBuilder.sections(items: items, scope: scope, query: query)
     }
 
     var body: some View {
@@ -35,33 +32,32 @@ struct FinderServicePaletteView: View {
 
             Divider()
 
-            if filteredItems.isEmpty {
+            Picker("动作分类", selection: $scope) {
+                ForEach(FinderServicePaletteScope.allCases) { item in
+                    Text(item.localizedName).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            if sections.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.title2)
-                    Text("没有匹配的动作")
+                    Text(query.isEmpty ? "这个分类暂无可用动作" : "没有匹配的动作")
                 }
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    if !favoriteItems.isEmpty {
-                        Section("已收藏") {
-                            ForEach(favoriteItems) { item in
+                    ForEach(sections) { section in
+                        Section(section.title) {
+                            ForEach(section.items) { item in
                                 actionButton(item)
-                            }
-                        }
-                    }
-
-                    ForEach(ActionCategory.allCases) { category in
-                        let categoryItems = filteredItems.filter {
-                            !$0.isFavorite && $0.category == category
-                        }
-                        if !categoryItems.isEmpty {
-                            Section(category.localizedName) {
-                                ForEach(categoryItems) { item in
-                                    actionButton(item)
-                                }
                             }
                         }
                     }

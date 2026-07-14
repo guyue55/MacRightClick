@@ -34,7 +34,12 @@ struct PermissionsSettingsView: View {
                     set: saveCloudCompatibility
                 ))
 
-                LabeledContent("File Provider 降级入口") {
+                LabeledContent("服务快捷动作") {
+                    Text("收藏优先，最多 8 项")
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("完整动作面板") {
                     Text("服务 > 右键助手…")
                         .foregroundStyle(.secondary)
                 }

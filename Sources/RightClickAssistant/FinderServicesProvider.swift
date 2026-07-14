@@ -8,6 +8,9 @@ final class FinderServicesProvider: NSObject {
 
     private static let legacyFilenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
     private static let fileURLType = NSPasteboard.PasteboardType("public.file-url")
+    private static let forwardedActionType = NSPasteboard.PasteboardType(
+        FinderQuickServiceProtocol.forwardedActionPasteboardType
+    )
     private static let actionSignal = Notification.Name(
         "guyue.RightClickAssistant.triggerActionSignal"
     )
@@ -19,26 +22,57 @@ final class FinderServicesProvider: NSObject {
         userData: String,
         error errorPointer: AutoreleasingUnsafeMutablePointer<NSString?>
     ) {
-        guard FinderServiceCatalog.accepts(userData: userData) else {
+        AppLog.info("收到 Finder 服务请求：\(userData)", category: .host)
+        let forwardedActionID = pasteboard.string(forType: Self.forwardedActionType)
+        let request: FinderServiceRequest?
+        if let forwardedActionID {
+            let directActionIDs = Set(FinderQuickActionRuntime.currentItems().map(\.actionID))
+            request = FinderServiceCatalog.request(
+                userData: forwardedActionID,
+                authorizedDirectActionIDs: directActionIDs
+            )
+        } else if FinderServiceCatalog.accepts(userData: userData) {
+            request = .palette
+        } else {
+            request = nil
+        }
+        guard let request else {
+            AppLog.error("拒绝未知或已过期的 Finder 服务请求：\(userData)", category: .host)
             errorPointer.pointee = "未知的右键助手服务" as NSString
             return
         }
 
         let paths = Self.selectionPaths(from: pasteboard)
         guard !paths.isEmpty else {
+            AppLog.error("Finder 服务请求未包含有效文件路径：\(userData)", category: .host)
             errorPointer.pointee = "请先在 Finder 中选择文件或文件夹" as NSString
+            return
+        }
+
+        if case let .directAction(actionID) = request {
+            if let error = submissionError(actionID: actionID, paths: paths) {
+                errorPointer.pointee = error as NSString
+            } else {
+                errorPointer.pointee = nil
+            }
             return
         }
 
         let targetURLs = paths.map { URL(fileURLWithPath: $0) }
         let cache = ActionConfigCache.shared
+        var favoriteRanks: [String: Int] = [:]
+        for (rank, actionID) in SharedStorageManager.shared.favoriteActionIds.enumerated()
+            where favoriteRanks[actionID] == nil {
+            favoriteRanks[actionID] = rank
+        }
         let items = FinderServiceCatalog.resolveItems(
             actions: ActionDispatcher.shared.allActions,
             targetURLs: targetURLs,
             isEnabled: {
                 cache.isEnabled($0.actionId, default: $0.isEnabledByDefault)
             },
-            isFavorite: { cache.isFavorite($0.actionId) }
+            isFavorite: { cache.isFavorite($0.actionId) },
+            favoriteRank: { favoriteRanks[$0.actionId] }
         )
         guard !items.isEmpty else {
             errorPointer.pointee = "当前选中项没有已启用且可用的动作" as NSString
@@ -50,17 +84,20 @@ final class FinderServicesProvider: NSObject {
             items: items,
             selectedPaths: paths,
             onSelect: { [weak self] actionID in
-                self?.submit(actionID: actionID, paths: paths)
+                guard let self,
+                      let error = self.submissionError(actionID: actionID, paths: paths) else {
+                    return
+                }
+                self.showFailure(error)
             }
         )
     }
 
     @MainActor
-    private func submit(actionID: String, paths: [String]) {
+    private func submissionError(actionID: String, paths: [String]) -> String? {
         let targetURLs = paths.map { URL(fileURLWithPath: $0) }
         guard let action = ActionDispatcher.shared.action(forId: actionID) else {
-            showFailure("动作已不存在，请重新打开右键助手")
-            return
+            return "动作已不存在，请重新打开右键助手"
         }
 
         let eligible = FinderServiceCatalog.resolveItems(
@@ -70,8 +107,7 @@ final class FinderServicesProvider: NSObject {
             isFavorite: { _ in false }
         )
         guard eligible.first?.actionID == actionID else {
-            showFailure("动作已关闭、目标已变化或当前不可用")
-            return
+            return "动作已关闭、目标已变化或当前不可用"
         }
 
         do {
@@ -86,9 +122,11 @@ final class FinderServicesProvider: NSObject {
                 userInfo: nil,
                 deliverImmediately: true
             )
+            AppLog.info("Finder 服务动作已入队：\(actionID)", category: .host)
+            return nil
         } catch {
             AppLog.error("Finder 服务入队失败：\(error.localizedDescription)", category: .storage)
-            showFailure("无法提交操作：\(error.localizedDescription)")
+            return "无法提交操作：\(error.localizedDescription)"
         }
     }
 

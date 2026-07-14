@@ -225,6 +225,7 @@ fi
 HOST_SOURCES="
     Sources/RightClickAssistant/AppDelegate.swift \
     Sources/RightClickAssistant/FinderServicesProvider.swift \
+    Sources/RightClickAssistant/FinderQuickServiceManager.swift \
     Sources/RightClickAssistant/Views/ContentView.swift \
     Sources/RightClickAssistant/Views/GeneralSettingsView.swift \
     Sources/RightClickAssistant/Views/ActionsSettingsView.swift \
@@ -246,6 +247,8 @@ HOST_SOURCES="
     Sources/RightClickAssistant/Core/LaunchPresentationPolicy.swift \
     Sources/RightClickAssistant/Core/FinderExtensionDiagnostics.swift \
     Sources/RightClickAssistant/Core/FinderServiceCatalog.swift \
+    Sources/RightClickAssistant/Core/FinderQuickActions.swift \
+    Sources/RightClickAssistant/Core/FinderQuickServiceProtocol.swift \
     Sources/RightClickAssistant/Core/ExtensionHeartbeat.swift \
     Sources/RightClickAssistant/Core/SystemReloader.swift \
     Sources/RightClickAssistant/Core/PermissionRefreshCoordinator.swift \
@@ -327,6 +330,23 @@ swiftc $COMMON_FLAGS -target x86_64-apple-macosx13.0 $HOST_SOURCES -o "$BUILD_DI
 echo "🔗 [Build] 使用 lipo 创建宿主主程序的 Universal 胖二进制文件..."
 lipo -create -output "$APP_BUNDLE/Contents/MacOS/RightClickAssistant" "$BUILD_DIR/RightClickAssistant_arm64" "$BUILD_DIR/RightClickAssistant_x86_64"
 
+# 动态 .service 的微型转发 helper，不包含动作引擎或设置逻辑。
+echo "🛠️ [Build] 编译 Finder 快捷服务 helper (Universal)..."
+QUICK_SERVICE_SOURCES="
+    Sources/RightClickAssistantQuickService/main.swift \
+    Sources/RightClickAssistant/Core/FinderQuickServiceProtocol.swift
+"
+swiftc -Onone -sdk "$SDK_PATH" -vfsoverlay "$BUILD_DIR/overlay.yaml" \
+    -target arm64-apple-macosx13.0 $QUICK_SERVICE_SOURCES \
+    -o "$BUILD_DIR/RightClickAssistantQuickService_arm64"
+swiftc -Onone -sdk "$SDK_PATH" -vfsoverlay "$BUILD_DIR/overlay.yaml" \
+    -target x86_64-apple-macosx13.0 $QUICK_SERVICE_SOURCES \
+    -o "$BUILD_DIR/RightClickAssistantQuickService_x86_64"
+lipo -create \
+    -output "$APP_BUNDLE/Contents/Resources/RightClickAssistantQuickService" \
+    "$BUILD_DIR/RightClickAssistantQuickService_arm64" \
+    "$BUILD_DIR/RightClickAssistantQuickService_x86_64"
+
 
 # 7. 编译 Finder Sync 插件 (arm64 与 x86_64)
 echo "🛠️ [Build] 编译 Finder Sync 扩展插件 (arm64)..."
@@ -385,6 +405,7 @@ echo "🔐 [Build] 自动进行嵌套签名..."
 # A. 先签名最内层插件的二进制与整个 XPC 插件 bundle
 codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE/Contents/MacOS/RightClickAssistantExtension"
 codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS --entitlements "$BUILD_DIR/RightClickAssistantExtension.entitlements" "$EXT_BUNDLE"
+codesign --force --sign "$CODE_SIGN_IDENTITY" $CODESIGN_RUNTIME_ARGS "$APP_BUNDLE/Contents/Resources/RightClickAssistantQuickService"
 
 # B. 再签名主程序二进制。官网分发路线保持主 App 非沙盒，并在 website-release 下启用 hardened runtime。
 # B. 主 App 二进制 + 整个 .app Bundle 都用 host entitlements 模板。

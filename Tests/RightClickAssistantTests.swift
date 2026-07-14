@@ -1147,6 +1147,202 @@ final class RightClickAssistantTests: XCTestCase {
         XCTAssertFalse(FinderServiceCatalog.accepts(userData: "guyue.action.filemanage.cut"))
     }
 
+    func testFinderServiceRequestOnlyAcceptsCurrentlyAuthorizedDirectActions() {
+        let actionID = "guyue.action.filemanage.cut"
+
+        XCTAssertEqual(
+            FinderServiceCatalog.request(
+                userData: FinderServiceCatalog.serviceUserData,
+                authorizedDirectActionIDs: []
+            ),
+            .palette
+        )
+        XCTAssertEqual(
+            FinderServiceCatalog.request(
+                userData: actionID,
+                authorizedDirectActionIDs: [actionID]
+            ),
+            .directAction(actionID)
+        )
+        XCTAssertNil(
+            FinderServiceCatalog.request(
+                userData: "guyue.action.filemanage.delete",
+                authorizedDirectActionIDs: [actionID]
+            )
+        )
+    }
+
+    func testQuickActionsPlaceFavoritesFirstAndFillRecommendationsWithoutDuplicates() {
+        let cut = TestMenuAction(
+            id: "guyue.action.filemanage.cut",
+            title: "剪切",
+            category: .fileManage
+        )
+        let copyPath = TestMenuAction(
+            id: "guyue.action.filemanage.copyPath",
+            title: "拷贝完整路径",
+            category: .fileManage
+        )
+        let custom = TestMenuAction(id: "custom.favorite", title: "自定义收藏", category: .utility)
+
+        let items = FinderQuickActionPolicy.resolveDirectItems(
+            actions: [cut, copyPath, custom],
+            favoriteActionIDs: [custom.actionId, cut.actionId, custom.actionId],
+            isEnabled: { _ in true },
+            isExternalAppAvailable: { _ in true }
+        )
+
+        XCTAssertEqual(items.map(\.actionID), [custom.actionId, cut.actionId, copyPath.actionId])
+        XCTAssertEqual(items.map(\.isFavorite), [true, true, false])
+        XCTAssertTrue(items[1].isRecommended)
+        XCTAssertTrue(items[2].isRecommended)
+    }
+
+    func testQuickActionsExcludeDisabledHighRiskAndUnavailableExternalApps() {
+        let enabled = TestMenuAction(id: "enabled", title: "可用", category: .utility)
+        let disabled = TestMenuAction(id: "disabled", title: "已关闭", category: .utility)
+        let highRisk = TestMenuAction(
+            id: "high-risk",
+            title: "高风险",
+            category: .fileManage,
+            isHighRisk: true
+        )
+        let missingApp = TestMenuAction(
+            id: "missing-app",
+            title: "外部应用",
+            category: .terminal,
+            associatedBundleIdentifier: "example.missing"
+        )
+
+        let items = FinderQuickActionPolicy.resolveDirectItems(
+            actions: [enabled, disabled, highRisk, missingApp],
+            favoriteActionIDs: [enabled.actionId, disabled.actionId, highRisk.actionId, missingApp.actionId],
+            isEnabled: { $0.actionId != disabled.actionId },
+            isExternalAppAvailable: { $0 != "example.missing" }
+        )
+
+        XCTAssertEqual(items.map(\.actionID), [enabled.actionId])
+    }
+
+    func testQuickActionsCapDirectServicesAtEight() {
+        let actions = (0..<12).map {
+            TestMenuAction(id: "favorite.\($0)", title: "收藏 \($0)", category: .utility)
+        }
+
+        let items = FinderQuickActionPolicy.resolveDirectItems(
+            actions: actions,
+            favoriteActionIDs: actions.map(\.actionId),
+            isEnabled: { _ in true },
+            isExternalAppAvailable: { _ in true }
+        )
+
+        XCTAssertEqual(items.count, FinderQuickActionPolicy.maximumDirectActionCount)
+        XCTAssertEqual(items.map(\.actionID), Array(actions.prefix(8)).map(\.actionId))
+    }
+
+    func testFinderServicePaletteSectionsDeduplicateElevatedItems() {
+        let favorite = FinderServiceActionItem(
+            actionID: "favorite",
+            title: "收藏动作",
+            iconName: nil,
+            category: .utility,
+            isFavorite: true,
+            isHighRisk: false,
+            isRecommended: true
+        )
+        let recommended = FinderServiceActionItem(
+            actionID: "recommended",
+            title: "推荐动作",
+            iconName: nil,
+            category: .fileManage,
+            isFavorite: false,
+            isHighRisk: false,
+            isRecommended: true
+        )
+        let remaining = FinderServiceActionItem(
+            actionID: "remaining",
+            title: "其余动作",
+            iconName: nil,
+            category: .fileManage,
+            isFavorite: false,
+            isHighRisk: false
+        )
+        let items = [favorite, recommended, remaining]
+
+        let allSections = FinderServicePaletteBuilder.sections(
+            items: items,
+            scope: .all,
+            query: ""
+        )
+        XCTAssertEqual(allSections.map(\.title), ["已收藏", "常用推荐", "文件管理"])
+        XCTAssertEqual(allSections.flatMap(\.items).map(\.actionID), items.map(\.actionID))
+
+        let commonSections = FinderServicePaletteBuilder.sections(
+            items: items,
+            scope: .common,
+            query: ""
+        )
+        XCTAssertEqual(commonSections.map(\.title), ["常用"])
+        XCTAssertEqual(commonSections.flatMap(\.items).map(\.actionID), ["favorite", "recommended"])
+
+        let fileSections = FinderServicePaletteBuilder.sections(
+            items: items,
+            scope: .fileManage,
+            query: ""
+        )
+        XCTAssertEqual(fileSections.flatMap(\.items).map(\.actionID), ["recommended", "remaining"])
+    }
+
+    func testQuickServiceManifestAndBundleStoreAreStableAndIdempotent() throws {
+        let item = FinderServiceActionItem(
+            actionID: "guyue.action.filemanage.cut",
+            title: "剪切",
+            iconName: "scissors",
+            category: .fileManage,
+            isFavorite: true,
+            isHighRisk: false,
+            isRecommended: true
+        )
+        let data = try FinderQuickServiceManifest.encodedData(items: [item], appVersion: "1.2.0")
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+            ) as? [String: Any]
+        )
+        let services = try XCTUnwrap(plist["NSServices"] as? [[String: Any]])
+        let service = try XCTUnwrap(services.first)
+        let menuItem = try XCTUnwrap(service["NSMenuItem"] as? [String: String])
+
+        XCTAssertEqual(
+            plist["CFBundleExecutable"] as? String,
+            FinderQuickServiceProtocol.executableName
+        )
+        XCTAssertEqual(
+            plist["CFBundleIdentifier"] as? String,
+            FinderQuickServiceProtocol.bundleIdentifier
+        )
+        XCTAssertEqual(menuItem["default"], "右键助手 · 剪切")
+        XCTAssertEqual(service["NSUserData"] as? String, item.actionID)
+        XCTAssertEqual(service["NSMessage"] as? String, "performFinderService")
+        XCTAssertEqual(
+            service["NSPortName"] as? String,
+            FinderQuickServiceProtocol.providerPortName
+        )
+
+        let servicesDirectory = tempDirectory.appendingPathComponent("Services", isDirectory: true)
+        let executableData = Data("quick-service".utf8)
+        let store = FinderQuickServiceBundleStore(servicesDirectoryURL: servicesDirectory)
+        XCTAssertTrue(try store.synchronize(manifestData: data, executableData: executableData))
+        XCTAssertFalse(try store.synchronize(manifestData: data, executableData: executableData))
+        XCTAssertEqual(try Data(contentsOf: store.infoPlistURL), data)
+        XCTAssertEqual(try Data(contentsOf: store.executableURL), executableData)
+        XCTAssertTrue(try store.synchronize(manifestData: nil, executableData: nil))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.bundleURL.path))
+        XCTAssertFalse(try store.synchronize(manifestData: nil, executableData: nil))
+    }
+
     func testFinderServiceItemsRespectBackendEnabledAndAvailabilityRules() {
         let selectedURL = tempDirectory.appendingPathComponent("selected.txt")
         let visible = TestMenuAction(id: "visible", title: "可见", category: .utility)
@@ -1313,6 +1509,8 @@ private final class TestMenuAction: MenuAction {
     let iconName: String? = nil
     let category: ActionCategory
     let requiresExistingTargets: Bool
+    let isHighRisk: Bool
+    let associatedBundleIdentifier: String?
     private let available: Bool
 
     init(
@@ -1320,13 +1518,17 @@ private final class TestMenuAction: MenuAction {
         title: String,
         category: ActionCategory,
         isAvailable: Bool = true,
-        requiresExistingTargets: Bool = true
+        requiresExistingTargets: Bool = true,
+        isHighRisk: Bool = false,
+        associatedBundleIdentifier: String? = nil
     ) {
         self.actionId = id
         self.localizedTitle = title
         self.category = category
         self.available = isAvailable
         self.requiresExistingTargets = requiresExistingTargets
+        self.isHighRisk = isHighRisk
+        self.associatedBundleIdentifier = associatedBundleIdentifier
     }
 
     func isAvailable(for targetURLs: [URL], isContainer: Bool) -> Bool {

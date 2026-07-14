@@ -32,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         // 1. 初始化并注册系统自带的右键菜单动作
         registerDefaultActions()
         NSApp.servicesProvider = FinderServicesProvider.shared
+        FinderQuickServiceManager.shared.start()
         
         // 2. 监听来自 Extension 的纯信号通知（双保险机制一：分布式空信号通知，强制指定 suspensionBehavior: .deliverImmediately）
         DistributedNotificationCenter.default().addObserver(
@@ -152,6 +153,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
     
     func applicationWillTerminate(_ aNotification: Notification) {
         folderMonitor?.stop()
+        FinderQuickServiceManager.shared.stop()
     }
     
     /// 注册默认的一套右键快捷操作
