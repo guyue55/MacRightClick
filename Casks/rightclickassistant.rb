@@ -25,7 +25,7 @@ cask "rightclickassistant" do
   uninstall quit:   "guyue.RightClickAssistant",
             script: {
               executable: "/usr/bin/pluginkit",
-              args:       ["-r", "guyue.RightClickAssistant.Extension"],
+              args:       ["-r", "/Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex"],
             },
             trash:  "~/Library/Services/RightClickAssistantQuickActions.service"
 
