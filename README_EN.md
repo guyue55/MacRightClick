@@ -91,12 +91,12 @@ flowchart LR
 
 ### GitHub Release
 
-The code, GitHub Release, and Homebrew Cask are all at the **v1.2.0 community build**:
+The code, GitHub Release, and Homebrew Cask are all at the **v1.2.1 community build**:
 
 | Format | Current downloadable artifact |
 | --- | --- |
-| DMG | [RightClickAssistant-v1.2.0-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.2.0/RightClickAssistant-v1.2.0-macOS-Universal.dmg) |
-| ZIP | [RightClickAssistant-v1.2.0-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.2.0/RightClickAssistant-v1.2.0-macOS-Universal.zip) |
+| DMG | [RightClickAssistant-v1.2.1-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.2.1/RightClickAssistant-v1.2.1-macOS-Universal.dmg) |
+| ZIP | [RightClickAssistant-v1.2.1-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.2.1/RightClickAssistant-v1.2.1-macOS-Universal.zip) |
 
 See [GitHub Releases](https://github.com/guyue55/MacRightClick/releases) for all versions.
 
@@ -125,7 +125,7 @@ brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
 brew install --cask guyue55/macrightclick/rightclickassistant
 ```
 
-The current Cask is pinned to an immutable v1.2.0 URL with a real SHA-256. `brew upgrade` advances only after this repository updates the Cask version and checksum; it does not bypass version metadata by following a mutable Latest file.
+The current Cask is pinned to an immutable v1.2.1 URL with a real SHA-256. `brew upgrade` advances only after this repository updates the Cask version and checksum; it does not bypass version metadata by following a mutable Latest file.
 
 Starting with Homebrew 6.0, third-party taps require explicit trust. The fully qualified name above trusts only the `rightclickassistant` Cask, not the entire tap, and is the recommended command across old and new Homebrew versions. If a previous short-name install reported an `untrusted tap`, run:
 
@@ -140,7 +140,7 @@ brew install --cask guyue55/macrightclick/rightclickassistant
 > Homebrew verifies the download SHA-256 and installs the app, but it cannot add a Developer ID signature or Apple notarization. The first launch may still require manual approval in Privacy & Security. Using `--no-quarantine` to bypass that user confirmation is not recommended.
 
 > [!IMPORTANT]
-> The current v1.2.0 community build is Ad-hoc signed and not notarized by Apple. After a Homebrew install on a new Mac, macOS may still block the first launch. First try Control-clicking the app and choosing Open, or use System Settings -> Privacy & Security -> Open Anyway. If the app is confirmed to come from this repository and macOS still blocks it, run:
+> The current v1.2.1 community build is Ad-hoc signed and not notarized by Apple. After a Homebrew install on a new Mac, macOS may still block the first launch. First try Control-clicking the app and choosing Open, or use System Settings -> Privacy & Security -> Open Anyway. If the app is confirmed to come from this repository and macOS still blocks it, run:
 
 ```bash
 sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
@@ -188,11 +188,11 @@ brew install --cask guyue55/macrightclick/rightclickassistant
 6. Grant Full Disk Access only when protected-location operations require it.
 7. Choose an action profile, favorites, and menu layout on the Actions page.
 
-For a direct v1.2.0 DMG download, compare its SHA-256 with the value published in the Cask:
+For a direct v1.2.1 DMG download, compare its SHA-256 with the value published in the Cask:
 
 ```bash
-shasum -a 256 RightClickAssistant-v1.2.0-macOS-Universal.dmg
-# Expected: fa71e4b80a4e1e4071ca6e6a5ee0af79ae2b48c74401c215ece2eea8aa8ad813
+shasum -a 256 RightClickAssistant-v1.2.1-macOS-Universal.dmg
+# Expected: 9230f3db5684f537a00c15141e6dac746092ea4fef59e2ab37538d64dba46e37
 ```
 
 Manual extension registration:

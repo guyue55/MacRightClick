@@ -91,12 +91,12 @@ flowchart LR
 
 ### GitHub Release
 
-当前代码、GitHub Release 和 Homebrew Cask 版本均为 **v1.2.0 社区构建**：
+当前代码、GitHub Release 和 Homebrew Cask 版本均为 **v1.2.1 社区构建**：
 
 | 格式 | 当前可下载制品 |
 | --- | --- |
-| DMG | [RightClickAssistant-v1.2.0-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.2.0/RightClickAssistant-v1.2.0-macOS-Universal.dmg) |
-| ZIP | [RightClickAssistant-v1.2.0-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.2.0/RightClickAssistant-v1.2.0-macOS-Universal.zip) |
+| DMG | [RightClickAssistant-v1.2.1-macOS-Universal.dmg](https://github.com/guyue55/MacRightClick/releases/download/v1.2.1/RightClickAssistant-v1.2.1-macOS-Universal.dmg) |
+| ZIP | [RightClickAssistant-v1.2.1-macOS-Universal.zip](https://github.com/guyue55/MacRightClick/releases/download/v1.2.1/RightClickAssistant-v1.2.1-macOS-Universal.zip) |
 
 全部版本见 [GitHub Releases](https://github.com/guyue55/MacRightClick/releases)。
 
@@ -125,7 +125,7 @@ brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git
 brew install --cask guyue55/macrightclick/rightclickassistant
 ```
 
-当前 Cask 固定到 v1.2.0 的不可变 URL，并校验真实 SHA-256。`brew upgrade` 只会在仓库中的 Cask 版本和哈希更新后升级，不会绕过版本元数据追随可变 Latest 文件。
+当前 Cask 固定到 v1.2.1 的不可变 URL，并校验真实 SHA-256。`brew upgrade` 只会在仓库中的 Cask 版本和哈希更新后升级，不会绕过版本元数据追随可变 Latest 文件。
 
 Homebrew 6.0 起，第三方 tap 必须经过显式信任。上面的完整限定名称只信任 `rightclickassistant` 这一项，不会扩大到整个 tap，也是新旧 Homebrew 均可使用的推荐安装方式。如果此前使用短名称安装并看到 `untrusted tap`，执行：
 
@@ -140,7 +140,7 @@ brew install --cask guyue55/macrightclick/rightclickassistant
 > Homebrew 会校验下载包的 SHA-256 并安装 App，但不会为 App 补做 Developer ID 签名或 Apple 公证。首次打开时仍可能需要在“隐私与安全性”中手动允许。不建议使用 `--no-quarantine` 绕过这一次用户确认。
 
 > [!IMPORTANT]
-> 当前 v1.2.0 是 Ad-hoc 签名、未经 Apple 公证的社区构建。新机器通过 Homebrew 安装后，macOS 仍可能阻止首次启动。先尝试 Control 点击 App ->“打开”，或“系统设置 -> 隐私与安全性 -> 仍要打开”。如果确认 App 来自本仓库但系统仍然拦截，执行：
+> 当前 v1.2.1 是 Ad-hoc 签名、未经 Apple 公证的社区构建。新机器通过 Homebrew 安装后，macOS 仍可能阻止首次启动。先尝试 Control 点击 App ->“打开”，或“系统设置 -> 隐私与安全性 -> 仍要打开”。如果确认 App 来自本仓库但系统仍然拦截，执行：
 
 ```bash
 sudo /usr/bin/xattr -dr com.apple.quarantine "/Applications/RightClickAssistant.app"
@@ -188,11 +188,11 @@ brew install --cask guyue55/macrightclick/rightclickassistant
 6. 需要访问受保护目录时，再授予完全磁盘访问。
 7. 在“动作”页选择档案、收藏和菜单布局。
 
-直接下载 v1.2.0 DMG 时，可与 Cask 中公开的 SHA-256 比对：
+直接下载 v1.2.1 DMG 时，可与 Cask 中公开的 SHA-256 比对：
 
 ```bash
-shasum -a 256 RightClickAssistant-v1.2.0-macOS-Universal.dmg
-# 期望: fa71e4b80a4e1e4071ca6e6a5ee0af79ae2b48c74401c215ece2eea8aa8ad813
+shasum -a 256 RightClickAssistant-v1.2.1-macOS-Universal.dmg
+# 期望: 9230f3db5684f537a00c15141e6dac746092ea4fef59e2ab37538d64dba46e37
 ```
 
 手动注册扩展：
