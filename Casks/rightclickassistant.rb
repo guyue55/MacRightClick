@@ -22,12 +22,8 @@ cask "rightclickassistant" do
                    args: ["-l", "JavaScript", "-e", 'ObjC.import("AppKit"); $.NSUpdateDynamicServices();']
   end
 
-  uninstall quit:   "guyue.RightClickAssistant",
-            script: {
-              executable: "/usr/bin/pluginkit",
-              args:       ["-r", "/Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex"],
-            },
-            trash:  "~/Library/Services/RightClickAssistantQuickActions.service"
+  uninstall quit:  "guyue.RightClickAssistant",
+            trash: "~/Library/Services/RightClickAssistantQuickActions.service"
 
   zap trash: [
     "~/Library/Containers/guyue.RightClickAssistant",

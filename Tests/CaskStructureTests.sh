@@ -22,8 +22,6 @@ grep -q 'download/v#{version}/RightClickAssistant-v#{version}-macOS-Universal.dm
 grep -q 'livecheck do' "$CASK_FILE" || fail "Cask 必须提供版本检查策略"
 grep -q 'app "RightClickAssistant.app"' "$CASK_FILE" || fail "Cask 必须安装 RightClickAssistant.app"
 grep -q 'depends_on macos: :ventura' "$CASK_FILE" || fail "Cask 必须使用当前语法声明 macOS 13+"
-grep -q '/usr/bin/pluginkit' "$CASK_FILE" || fail "Cask 卸载时必须反注册 FinderSync 扩展"
-grep -q '"-r", "/Applications/RightClickAssistant.app/Contents/PlugIns/RightClickAssistantExtension.appex"' "$CASK_FILE" || fail "Cask 必须向 pluginkit 传入 FinderSync 扩展路径"
 grep -q 'Library/Services/RightClickAssistantQuickActions.service' "$CASK_FILE" || fail "Cask 卸载时必须清理动态服务"
 grep -q 'NSUpdateDynamicServices' "$CASK_FILE" || fail "Cask 卸载后必须刷新系统服务缓存"
 grep -q 'caveats <<~EOS' "$CASK_FILE" || fail "Cask 必须在安装后说明社区签名状态"
@@ -40,6 +38,10 @@ fi
 
 if grep -q 'curl .*|.*sh' "$CASK_FILE"; then
   fail "Cask 不允许执行远程安装脚本"
+fi
+
+if grep -q 'pluginkit' "$CASK_FILE"; then
+  fail "Cask 卸载不应依赖可能使升级中断的 FinderSync 注销命令"
 fi
 
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_ZH" || fail "中文 README 缺少当前可用的 brew tap 命令"
