@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+## v1.2.1 — 2026-07-15
+
+### Added
+
+- **finder**: 为 iCloud Drive、文稿和其他 File Provider 保护目录补充系统服务直达动作；收藏优先、常用动作补齐，最多展示 8 项，并保留“右键助手…”完整分类面板。
+
 ### Packaging
 
 - **homebrew**: Cask 更新到 v1.2.0 不可变 DMG 及远程制品的真实 SHA-256。
@@ -19,6 +25,8 @@
 
 - **finder**: 云盘兼容改为默认开启，并显式注册 iCloud Drive 的 File Provider 真实根路径。稳定根与桌面/下载/文稿不再用扩展的文件读权限过滤，避免普通受保护目录被错误排除。
 - **finder**: 针对 macOS 在 File Provider 域中抑制第三方 FinderSync 动作的情况，新增 5 个低风险系统服务入口，复用原有动作队列、开关与终态确认。
+- **finder**: 动态服务 helper 丢失或执行权限异常时自动撤下失效项或修复权限；外部应用可用状态变化会刷新直达项，服务标题用序号稳定展示顺序。
+- **concurrency**: 修复外部应用缓存失效通知与界面同步读取可能形成的死锁。
 - **tools**: 外部工具区分独立安装、Homebrew 管理、未安装与安装记录损坏四种状态；命令执行前重新校验，避免对手动安装的 iTerm2 误用 `brew upgrade`。
 - **tools**: Homebrew 管理的外部工具更新使用 `--greedy`，避免 `auto_updates` Cask 被跳过；Homebrew 库存检测移出主线程并防止过期刷新覆盖新状态。
 - **diagnostics**: 诊断页与隐私安全报告显示云盘兼容状态，便于定位 File Provider 目录缺少菜单的问题。
