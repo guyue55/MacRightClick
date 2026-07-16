@@ -158,7 +158,7 @@ brew upgrade --cask rightclickassistant
 > If an upgrade from v1.2.0 reports `pluginkit -r guyue.RightClickAssistant.Extension`, the failure comes from the uninstall script stored by the old Cask, not from v1.2.1 verification. Run this one-time migration: the first command removes only RightClickAssistant's stale Homebrew receipt, and the second overwrites the app with the verified v1.2.1 DMG.
 >
 > ```bash
-> rm -rf "$(brew --prefix)/Caskroom/rightclickassistant"
+> rm -rf "$(brew --caskroom)/rightclickassistant"
 > brew install --cask --force guyue55/macrightclick/rightclickassistant
 > ```
 

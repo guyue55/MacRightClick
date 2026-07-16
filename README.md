@@ -158,7 +158,7 @@ brew upgrade --cask rightclickassistant
 > 从 v1.2.0 升级时，如果 `brew upgrade` 报出 `pluginkit -r guyue.RightClickAssistant.Extension`，这是旧版 Cask 已保存的卸载脚本错误，不是 v1.2.1 制品校验失败。仅需执行一次以下迁移；第一条命令只清除右键助手的旧 Homebrew 收据，第二条会用已校验的 v1.2.1 DMG 覆盖安装：
 >
 > ```bash
-> rm -rf "$(brew --prefix)/Caskroom/rightclickassistant"
+> rm -rf "$(brew --caskroom)/rightclickassistant"
 > brew install --cask --force guyue55/macrightclick/rightclickassistant
 > ```
 

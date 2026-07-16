@@ -44,5 +44,14 @@ cask "rightclickassistant" do
 
     Enter your macOS administrator password when prompted; Terminal does not
     display password characters. Do not disable Gatekeeper globally.
+
+    If an upgrade from version 1.2.0 fails with
+    "pluginkit -r guyue.RightClickAssistant.Extension", it is using an
+    uninstall script saved by that old Cask. Run this one-time recovery:
+
+      rm -rf "$(brew --caskroom)/rightclickassistant"
+      brew install --cask --force guyue55/macrightclick/rightclickassistant
+
+    This clears only the stale Homebrew receipt. App settings are preserved.
   EOS
 end
