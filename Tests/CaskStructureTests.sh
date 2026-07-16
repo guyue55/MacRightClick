@@ -48,11 +48,13 @@ fi
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_ZH" || fail "中文 README 缺少当前可用的 brew tap 命令"
 grep -q 'brew install --cask guyue55/macrightclick/rightclickassistant' "$README_ZH" || fail "中文 README 缺少最小信任范围的 brew 安装命令"
 grep -q 'brew trust --cask guyue55/macrightclick/rightclickassistant' "$README_ZH" || fail "中文 README 缺少 Homebrew 6 信任修复命令"
+grep -q 'brew upgrade --cask guyue55/macrightclick/rightclickassistant' "$README_ZH" || fail "中文 README 缺少完整限定的升级命令"
 grep -Fq "$QUARANTINE_COMMAND" "$README_ZH" || fail "中文 README 缺少可直接执行的 quarantine 移除命令"
 grep -Fq 'rm -rf "$(brew --caskroom)/rightclickassistant"' "$README_ZH" || fail "中文 README 缺少 v1.2.0 升级故障恢复命令"
 grep -q 'brew tap guyue55/macrightclick https://github.com/guyue55/MacRightClick.git' "$README_EN" || fail "英文 README 缺少当前可用的 brew tap 命令"
 grep -q 'brew install --cask guyue55/macrightclick/rightclickassistant' "$README_EN" || fail "英文 README 缺少最小信任范围的 brew 安装命令"
 grep -q 'brew trust --cask guyue55/macrightclick/rightclickassistant' "$README_EN" || fail "英文 README 缺少 Homebrew 6 信任修复命令"
+grep -q 'brew upgrade --cask guyue55/macrightclick/rightclickassistant' "$README_EN" || fail "英文 README 缺少完整限定的升级命令"
 grep -Fq "$QUARANTINE_COMMAND" "$README_EN" || fail "英文 README 缺少可直接执行的 quarantine 移除命令"
 grep -Fq 'rm -rf "$(brew --caskroom)/rightclickassistant"' "$README_EN" || fail "英文 README 缺少 v1.2.0 升级故障恢复命令"
 

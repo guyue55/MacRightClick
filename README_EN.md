@@ -151,7 +151,7 @@ open "/Applications/RightClickAssistant.app"
 
 ```bash
 brew update
-brew upgrade --cask rightclickassistant
+brew upgrade --cask guyue55/macrightclick/rightclickassistant
 ```
 
 > [!NOTE]
@@ -165,7 +165,7 @@ brew upgrade --cask rightclickassistant
 A normal uninstall keeps settings and runtime data, while removing dynamic quick services and refreshing the system menu:
 
 ```bash
-brew uninstall --cask rightclickassistant
+brew uninstall --cask guyue55/macrightclick/rightclickassistant
 brew untap guyue55/macrightclick
 ```
 

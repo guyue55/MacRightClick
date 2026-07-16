@@ -151,7 +151,7 @@ open "/Applications/RightClickAssistant.app"
 
 ```bash
 brew update
-brew upgrade --cask rightclickassistant
+brew upgrade --cask guyue55/macrightclick/rightclickassistant
 ```
 
 > [!NOTE]
@@ -165,7 +165,7 @@ brew upgrade --cask rightclickassistant
 普通卸载会保留设置和运行数据，但会移除动态快捷服务并刷新系统菜单：
 
 ```bash
-brew uninstall --cask rightclickassistant
+brew uninstall --cask guyue55/macrightclick/rightclickassistant
 brew untap guyue55/macrightclick
 ```
 
